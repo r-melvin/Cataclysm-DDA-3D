@@ -2935,7 +2935,7 @@ std::optional<texture_draw_data> cata_tiles::get_texture_draw_data( const std::s
     std::pair<float, float> uv0{ rect.x / static_cast<float>( buf_w ), rect.y / static_cast<float>( buf_h ) };
     std::pair<float, float> uv1{ ( rect.x + rect.w ) / static_cast<float>( buf_w ), ( rect.y + rect.h ) / static_cast<float>( buf_h ) };
 
-    return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1 };
+    return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1, texture_ptr };
 }
 
 std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::string &id,
@@ -2988,7 +2988,7 @@ std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::st
     }
     const std::pair<float, float> uv0{ rect.x / buf_w, rect.y / buf_h };
     const std::pair<float, float> uv1{ ( rect.x + rect.w ) / buf_w, ( rect.y + rect.h ) / buf_h };
-    return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1 };
+    return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1, texture_ptr };
 }
 
 std::unordered_set<std::string> cata_tiles::get_all_portrait_tile_ids( bool male ) const
@@ -5169,7 +5169,7 @@ void cata_tiles::void_line()
     line_endpoint_id.clear();
     line_trajectory.clear();
 }
-cata_tiles::frame_markers cata_tiles::take_frame_markers()
+cata_tiles::frame_markers cata_tiles::get_frame_markers() const
 {
     frame_markers out;
     if( do_draw_cursor ) {
@@ -5178,17 +5178,31 @@ cata_tiles::frame_markers cata_tiles::take_frame_markers()
     if( do_draw_highlight ) {
         out.highlights = highlights;
     }
-    if( do_draw_line && !line_trajectory.empty() &&
-        ( !is_target_line || get_player_view().sees( get_map(), line_pos ) ) ) {
-        out.line.assign( line_trajectory.begin(), line_trajectory.end() - 1 );
+    if( do_draw_line && !line_trajectory.empty() ) {
+        if( !is_target_line || get_player_view().sees( get_map(), line_pos ) ) {
+            out.line.assign( line_trajectory.begin(), line_trajectory.end() - 1 );
+        }
+        out.line_end = line_trajectory.back();
+        out.line_end_id = line_endpoint_id;
     }
+    return out;
+}
+
+void cata_tiles::drop_frame_layers()
+{
+    void_hit();
     void_line();
     void_cursor();
     void_highlight();
     void_weather();
     void_sct();
     void_zones();
-    return out;
+    void_radiation_override();
+    void_terrain_override();
+    void_furniture_override();
+    void_graffiti_override();
+    void_trap_override();
+    void_field_override();
 }
 void cata_tiles::void_cursor()
 {

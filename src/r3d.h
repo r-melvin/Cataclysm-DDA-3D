@@ -34,9 +34,11 @@ void shutdown();
 bool active();
 
 /**
- * The map tile drawn under the point (x, y) of the renderer, in the same logical pixels as the
- * rectangle given to draw(), as seen in the last drawn 3D frame. Nothing when the point is outside
- * that frame, points at the sky, or the 3D view is not active.
+ * The map tile under the point (x, y) of the renderer, in the same logical pixels as the
+ * rectangle given to draw(), as seen in the last drawn 3D frame. Like the flat view's picks, the
+ * result is on the map's own level (get_abs_sub().z()): something seen through a hole on a lower
+ * level yields the tile where the mouse ray crossed the viewed level. Nothing when the point is
+ * outside that frame, points at the sky, or the 3D view is not active.
  */
 std::optional<tripoint_bub_ms> pick( float x, float y );
 

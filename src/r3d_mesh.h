@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -28,6 +29,9 @@ namespace r3d
 /** A tileset sprite as sampled by the 3D renderer: its sheet and the uv rectangle in it. */
 struct sprite_ref {
     SDL_Texture *sheet = nullptr;
+    // Holds the sheet alive while it is cached, so a tileset reload can never leave a dangling
+    // pointer here or in a chunk's mesh_batch (chunks are dropped whenever the cache is cleared).
+    std::shared_ptr<SDL_Texture> owner;
     float u0 = 0.0f;
     float v0 = 0.0f;
     float u1 = 0.0f;

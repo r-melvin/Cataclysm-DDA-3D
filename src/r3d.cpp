@@ -4,8 +4,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -16,6 +19,7 @@
 #include "coordinates.h"
 #include "creature.h"
 #include "creature_tracker.h"
+#include "game_constants.h"
 #include "map.h"
 #include "map_scale_constants.h"
 #include "mapbuffer.h"
@@ -92,7 +96,8 @@ struct state {
     unsigned failed_epoch = 0;
     uint64_t frame = 0;
     bool drawn = false;
-    SDL_Texture *probe_sheet = nullptr;
+    // Held (not just compared) so its address cannot be reused by a new sheet after a reload.
+    std::shared_ptr<SDL_Texture> probe_sheet;
     bool env_camera_applied = false;
     bool screenshot_taken = false;
     // Per-frame buffers for creatures and items, grown as needed and re-uploaded every frame.
@@ -208,12 +213,21 @@ float column_height( state &s, const map &here, const tripoint_bub_ms &p )
     return std::min( h, 1.0f );
 }
 
+// Dim bluish tint of tiles that are remembered but not currently seen.
+uint32_t remembered_light()
+{
+    return pack_light( 64, 77, 107 );
+}
+
 // Turns the game's own visibility knowledge into a light colour per tile: lit tiles are shown
 // normally, unseen but remembered ones dim and bluish, everything else black.
 struct light_sampler {
     const map &here;
     const visibility_variables &vvc;
     const avatar &you;
+    // Lowest level whose visibility cache the game keeps up to date for this view (see
+    // map::update_visibility_cache); anything below can only show what is remembered.
+    int vision_floor = -OVERMAP_DEPTH;
 
     uint32_t color_at( const tripoint_bub_ms &p ) const {
         if( !here.inbounds( p ) ) {
@@ -223,6 +237,9 @@ struct light_sampler {
         static const bool fullbright = std::getenv( "CATA_R3D_FULLBRIGHT" ) != nullptr;
         if( fullbright ) {
             return pack_light( 255, 255, 255 );
+        }
+        if( p.z() < vision_floor ) {
+            return you.has_memory_at( here.get_abs( p ) ) ? remembered_light() : pack_light( 0, 0, 0 );
         }
         const lit_level ll = here.access_cache( p.z() ).visibility_cache[p.x()][p.y()];
         const visibility_type vis = here.get_visibility( ll, vvc );
@@ -248,9 +265,7 @@ struct light_sampler {
                     break;
             }
         } else if( you.has_memory_at( here.get_abs( p ) ) ) {
-            r = 0.25f;
-            g = 0.30f;
-            b = 0.42f;
+            return remembered_light();
         }
         const auto to_byte = []( float v ) {
             return static_cast<uint8_t>( std::clamp( v, 0.0f, 1.0f ) * 255.0f + 0.5f );
@@ -259,9 +274,14 @@ struct light_sampler {
     }
 };
 
-uint64_t light_key( const tripoint_abs_ms &origin )
+// Changes whenever the light of any drawn tile may have: a new turn, a moved view, or a fresh
+// visibility cache on one of the drawn levels (doors, light sources, ... within a turn).
+uint64_t light_key( const map &here, const tripoint_abs_ms &origin, int z_lo, int z_hi )
 {
     uint64_t key = static_cast<uint64_t>( to_turn<int>( calendar::turn ) );
+    for( int z = z_lo; z <= z_hi; ++z ) {
+        key = key * 1099511628211ull ^ here.get_cache_ref( z ).visibility_generation;
+    }
     key = key * 1000003u + static_cast<uint64_t>( origin.x() );
     key = key * 1000003u + static_cast<uint64_t>( origin.y() );
     key = key * 1000003u + static_cast<uint64_t>( origin.z() + OVERMAP_DEPTH );
@@ -408,7 +428,21 @@ std::optional<tripoint_bub_ms> pick( float x, float y )
     if( !hit.hit ) {
         return std::nullopt;
     }
-    const tripoint_bub_ms p( v.center.x() + hit.x, v.center.y() + hit.y, v.center.z() + hit.z );
+    // Callers expect the level of the 2D view, so a hit seen through a hole on a lower level
+    // becomes the tile where the ray crossed that level (the hole), not the floor below it.
+    int px = hit.x;
+    int py = hit.y;
+    if( hit.z < 0 ) {
+        const ray world = v.cam.screen_ray( ndc_x, ndc_y, v.w / v.h );
+        const vec3 origin = world_to_tile( world.origin );
+        const vec3 dir = world_to_tile( world.dir );
+        if( dir.z < 0.0f ) {
+            const vec3 cross = origin + dir * ( ( floor_height - origin.z ) / dir.z );
+            px = static_cast<int>( std::floor( cross.x ) );
+            py = static_cast<int>( std::floor( cross.y ) );
+        }
+    }
+    const tripoint_bub_ms p( v.center.x() + px, v.center.y() + py, here.get_abs_sub().z() );
     if( !here.inbounds( p ) ) {
         return std::nullopt;
     }
@@ -421,6 +455,7 @@ void shutdown()
     release_all_chunks( s );
     release_dynamic( s );
     s.cache.clear();
+    s.probe_sheet.reset();
     s.device.shutdown();
     s.epoch_valid = false;
     s.drawn = false;
@@ -464,7 +499,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     {
         const std::optional<texture_draw_data> probe = tilecontext->get_sprite_draw_data( "t_grass",
                 TILE_CATEGORY::TERRAIN, tripoint_bub_ms( 0, 0, 0 ) );
-        SDL_Texture *const sheet = probe ? probe->texture : nullptr;
+        const std::shared_ptr<SDL_Texture> sheet = probe ? probe->owner : nullptr;
         if( sheet != s.probe_sheet ) {
             release_all_chunks( s );
             s.cache.clear();
@@ -510,8 +545,11 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         return MAPBUFFER.lookup_submap( p );
     };
 
-    const light_sampler sampler{ here, here.get_visibility_variables_cache(), get_avatar() };
-    const uint64_t frame_light_key = light_key( origin );
+    const int vision_floor = std::max( std::min( view_z, get_avatar().posz() - fov_3d_z_range ),
+                                       -OVERMAP_DEPTH );
+    const light_sampler sampler{ here, here.get_visibility_variables_cache(), get_avatar(),
+                                 vision_floor };
+    const uint64_t frame_light_key = light_key( here, origin, z_lo, z_hi );
 
     // The scene is drawn in a frame whose origin is the viewed tile, which keeps floats small.
     s.cam.target = tile_to_world( { 0.5f, 0.5f, 0.5f } );
@@ -568,8 +606,8 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     }, {} };
     // The game queues its cursors and highlights for cata_tiles::draw, which is skipped here.
     {
-        const cata_tiles::frame_markers queued = tilecontext->take_frame_markers();
-        const auto add_markers = [&]( const std::vector<tripoint_bub_ms> &where, const char *id,
+        const cata_tiles::frame_markers queued = tilecontext->get_frame_markers();
+        const auto add_markers = [&]( const std::vector<tripoint_bub_ms> &where, const std::string & id,
         bool box ) {
             const tile_info &sprite = s.cache.named( TILE_CATEGORY::NONE, id, *tilecontext );
             for( const tripoint_bub_ms &p : where ) {
@@ -577,6 +615,9 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
             }
         };
         add_markers( queued.line, "animation_line", false );
+        if( queued.line_end && !queued.line_end_id.empty() ) {
+            add_markers( { *queued.line_end }, queued.line_end_id, false );
+        }
         add_markers( queued.highlights, "highlight", false );
         add_markers( queued.cursors, "cursor", true );
     }
@@ -594,6 +635,8 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
 
     if( !s.device.begin_pass( 0.05f, 0.05f, 0.07f ) ) {
         s.device.abort_frame();
+        // This frame's uploads may not have happened, so no chunk's buffers can be trusted.
+        release_all_chunks( s );
         return false;
     }
     s.device.bind_block_pipeline();
@@ -633,6 +676,8 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
             ++it;
         }
     }
+    // Only now that the frame is on screen: on failure the flat view draws the markers instead.
+    tilecontext->drop_frame_layers();
     s.shown = { true, x, y, w, h, s.cam, center, z_lo, z_hi };
     s.drawn = true;
     return true;

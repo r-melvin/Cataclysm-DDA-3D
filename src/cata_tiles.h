@@ -710,6 +710,8 @@ struct texture_draw_data {
     // avoiding ImVec2 here
     std::pair<float, float> uv0;
     std::pair<float, float> uv1;
+    // keeps the sheet alive for callers that hold on to texture (the 3D renderer's caches)
+    std::shared_ptr<SDL_Texture> owner;
 };
 
 /** type used for color blocks overlays.
@@ -780,17 +782,21 @@ class cata_tiles
 
         std::unordered_set<std::string> get_all_portrait_tile_ids( bool male ) const;
 
-        /** One-frame markers queued by the game for the map view (see take_frame_markers). */
+        /** One-frame markers queued by the game for the map view (see get_frame_markers). */
         struct frame_markers {
             std::vector<tripoint_bub_ms> cursors;
             std::vector<tripoint_bub_ms> highlights;
             std::vector<tripoint_bub_ms> line; // targeting line or path, without its end point
+            std::optional<tripoint_bub_ms> line_end;
+            std::string line_end_id;           // sprite of line_end
         };
+        /** The cursors, highlights and line queued for this frame, as draw() would show them. */
+        frame_markers get_frame_markers() const;
         /**
-         * Hands over the cursors, highlights and line queued for this frame and drops them, along
-         * with the other one-frame layers, as draw() would. Used when the 3D view replaces draw().
+         * Drops the one-frame layers and tile overrides like draw() does after drawing them. Used
+         * when the 3D view replaced draw() for a frame, so they do not pile up.
          */
-        frame_markers take_frame_markers();
+        void drop_frame_layers();
 
     protected:
         /** How many rows and columns of tiles fit into given dimensions, fully

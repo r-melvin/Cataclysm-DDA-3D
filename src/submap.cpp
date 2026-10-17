@@ -394,6 +394,7 @@ void submap::update_lum_rem( const point_sm_ms &p, const item &i )
 void submap::merge_submaps( submap *copy_from, bool copy_from_is_overlay )
 {
     this->field_count = 0;
+    touch_render_stamp();
 
     for( int x = 0; x < SEEX; x++ ) {
         for( int y = 0; y < SEEY; y++ ) {

@@ -68,9 +68,15 @@ class gpu
 
         /** Starts a frame: flushes the renderer and acquires a command buffer. */
         bool begin_frame();
-        /** Queues a CPU->GPU copy; only valid between begin_frame and begin_pass. */
+        /**
+         * Queues a CPU->GPU copy; only valid between begin_frame and begin_pass. The data is
+         * copied right away; all of a frame's uploads go through one staging buffer at begin_pass.
+         */
         bool upload( SDL_GPUBuffer *dst, const void *data, uint32_t size, bool cycle = false );
-        /** Ends the copy pass and opens the render pass (clearing colour and depth). */
+        /**
+         * Performs the queued uploads and opens the render pass (clearing colour and depth).
+         * False means the frame is unusable and buffers uploaded this frame hold no valid data.
+         */
         bool begin_pass( float r, float g, float b );
         /** Binds the block pipeline. */
         void bind_block_pipeline();
@@ -90,6 +96,7 @@ class gpu
         SDL_GPUShader *load_shader( const char *basename, SDL_GPUShaderStage stage,
                                     uint32_t samplers, uint32_t uniform_buffers );
         void release_target();
+        bool flush_uploads();
         void release_staging();
 
         SDL_Renderer *renderer_ = nullptr;
@@ -107,7 +114,17 @@ class gpu
         SDL_GPUCommandBuffer *cmd_ = nullptr;
         SDL_GPUCopyPass *copy_pass_ = nullptr;
         SDL_GPURenderPass *pass_ = nullptr;
-        std::vector<SDL_GPUTransferBuffer *> staging_;
+        struct pending_upload {
+            SDL_GPUBuffer *dst = nullptr;
+            uint32_t offset = 0; // into pending_data_
+            uint32_t size = 0;
+            bool cycle = false;
+        };
+        std::vector<pending_upload> pending_;
+        std::vector<uint8_t> pending_data_;
+        // Reused every frame (mapped with cycling, so the previous frame's copy is not waited on).
+        SDL_GPUTransferBuffer *staging_ = nullptr;
+        uint32_t staging_size_ = 0;
 };
 
 } // namespace r3d

@@ -58,8 +58,6 @@ struct spawn_point {
         mission_id( MIS ), friendly( F ), name( N ), data( SD ) {}
 };
 
-// Suppression due to bug in clang-tidy 12
-// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 /**
  * Source of unique, monotonically increasing stamps used by submap::render_stamp().
  */
@@ -69,6 +67,8 @@ inline uint64_t next_submap_render_stamp()
     return counter.fetch_add( 1, std::memory_order_relaxed ) + 1;
 }
 
+// Suppression due to bug in clang-tidy 12
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 struct maptile_soa {
     cata::mdarray<ter_id, point_sm_ms>             ter; // Terrain on each square
     cata::mdarray<furn_id, point_sm_ms>            frn; // Furniture on each square

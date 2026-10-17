@@ -189,10 +189,11 @@ bool gpu::init( SDL_Renderer *renderer )
 
 void gpu::release_staging()
 {
-    for( SDL_GPUTransferBuffer *tb : staging_ ) {
-        SDL_ReleaseGPUTransferBuffer( device_, tb );
+    if( staging_ && device_ ) {
+        SDL_ReleaseGPUTransferBuffer( device_, staging_ );
     }
-    staging_.clear();
+    staging_ = nullptr;
+    staging_size_ = 0;
 }
 
 void gpu::release_target()
@@ -230,9 +231,8 @@ void gpu::abort_frame()
         SDL_SubmitGPUCommandBuffer( cmd_ );
         cmd_ = nullptr;
     }
-    if( device_ ) {
-        release_staging();
-    }
+    pending_.clear();
+    pending_data_.clear();
 }
 
 void gpu::shutdown()
@@ -242,6 +242,7 @@ void gpu::shutdown()
         // The renderer may still sample the wrapped target; make sure no GPU work references it.
         SDL_WaitForGPUIdle( device_ );
         release_target();
+        release_staging();
         if( block_pipeline_ ) {
             SDL_ReleaseGPUGraphicsPipeline( device_, block_pipeline_ );
         }
@@ -342,45 +343,60 @@ bool gpu::upload( SDL_GPUBuffer *dst, const void *data, uint32_t size, bool cycl
     if( !cmd_ || pass_ || !dst || size == 0 ) {
         return false;
     }
-    SDL_GPUTransferBufferCreateInfo tbi{};
-    tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-    tbi.size = size;
-    SDL_GPUTransferBuffer *tb = SDL_CreateGPUTransferBuffer( device_, &tbi );
-    if( !tb ) {
-        return false;
-    }
-    void *mapped = SDL_MapGPUTransferBuffer( device_, tb, false );
-    if( !mapped ) {
-        SDL_ReleaseGPUTransferBuffer( device_, tb );
-        return false;
-    }
-    std::memcpy( mapped, data, size );
-    SDL_UnmapGPUTransferBuffer( device_, tb );
-    staging_.push_back( tb );
-
-    if( !copy_pass_ ) {
-        copy_pass_ = SDL_BeginGPUCopyPass( cmd_ );
-        if( !copy_pass_ ) {
-            return false;
-        }
-    }
-    SDL_GPUTransferBufferLocation src{};
-    src.transfer_buffer = tb;
-    SDL_GPUBufferRegion region{};
-    region.buffer = dst;
-    region.size = size;
-    SDL_UploadToGPUBuffer( copy_pass_, &src, &region, cycle );
+    const size_t offset = pending_data_.size();
+    const uint8_t *bytes = static_cast<const uint8_t *>( data );
+    pending_data_.insert( pending_data_.end(), bytes, bytes + size );
+    pending_.push_back( { dst, static_cast<uint32_t>( offset ), size, cycle } );
     return true;
+}
+
+bool gpu::flush_uploads()
+{
+    if( pending_.empty() ) {
+        return true;
+    }
+    const uint32_t total = static_cast<uint32_t>( pending_data_.size() );
+    bool ok = true;
+    if( !staging_ || staging_size_ < total ) {
+        release_staging();
+        SDL_GPUTransferBufferCreateInfo tbi{};
+        tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        tbi.size = total + total / 2;
+        staging_ = SDL_CreateGPUTransferBuffer( device_, &tbi );
+        staging_size_ = staging_ ? tbi.size : 0;
+        ok = staging_ != nullptr;
+    }
+    void *mapped = ok ? SDL_MapGPUTransferBuffer( device_, staging_, true ) : nullptr;
+    if( mapped ) {
+        std::memcpy( mapped, pending_data_.data(), total );
+        SDL_UnmapGPUTransferBuffer( device_, staging_ );
+        copy_pass_ = SDL_BeginGPUCopyPass( cmd_ );
+    }
+    if( !mapped || !copy_pass_ ) {
+        DebugLog( D_ERROR, DC_ALL ) << "r3d: staging upload failed: " << SDL_GetError();
+        ok = false;
+    } else {
+        for( const pending_upload &u : pending_ ) {
+            SDL_GPUTransferBufferLocation src{};
+            src.transfer_buffer = staging_;
+            src.offset = u.offset;
+            SDL_GPUBufferRegion region{};
+            region.buffer = u.dst;
+            region.size = u.size;
+            SDL_UploadToGPUBuffer( copy_pass_, &src, &region, u.cycle );
+        }
+        SDL_EndGPUCopyPass( copy_pass_ );
+        copy_pass_ = nullptr;
+    }
+    pending_.clear();
+    pending_data_.clear();
+    return ok;
 }
 
 bool gpu::begin_pass( float r, float g, float b )
 {
-    if( !cmd_ || pass_ ) {
+    if( !cmd_ || pass_ || !flush_uploads() ) {
         return false;
-    }
-    if( copy_pass_ ) {
-        SDL_EndGPUCopyPass( copy_pass_ );
-        copy_pass_ = nullptr;
     }
     SDL_GPUColorTargetInfo cti{};
     cti.texture = color_;
@@ -443,7 +459,8 @@ SDL_Texture *gpu::end_frame()
     }
     const bool ok = SDL_SubmitGPUCommandBuffer( cmd_ );
     cmd_ = nullptr;
-    release_staging();
+    pending_.clear();
+    pending_data_.clear();
     return ok ? wrapped_ : nullptr;
 }
 

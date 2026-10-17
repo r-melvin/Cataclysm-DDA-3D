@@ -54,6 +54,7 @@ sprite_ref to_sprite_ref( const texture_draw_data &data )
     const float half_v = 0.5f / tex_h;
     sprite_ref ref;
     ref.sheet = data.texture;
+    ref.owner = data.owner;
     ref.u0 = data.uv0.first + half_u;
     ref.v0 = data.uv0.second + half_v;
     ref.u1 = data.uv1.first - half_u;

@@ -12,7 +12,7 @@
 namespace
 {
 
-bool near( float a, float b, float eps = 1e-3f )
+bool approx( float a, float b, float eps = 1e-3f )
 {
     return std::fabs( a - b ) <= eps;
 }
@@ -30,7 +30,7 @@ TEST_CASE( "r3d_matrix_inverse_round_trips", "[r3d]" )
     const r3d::mat4 id = vp * inv;
     for( int r = 0; r < 4; ++r ) {
         for( int c = 0; c < 4; ++c ) {
-            CHECK( near( id.at( r, c ), r == c ? 1.0f : 0.0f, 1e-2f ) );
+            CHECK( approx( id.at( r, c ), r == c ? 1.0f : 0.0f, 1e-2f ) );
         }
     }
 }
@@ -48,8 +48,8 @@ TEST_CASE( "r3d_camera_looks_at_target", "[r3d]" )
 
         // Target projects to the middle of the screen and in front of the camera.
         const r3d::vec3 ndc = r3d::transform_point( cam.view_projection( aspect ), cam.target );
-        CHECK( near( ndc.x, 0.0f ) );
-        CHECK( near( ndc.y, 0.0f ) );
+        CHECK( approx( ndc.x, 0.0f ) );
+        CHECK( approx( ndc.y, 0.0f ) );
         CHECK( ndc.z > 0.0f );
         CHECK( ndc.z < 1.0f );
 
@@ -74,8 +74,8 @@ TEST_CASE( "r3d_camera_screen_ray_round_trips_projection", "[r3d]" )
             // Any point along the ray must project back to the same screen position.
             const r3d::vec3 p = r.origin + r.dir * 20.0f;
             const r3d::vec3 ndc = r3d::transform_point( vp, p );
-            CHECK( near( ndc.x, nx, 1e-2f ) );
-            CHECK( near( ndc.y, ny, 1e-2f ) );
+            CHECK( approx( ndc.x, nx, 1e-2f ) );
+            CHECK( approx( ndc.y, ny, 1e-2f ) );
         }
     }
 }
@@ -119,7 +119,7 @@ TEST_CASE( "r3d_camera_steps_clamp", "[r3d]" )
 
     cam.yaw = 0.0f;
     cam.rotate_steps( 24 ); // 24 * 15 degrees = a full turn
-    CHECK( ( near( cam.yaw, 0.0f, 0.05f ) || near( std::fabs( cam.yaw ), 6.2831853f, 0.05f ) ) );
+    CHECK( ( approx( cam.yaw, 0.0f, 0.05f ) || approx( std::fabs( cam.yaw ), 6.2831853f, 0.05f ) ) );
 }
 
 TEST_CASE( "r3d_frustum_culls_boxes", "[r3d]" )
@@ -146,7 +146,7 @@ TEST_CASE( "r3d_raycast_hits_floor_tile_under_ray", "[r3d]" )
     CHECK( down.y == 5 );
     CHECK( down.z == 0 );
     CHECK( down.face == r3d::hit_face::top );
-    CHECK( near( down.t, 9.9f ) );
+    CHECK( approx( down.t, 9.9f ) );
 
     // A ray pointing away misses.
     const r3d::voxel_hit up = r3d::raycast_columns( { 7.5f, 5.5f, 10.0f }, { 0.0f, 0.0f, 1.0f },
@@ -271,7 +271,7 @@ TEST_CASE( "r3d_raycast_matches_reference", "[r3d]" )
                 CHECK( fast.x == slow.x );
                 CHECK( fast.y == slow.y );
                 CHECK( fast.z == slow.z );
-                CHECK( near( fast.t, slow.t, 1e-3f ) );
+                CHECK( approx( fast.t, slow.t, 1e-3f ) );
             }
         }
     }

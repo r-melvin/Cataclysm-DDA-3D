@@ -269,10 +269,11 @@ float column_height( state &s, const map &here, const tripoint_bub_ms &p )
     return std::min( h, 1.0f );
 }
 
-// Dim bluish tint of tiles that are remembered but not currently seen.
+// Tint of tiles that are remembered but not currently seen: a light sepia, close to how the
+// flat view draws its memory (color_pixel_sepia_light), so known rooms stay readable.
 uint32_t remembered_light()
 {
-    return pack_light( 64, 77, 107 );
+    return pack_light( 178, 158, 128 );
 }
 
 // Where things on a tile stand: the floor, or the top of furniture that can be climbed onto
@@ -483,10 +484,11 @@ bool capture( const std::string &path )
 void compare_capture()
 {
     // CATA_R3D_COMPARE=<prefix> saves, once, as soon as a game is on screen:
-    //  - <prefix>_3d.png: the 3D view with tileset CATA_R3D_COMPARE_3D_TILESET (default
-    //    UltimateCataclysm) through the CATA_R3D_CAMERA camera (e.g. "-45,30,20,1");
-    //  - <prefix>_2d.png: the flat view of the same turn and place with the isometric tileset
-    //    CATA_R3D_COMPARE_TILESET (default Ultica_iso).
+    //  - <prefix>_2d.png: the flat view with the isometric tileset CATA_R3D_COMPARE_TILESET
+    //    (default Ultica_iso);
+    //  - <prefix>_3d.png: the same turn and place in the 3D view with tileset
+    //    CATA_R3D_COMPARE_3D_TILESET (default UltimateCataclysm) through the CATA_R3D_CAMERA
+    //    camera (e.g. "-45,30,20,1"); an orthographic camera gets the isometric shot's scale.
     // No input is handled in between, so no turn passes. Afterwards the previous tileset and
     // view come back (the options file is never written), or with CATA_R3D_QUIT_AFTER_SHOT the
     // game exits (status 0 when both shots were saved).
@@ -506,23 +508,37 @@ void compare_capture()
         return std::string( value ? value : fallback );
     };
 
+    // The flat isometric view first: its tile size sets the scale of the 3D shot.
+    tiles.setValue( env_or( "CATA_R3D_COMPARE_TILESET", "Ultica_iso" ) );
+    view_3d.setValue( "false" );
+    const bool ok_2d = reload_map_tileset() && capture( base + "_2d.png" );
+    const int iso_tile_width = closetilecontext->get_tile_width();
+
     tiles.setValue( env_or( "CATA_R3D_COMPARE_3D_TILESET", "UltimateCataclysm" ) );
     view_3d.setValue( "true" );
     bool ok_3d = reload_map_tileset();
     if( ok_3d ) {
         // The game is waiting for input and draws nothing by itself; draw until the chunks
         // around the view are built (a few per frame).
-        constexpr int settle_frames = 40;
-        for( int i = 0; i < settle_frames; ++i ) {
+        const auto redraw = []() {
             g->invalidate_main_ui_adaptor();
             ui_manager::redraw();
+        };
+        redraw();
+        state &s = st();
+        if( s.cam.orthographic && iso_tile_width > 0 && s.shown.valid ) {
+            // Same scale as the flat view: a tile (whose diagonal spans sqrt(2) across the
+            // screen at the isometric yaw) as wide as an isometric diamond.
+            const float half_height = 1.41421356f * s.shown.h / ( 2.0f * iso_tile_width );
+            s.cam.distance = std::clamp( half_height / std::tan( s.cam.fovy * 0.5f ),
+                                         camera::min_distance, camera::max_distance );
+        }
+        constexpr int settle_frames = 40;
+        for( int i = 0; i < settle_frames; ++i ) {
+            redraw();
         }
         ok_3d = active() && capture( base + "_3d.png" );
     }
-
-    tiles.setValue( env_or( "CATA_R3D_COMPARE_TILESET", "Ultica_iso" ) );
-    view_3d.setValue( "false" );
-    const bool ok_2d = reload_map_tileset() && capture( base + "_2d.png" );
 
     if( std::getenv( "CATA_R3D_QUIT_AFTER_SHOT" ) ) {
         std::_Exit( ok_3d && ok_2d ? 0 : 1 );

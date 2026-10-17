@@ -56,6 +56,36 @@ Notes:
 * Never-seen ground is drawn as dark floor, so in orbit mode the sky colour shows only beyond the
   loaded area (low camera pitch) and through gaps.
 
+### Menus track
+
+**Survey: how menus are drawn today.**
+
+* *ImGui (most menus already).* `uilist` (every pick-one list in the game: action menu, item
+  actions, world/character pickers, yes/no choices), `query_popup` and `input_popup` (all popups and
+  text prompts), help, keybindings, crafting, character creation, inventory compare, item info and
+  extended description, dialogue, mission, faction, medical, scores, martial arts, the overmap
+  sidebar, surroundings, study zones, the debug console and editmap
+  (`grep "public cataimgui::window" src`). They all share one `ImGuiStyle`, so a style change
+  reaches them all at once.
+* *Curses-emulated windows.* The main menu (`main_menu.cpp`), the options screen
+  (`options.cpp`), the inventory selector (`inventory_ui.cpp`), advanced inventory panes, world
+  creation and mod manager (`worldfactory.cpp`), vehicle interaction, construction, diary, the
+  message log and the sidebar panels. They draw ASCII-art boxes with `draw_border()`
+  (`output.cpp`, always `BORDER_COLOR` = light grey) and colour everything with curses colours.
+* *Styling mechanism.* `data/raw/imgui_styles/*.json` (and `config/custom_styles/`) are picked
+  from Main menu → Settings → ImGui Styles (`ui_style_picker.cpp`); the pick is copied to
+  `config/imgui_style.json` and `cataimgui::init_colors()` loads it. Until now it held **colours
+  only**: no spacing, rounding or borders, and nothing for the curses side.
+* *What is cheap.* (1) Teaching the style file sizes (padding, spacing, rounding, border widths)
+  restyles every ImGui menu at once. (2) Teaching it a curses border/title colour restyles every
+  `draw_border()` box without touching the screens. (3) Key hints all go through
+  `cataimgui::TextKeybinding`, so key caps can be drawn there once. Rewriting the curses screens
+  in ImGui is not cheap and is out of scope here.
+
+---
+
+## The research note
+
 Research note for the 3D renderer (`feature/r3d-renderer`, see `doc/R3D_STATUS.md`) and the
 first-person mode (`feature/r3d-first-person`, `doc/R3D_FIRST_PERSON.md` on that branch).
 Written 2026-10-17. No code was changed for this note.

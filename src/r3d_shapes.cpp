@@ -41,16 +41,20 @@ shape classify_furniture( const tile_traits &t )
     if( t.flat ) {
         return { shape_kind::floor, decal_height };
     }
-    // Furniture sprites are drawn top-down with transparent margins, so wrapping them around a box
-    // gives hollow shells. Tall impassable furniture (lockers, fridges) is drawn by tilesets as
-    // seen from the front, so it stands upright; the rest is a sprite lying on top of the
-    // furniture's height.
-    const float height = t.tiny ? tiny_height : t.low ? low_height : t.flat_surface ? surface_height :
-                         t.move_cost <= 0 ? tall_furniture_height : default_furniture_height;
-    if( t.move_cost <= 0 && !t.tiny && !t.low && !t.flat_surface ) {
-        return { shape_kind::upright, height };
+    if( t.tiny ) {
+        return { shape_kind::floor, tiny_height };
     }
-    return { shape_kind::floor, height };
+    // Solid furniture is a box: tilesets draw it in 3/4 view, so the top of the sprite becomes
+    // the box's top and the rest its sides. Low or flat-topped pieces (benches, counters, tables)
+    // are low boxes, other impassable ones (lockers, fridges) tall ones.
+    if( t.low || t.flat_surface ) {
+        return { shape_kind::prism, t.flat_surface ? surface_height : low_height };
+    }
+    if( t.move_cost <= 0 ) {
+        return { shape_kind::prism, tall_furniture_height };
+    }
+    // Small passable things (chairs, plants) stand up as a sprite.
+    return { shape_kind::upright, default_furniture_height };
 }
 
 namespace

@@ -105,17 +105,25 @@ constexpr std::array<uint8_t, 5> face_shade = { 255, 178, 204, 153, 191 }; // to
 
 // All faces use the full sprite horizontally. Vertically the sprite spans one tile height starting
 // at z_base, so a shorter box shows only the lower part of it.
-void emit_top( quad_sink &sink, const sprite_ref &s, int x, int y, float z, const light_ref &ref )
+// front: for a 3/4-view furniture sprite, the fraction at its bottom that shows the front; the
+// top face then uses the rest. Negative for ordinary top-down sprites.
+void emit_top( quad_sink &sink, const sprite_ref &s, int x, int y, float z, const light_ref &ref,
+               float front = -1.0f )
 {
     const float x0 = static_cast<float>( x );
     const float y0 = static_cast<float>( y );
     const corners_t c = {{ { x0, y0, z }, { x0 + 1, y0, z }, { x0 + 1, y0 + 1, z }, { x0, y0 + 1, z } }};
     // A tall sprite stands on its bottom square and overflows upwards; only that square is the
     // tile seen from above.
-    const float v0 = s.size_y > s.size_x ? s.v1 - ( s.v1 - s.v0 ) * s.size_x / s.size_y : s.v0;
+    float v0 = s.size_y > s.size_x ? s.v1 - ( s.v1 - s.v0 ) * s.size_x / s.size_y : s.v0;
+    float v1 = s.v1;
+    if( front >= 0.0f ) {
+        v0 = s.v0;
+        v1 = s.v1 - ( s.v1 - s.v0 ) * front;
+    }
     const float ul = s.flip ? s.u1 : s.u0;
     const float ur = s.flip ? s.u0 : s.u1;
-    const uvs_t base = {{ { ul, v0 }, { ur, v0 }, { ur, s.v1 }, { ul, s.v1 } }};
+    const uvs_t base = {{ { ul, v0 }, { ur, v0 }, { ur, v1 }, { ul, v1 } }};
     // Turning the sprite clockwise shows, at each corner, the sprite corner a quarter turn back.
     uvs_t uv;
     for( size_t i = 0; i < 4; ++i ) {
@@ -130,12 +138,14 @@ bool is_tall( const sprite_ref &s )
 }
 
 void emit_side( quad_sink &sink, const sprite_ref &s, int x, int y, face_bit face, float z_base,
-                float z_top, const light_ref &ref, float shift_x = 0.0f, float shift_y = 0.0f )
+                float z_top, const light_ref &ref, float shift_x = 0.0f, float shift_y = 0.0f,
+                float front = -1.0f )
 {
     const float x0 = static_cast<float>( x ) + shift_x;
     const float y0 = static_cast<float>( y ) + shift_y;
     const float dv = s.v1 - s.v0;
-    const float v_top = s.v1 - dv * ( z_top - z_base );
+    // With front set the side shows the sprite's front strip, whatever the box height.
+    const float v_top = front >= 0.0f ? s.v1 - dv * front : s.v1 - dv * ( z_top - z_base );
     const float v_bot = s.v1;
     // left/right are as seen from outside the box, so sprites are never mirrored.
     float lx = 0.0f;
@@ -194,19 +204,19 @@ constexpr float layer_lift = 0.004f;
 
 // Emits the backdrop (if the tile has one) and then the foreground slightly in front of it.
 void emit_top_layers( quad_sink &sink, const tile_info &t, int x, int y, float z,
-                      const light_ref &ref )
+                      const light_ref &ref, float front = -1.0f )
 {
     if( t.backdrop.valid ) {
-        emit_top( sink, t.backdrop, x, y, z, ref );
+        emit_top( sink, t.backdrop, x, y, z, ref, front );
     }
-    emit_top( sink, t.sprite, x, y, t.backdrop.valid ? z + layer_lift : z, ref );
+    emit_top( sink, t.sprite, x, y, t.backdrop.valid ? z + layer_lift : z, ref, front );
 }
 
 void emit_side_layers( quad_sink &sink, const tile_info &t, int x, int y, face_bit face, float z_base,
-                       float z_top, const light_ref &ref )
+                       float z_top, const light_ref &ref, float front = -1.0f )
 {
     if( t.backdrop.valid ) {
-        emit_side( sink, t.backdrop, x, y, face, z_base, z_top, ref );
+        emit_side( sink, t.backdrop, x, y, face, z_base, z_top, ref, 0.0f, 0.0f, front );
     }
     // Pushing the foreground outwards means shifting the whole face by its normal.
     float dx = 0.0f;
@@ -215,7 +225,15 @@ void emit_side_layers( quad_sink &sink, const tile_info &t, int x, int y, face_b
         dx = face == face_east ? layer_lift : face == face_west ? -layer_lift : 0.0f;
         dy = face == face_south ? layer_lift : face == face_north ? -layer_lift : 0.0f;
     }
-    emit_side( sink, t.sprite, x, y, face, z_base, z_top, ref, dx, dy );
+    emit_side( sink, t.sprite, x, y, face, z_base, z_top, ref, dx, dy, front );
+}
+
+// How much of a 3/4-view furniture sprite is its front, for a box of the given height (in
+// z-levels): taller furniture shows more front. Storeys are drawn about 1.6 tiles tall.
+float front_fraction( float height )
+{
+    const float seen = height * 1.6f;
+    return std::clamp( seen / ( seen + 1.0f ), 0.25f, 0.65f );
 }
 
 light_ref make_ref( int lx, int ly, int dx, int dy, int dz, uint8_t shade )
@@ -599,10 +617,12 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                                  make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
                 continue;
             }
+            // A box: top of the sprite on top, its front strip on every side.
+            const float front = front_fraction( fs.height - ts.height );
             const uint8_t furn_faces = visible_faces( fs, nb );
             if( ( furn_faces & face_top ) != 0 ) {
                 emit_top_layers( sink, furn, lx, ly, fs.height,
-                                 make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                                 make_ref( lx, ly, 0, 0, 0, face_shade[0] ), front );
             }
             const struct {
                 face_bit face;
@@ -615,8 +635,8 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             };
             for( const auto &s : sides ) {
                 if( ( furn_faces & s.face ) != 0 ) {
-                    emit_side_layers( sink, furn, lx, ly, s.face, floor_height, fs.height,
-                                      make_ref( lx, ly, s.dx, s.dy, 0, s.shade ) );
+                    emit_side_layers( sink, furn, lx, ly, s.face, ts.height, fs.height,
+                                      make_ref( lx, ly, s.dx, s.dy, 0, s.shade ), front );
                 }
             }
         }

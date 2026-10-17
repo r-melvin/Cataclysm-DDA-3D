@@ -321,29 +321,34 @@ TEST_CASE( "r3d_terrain_shapes", "[r3d]" )
 
 TEST_CASE( "r3d_furniture_shapes", "[r3d]" )
 {
-    // Ordinary walkable furniture (chairs, beds) is a sprite on top, not a box: its sprite has
-    // transparent margins that would make a hollow shell.
+    // Small walkable furniture (chairs) stands up as a sprite.
     r3d::tile_traits t;
     const r3d::shape ordinary = r3d::classify_furniture( t );
-    CHECK( ordinary.kind == r3d::shape_kind::floor );
+    CHECK( ordinary.kind == r3d::shape_kind::upright );
     CHECK( ordinary.height > r3d::floor_height );
 
     t = {};
     t.tiny = true;
-    CHECK( r3d::classify_furniture( t ).height < ordinary.height );
+    const r3d::shape tiny = r3d::classify_furniture( t );
+    CHECK( tiny.kind == r3d::shape_kind::floor );
+    CHECK( tiny.height < ordinary.height );
 
-    // Tall impassable furniture (lockers, fridges) stands upright and is taller than the default.
+    // Impassable furniture (lockers, fridges) is a tall box.
     t = {};
     t.move_cost = 0;
     const r3d::shape locker = r3d::classify_furniture( t );
-    CHECK( locker.kind == r3d::shape_kind::upright );
+    CHECK( locker.kind == r3d::shape_kind::prism );
     CHECK( locker.height > ordinary.height );
 
-    // Impassable but low or flat-topped things (counters, low walls) stay top-only.
+    // Benches and counters are low boxes, lower than lockers.
     t = {};
-    t.move_cost = 0;
+    t.low = true;
+    const r3d::shape bench = r3d::classify_furniture( t );
+    CHECK( bench.kind == r3d::shape_kind::prism );
+    CHECK( bench.height < locker.height );
+    t = {};
     t.flat_surface = true;
-    CHECK( r3d::classify_furniture( t ).kind == r3d::shape_kind::floor );
+    CHECK( r3d::classify_furniture( t ).kind == r3d::shape_kind::prism );
 
     t = {};
     t.flat = true;

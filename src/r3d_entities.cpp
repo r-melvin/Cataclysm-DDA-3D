@@ -33,6 +33,9 @@ constexpr int creature_radius = 45; // tiles around the view that are searched f
 constexpr int item_radius = 20;     // and for items (every tile costs a map lookup)
 constexpr float marker_box_height = 1.0f;
 constexpr float item_size = 0.6f;
+constexpr float item_stand_size = 0.45f; // first person: size of an item standing on the floor
+constexpr float post_width = 0.3f;       // first person: markers along a line of fire
+constexpr float post_height = 0.6f;
 
 // Light colour with a zero alpha: no depth pull (see r3d_block.vert), for everything in the
 // entity mesh that is not the top of a billboard.
@@ -137,12 +140,36 @@ void emit_flat( quad_sink &sink, const tile_info &sprite, float cx, float cy, fl
     }
 }
 
-// Box standing on a tile with the sprite on its four sides, so a cursor reads as a 3D outline.
-void emit_marker_box( quad_sink &sink, const sprite_ref &s, float x0, float y0, float z0, float z1,
-                      uint32_t color )
+// Sprite standing upright on the floor at (cx, cy), turned towards the screen (right is the unit
+// vector along the screen's horizontal, world space), size tiles wide and tall in stretched space.
+void emit_stand( quad_sink &sink, const tile_info &sprite, const vec3 &right_world, float z_scale,
+                 float cx, float cy, float z, uint32_t color, float size = item_stand_size )
 {
-    const float x1 = x0 + 1.0f;
-    const float y1 = y0 + 1.0f;
+    const float rx = right_world.x * size * 0.5f;
+    const float ry = -right_world.y * size * 0.5f; // tile space has y flipped
+    const float top = z + size / z_scale;
+    const corners_t c = {{ { cx - rx, cy - ry, top }, { cx + rx, cy + ry, top }, { cx + rx, cy + ry, z },
+            { cx - rx, cy - ry, z }
+        }
+    };
+    for( const sprite_ref *s : { &sprite.backdrop, &sprite.sprite } ) {
+        if( !s->valid ) {
+            continue;
+        }
+        const uvs_t uv = {{ { s->u0, s->v0 }, { s->u1, s->v0 }, { s->u1, s->v1 }, { s->u0, s->v1 } }};
+        sink.add_colored( *s, c, uv, light_ref{}, no_pull( color ) );
+    }
+}
+
+// Box standing on a tile with the sprite on its four sides, so a cursor reads as a 3D outline.
+// size is the footprint's width; the box is centred on the tile.
+void emit_marker_box( quad_sink &sink, const sprite_ref &s, float x0, float y0, float z0, float z1,
+                      uint32_t color, float size = 1.0f )
+{
+    x0 += ( 1.0f - size ) * 0.5f;
+    y0 += ( 1.0f - size ) * 0.5f;
+    const float x1 = x0 + size;
+    const float y1 = y0 + size;
     const uvs_t uv = {{ { s.u0, s.v0 }, { s.u1, s.v0 }, { s.u1, s.v1 }, { s.u0, s.v1 } }};
     const std::array<std::array<float, 4>, 4> sides = {{
             { x0, y1, x1, y1 }, { x1, y0, x0, y0 }, { x1, y1, x1, y0 }, { x0, y0, x0, y1 }
@@ -164,10 +191,19 @@ chunk_mesh build_entity_mesh( const entity_view &view )
     map &here = get_map();
     const avatar &you = get_avatar();
     quad_sink sink;
+    const bool upright = view.upright_billboards;
     const vec3 right = view.cam.ground_right();
     // Camera vectors in the stretched space the picture is in (see camera::z_scale).
-    const vec3 toward = normalize( view.cam.eye() - view.cam.stretched_target() );
-    const vec3 up = cross( right, vec3{ 0.0f, 0.0f, 0.0f } - toward );
+    vec3 toward = normalize( view.cam.eye() - view.cam.stretched_target() );
+    vec3 up = cross( right, vec3{ 0.0f, 0.0f, 0.0f } - toward );
+    if( upright ) {
+        // Cylindrical billboards: straight up, facing the screen, so nothing leans and nothing
+        // needs its depth pulled (see r3d_block.vert). The horizontal view direction orders
+        // the layers of a sprite.
+        const vec3 ahead = view.cam.fp_forward();
+        toward = normalize( vec3{ -ahead.x, -ahead.y, 0.0f } );
+        up = { 0.0f, 0.0f, 1.0f };
+    }
     const uint32_t white = pack_light( 255, 255, 255 );
 
     auto in_range = [&]( const tripoint_bub_ms & p, int radius ) {
@@ -211,8 +247,11 @@ chunk_mesh build_entity_mesh( const entity_view &view )
                 }
                 const std::string id = stack.begin()->typeId().str();
                 const tile_info &sprite = view.cache.named( TILE_CATEGORY::ITEM, id, view.tiles );
-                // Item art is drawn as seen from above, so it lies on the surface as in the
-                // flat view (the first-person view stands it up).
+                if( upright ) {
+                    emit_stand( sink, sprite, right, view.cam.z_scale, frame_x( p ), frame_y( p ),
+                                frame_z( p ) + view.surface( p ) + 0.02f, light );
+                    continue;
+                }
                 emit_flat( sink, sprite, frame_x( p ), frame_y( p ), frame_z( p ) + view.surface( p ) + 0.02f,
                            light );
             }
@@ -234,8 +273,8 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         if( !in_range( p, creature_radius ) ) {
             continue;
         }
-        if( !critter.is_avatar() && !you.sees( here, critter ) ) {
-            continue;
+        if( critter.is_avatar() ? upright : !you.sees( here, critter ) ) {
+            continue; // you do not see yourself from inside your head
         }
         // Characters are their body plus worn and wielded overlays, like the flat view.
         std::vector<const tile_info *> layers;
@@ -278,6 +317,18 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         const float y0 = static_cast<float>( m.pos.y() - view.center.y() );
         const float z = frame_z( m.pos ) + m.top + 0.03f;
         emit_flat( sink, *m.sprite, x0 + 0.5f, y0 + 0.5f, z, white, 1.0f );
+        if( upright && !m.box && !m.large ) {
+            // A point along a line of fire: a post that can be seen from eye level.
+            const sprite_ref &s = m.sprite->main();
+            if( s.valid ) {
+                emit_marker_box( sink, s, x0, y0, z, z + post_height, white, post_width );
+            }
+        } else if( upright && !m.box ) {
+            const sprite_ref &s = m.sprite->main();
+            if( s.valid ) {
+                emit_marker_box( sink, s, x0, y0, z, z + marker_box_height, white );
+            }
+        }
         if( m.box ) {
             const sprite_ref &s = m.sprite->sprite.valid ? m.sprite->sprite : m.sprite->backdrop;
             if( s.valid ) {

@@ -125,6 +125,7 @@ struct state {
     vec3 pan; // free camera: offset of the camera target from the viewed tile, world space
     bool walls_on = false; // whether the cache was given the wall side rules and atlas
     bool plaster_atlas = false; // whether painted walls take the atlas plaster (see the option)
+    bool chunks_first_person = false; // the mode the chunk meshes were built for
 };
 
 state &st()
@@ -190,7 +191,9 @@ void release_all_chunks( state &s )
 bool rebuild_chunk( state &s, chunk_gpu &c, const tripoint_abs_sm &pos, uint64_t stamp,
                     const submap_lookup &lookup )
 {
-    chunk_mesh mesh = build_chunk_mesh( pos, lookup, s.cache, *tilecontext );
+    mesh_options options;
+    options.first_person = s.chunks_first_person;
+    chunk_mesh mesh = build_chunk_mesh( pos, lookup, s.cache, *tilecontext, options );
     release_chunk( s, c );
     c.stamp = stamp;
     c.built = true;
@@ -1009,6 +1012,11 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     ++s.frame;
     maybe_take_screenshot( s );
     sync_camera_mode( s.cam );
+    // Meshes differ between the modes (see mesh_options), so a switch rebuilds every chunk.
+    if( s.cam.first_person() != s.chunks_first_person ) {
+        release_all_chunks( s );
+        s.chunks_first_person = s.cam.first_person();
+    }
     if( !s.env_camera_applied ) {
         apply_env_camera( s.cam );
         s.env_camera_applied = true;
@@ -1148,22 +1156,23 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     {
         return surface_height( s, here, p );
     } };
+    entities_view.upright_billboards = fp;
     // The game queues its cursors and highlights for cata_tiles::draw, which is skipped here.
     {
         const cata_tiles::frame_markers queued = tilecontext->get_frame_markers();
         const auto add_markers = [&]( const std::vector<tripoint_bub_ms> &where, const std::string & id,
-        bool box ) {
+        bool box, bool large ) {
             const tile_info &sprite = s.cache.named( TILE_CATEGORY::NONE, id, *tilecontext );
             for( const tripoint_bub_ms &p : where ) {
-                entities_view.markers.push_back( { p, column_height( s, here, p ), &sprite, box } );
+                entities_view.markers.push_back( { p, column_height( s, here, p ), &sprite, box, large } );
             }
         };
-        add_markers( queued.line, "animation_line", false );
+        add_markers( queued.line, "animation_line", false, false );
         if( queued.line_end && !queued.line_end_id.empty() ) {
-            add_markers( { *queued.line_end }, queued.line_end_id, false );
+            add_markers( { *queued.line_end }, queued.line_end_id, false, true );
         }
-        add_markers( queued.highlights, "highlight", false );
-        add_markers( queued.cursors, "cursor", true );
+        add_markers( queued.highlights, "highlight", false, true );
+        add_markers( queued.cursors, "cursor", true, true );
     }
     const chunk_mesh entities = build_entity_mesh( entities_view );
     const bool draw_entities = !entities.empty() &&

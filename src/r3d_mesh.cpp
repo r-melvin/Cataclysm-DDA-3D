@@ -712,6 +712,8 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int sub
     const tile_traits traits = traits_of( t );
     info.sh = classify_terrain( traits );
     info.tree = traits.tree;
+    info.stairs = t.has_flag( ter_furn_flag::TFLAG_GOES_UP ) ||
+                  t.has_flag( ter_furn_flag::TFLAG_GOES_DOWN );
     info.see_through = traits.transparent;
     if( info.sh.kind != shape_kind::empty ) {
         resolve_layers( tiles, t.id.str(), TILE_CATEGORY::TERRAIN, info, subtile, rota );
@@ -852,7 +854,7 @@ uint64_t chunk_stamp( const tripoint_abs_sm &pos, const submap_lookup &lookup )
 }
 
 chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lookup,
-                             tile_info_cache &cache, cata_tiles &tiles )
+                             tile_info_cache &cache, cata_tiles &tiles, const mesh_options &options )
 {
     const submap *self = lookup( pos );
     if( !self ) {
@@ -1033,6 +1035,11 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                         } else {
                             emit_top_layers( sink, terrain, lx, ly, ts.height, floor_ref );
                         }
+                    }
+                    if( options.first_person && terrain.stairs ) {
+                        // The flat sprite is a line at eye level: stand a copy of it up as well.
+                        mesh_uprights.push_back( { static_cast<uint8_t>( lx ), static_cast<uint8_t>( ly ),
+                                                   ts.height, &terrain } );
                     }
                     break;
                 case shape_kind::block:

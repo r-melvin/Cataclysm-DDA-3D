@@ -61,6 +61,7 @@ struct tile_info {
     sprite_ref backdrop; // opaque background layer, drawn first when the tileset has one
     sprite_ref sprite;   // foreground layer (alpha tested, may be sparse)
     bool tree = false;   // the level above holds its treetop, which this sprite already shows
+    bool stairs = false; // stairs and ladders (up or down)
     sprite_ref side;     // texture for the sides of a wall (see wall_sides), else invalid
     sprite_ref cap;      // the top of such a wall: a plain patch of the same texture
     // >= 0: the wall's sprite is a front elevation (tilesets draw painted walls as a band of
@@ -215,9 +216,16 @@ uint64_t chunk_stamp( const tripoint_abs_sm &pos, const submap_lookup &lookup );
 /** Packs a grey level into the RGBA8 light format of stream 1. */
 uint32_t pack_light( uint8_t r, uint8_t g, uint8_t b );
 
+/** What a chunk's mesh contains besides the basics; changing it means rebuilding every chunk. */
+struct mesh_options {
+    /** The first-person view: stairs get an upright copy of their sprite (visible at eye level). */
+    bool first_person = false;
+};
+
 /** Meshes the terrain and furniture of one submap. Returns an empty mesh if it is not loaded. */
 chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lookup,
-                             tile_info_cache &cache, cata_tiles &tiles );
+                             tile_info_cache &cache, cata_tiles &tiles,
+                             const mesh_options &options = {} );
 
 } // namespace r3d
 

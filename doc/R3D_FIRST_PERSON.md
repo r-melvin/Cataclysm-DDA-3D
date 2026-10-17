@@ -7,7 +7,7 @@ Branch `feature/r3d-first-person`. Switch it on with the option `R3D_CAMERA_MODE
 must be on. Orbit mode is unchanged when the option is `orbit`.
 
 * FP0 camera: done (not yet seen in the game).
-* FP1 billboards, items, markers: not started.
+* FP1 billboards, items, markers: done (not yet seen in the game).
 * FP2 controls: not started.
 * FP3 ceilings and sky: not started.
 
@@ -16,6 +16,11 @@ eye height; left/right arrows (with `R3D_WASD` on, the default) or ctrl+left/rig
 degrees without spending game time; W/numpad 8 walk the way you face; middle-mouse drag glances
 around and snaps back on release; ctrl+Home straightens the view (the heading is kept).
 Options `R3D_FP_FOV` (60-110) and `R3D_FP_EYE_HEIGHT` (50-95).
+
+FP1: creatures and trees stand straight up facing the screen with their feet on the floor (your
+own sprite is not drawn); items on the floor are small upright stands; stairs and ladders also get
+an upright copy of their sprite; the look/aim cursor is a box and the aim line is a row of posts.
+Spawn a zombie next to you and another five tiles away to check they are not clipped or leaning.
 
 Design for a first-person, **turn-based** view on top of the existing `r3d` renderer
 (`src/r3d*.{h,cpp}`, SDL3 GPU). Target branch: `feature/r3d-first-person`. Companion to

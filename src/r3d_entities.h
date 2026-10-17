@@ -36,6 +36,7 @@ struct entity_view {
         float top = 0.0f;           // surface height within the tile, see column_height
         const tile_info *sprite = nullptr;
         bool box = false;           // also draw the sprite on the sides of a box above the tile
+        bool large = false;         // first person: a full-height box rather than a small post
     };
     std::vector<marker> markers;
 
@@ -49,6 +50,12 @@ struct entity_view {
 
     /** Height within its level of what stands on a tile: the floor, or a bench or counter top. */
     std::function<float( const tripoint_bub_ms & )> surface;
+
+    /**
+     * First person: sprites stand upright facing the screen (no lean, no depth pull), items are
+     * small stands, markers are posts, and the viewer's own sprite is left out.
+     */
+    bool upright_billboards = false;
 };
 
 /**

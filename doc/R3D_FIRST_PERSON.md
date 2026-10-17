@@ -44,6 +44,16 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
   with `R3D_FP_OCCLUDE_UNSEEN` on, since only then are they drawn solid). Ticks behind the
   strip's ends are dimmer. `flags.y` of the uniforms is unused again.
   The crosshair label now names only tiles you see or remember.
+* Space binding: fixed. `r3d_fp_select_ahead` was bound to Space, which is the game's global
+  `QUIT` key. An input context resolves a key to the first *registered* action whose bindings
+  (its category's own, else the global ones) contain it (`input_context::input_to_action`). In
+  direction prompts (`choose_direction`, category DEFAULTMODE) `QUIT` is registered first, so
+  Space still cancelled and the first-person key never fired; in look and aiming mode the
+  first-person action was registered first, so Space stopped leaving those modes. It is now
+  bound to **/** in DEFAULTMODE, LOOK and TARGET, a key no registered action of those three
+  contexts uses in the default keymap (checked against `data/raw/keybindings.json`). Space is
+  `QUIT` again everywhere. Arrow keys still turn and `e` is still examine. In direction prompts
+  the forward key already means "ahead" too, since directions turn with the heading.
 * Review of bearings and ceilings: done. The compass, the threat and sound ticks and the edge
   alert go through the pure `src/r3d_hud.{h,cpp}` (bearing = radians clockwise from north with
   the map's y south, the same convention as `camera::heading`, `fp_yaw()`, `eighths_towards` and
@@ -75,7 +85,8 @@ own sprite is not drawn); items on the floor are small upright stands; stairs an
 an upright copy of their sprite; the look/aim cursor is a box and the aim line is a row of posts.
 Spawn a zombie next to you and another five tiles away to check they are not clipped or leaning.
 
-FP2 keys: **Space** picks the tile you face in look mode, in aiming mode and in direction prompts
+FP2 keys: **/** (slash; it was Space, see "Space binding" above) picks the tile you face in look
+mode, in aiming mode and in direction prompts
 (close, examine, smash ...; option `R3D_FP_USE_HEADING`, on by default; it replaces the idea of
 pre-selecting a default direction). **ctrl+Tab** turns (free) to the nearest visible hostile.
 ctrl+PgUp/PgDn (the zoom keys) look one level up/down as a 45 degree tilt (display only; the mouse
@@ -304,7 +315,7 @@ after `ACTION_R3D_RESET` in `action.h`, names in `action.cpp:353ff`, defaults in
 | `r3d_rotate_left` / `r3d_rotate_right` | ctrl+←/→; plain ←/→ when `R3D_WASD` is on (already so in orbit mode, `r3d_key_action`); optionally **Q / E** with `R3D_FP_QE_TURN` | Turn heading by one eighth. No game time. | `r3d::rotate(±1)` → `camera::rotate_steps`. `r3d_key_action` (`input_context.cpp:478`) gains `'q'`/`'e'` → rotate when `mode == first_person && R3D_FP_QE_TURN`. In the default keymap (`data/raw/keybindings.json`, `DEFAULTMODE`) `q` is **unbound** but `e` is **examine** (and `E` is eat, not examine), so `R3D_FP_QE_TURN` defaults to **off**; with it on, examine is reached through the action menu or a rebind. Arrow-key turning is the primary binding (open question 2). |
 | `r3d_pitch_up` / `r3d_pitch_down` | ctrl+↑/↓; plain ↑/↓ with `R3D_WASD` | Look up/down 15° (display only). | `r3d::pitch(±1)`. |
 | `r3d_fp_look_level_up` / `_down` | ctrl+PgUp/PgDn (replaces `r3d_zoom_*` in FP) | Sets `u.view_offset.z()` ±1 and tilts `look_pitch` to ±45°, so "look at the floor above" is one key. | Same thing `look_around`'s `change_lv` does; `r3d_zoom_*` keep their meaning in orbit. |
-| `r3d_fp_select_ahead` | **Space** in the `LOOK` and `TARGET` contexts only (Space is unbound in both in the default keymap; not added to DEFAULTMODE) | Move the look/target cursor to the crosshair tile. | New action registered in `game::look_around` and `target_ui` contexts; they already handle `SELECT`/mouse, so this sets `lp`/`dst` and continues the loop. `TARGET` already has `*` = `TOGGLE_SNAP_TO_TARGET`, which stays. |
+| `r3d_fp_select_ahead` | **/** in the `LOOK` and `TARGET` contexts and in direction prompts (Space, first proposed here, is the global `QUIT` key) | Move the look/target cursor to the crosshair tile. | New action registered in `game::look_around` and `target_ui` contexts; they already handle `SELECT`/mouse, so this sets `lp`/`dst` and continues the loop. `TARGET` already has `*` = `TOGGLE_SNAP_TO_TARGET`, which stays. |
 | `r3d_fp_face_threat` | **ctrl+Tab** (DEFAULTMODE). Plain Tab is `autoattack`, which already attacks the nearest hostile and so complements this. | Turn to face the nearest visible hostile (or the newest sound marker when none). | Picks from `g->all_creatures()` with `you.sees()` and `attitude_to(you) == Attitude::HOSTILE`, computes `direction_from` → eighths, sets heading with a tween. |
 | `r3d_first_person` | **ctrl+F** | Toggle orbit ↔ first person. | New `r3d::toggle_first_person()`. |
 | `r3d_reset` | ctrl+Home | FP: reset pitch/glance/FOV; keep heading. | existing |
@@ -436,7 +447,7 @@ in `w_terrain`'s pixel rectangle, so overlays (inventory, ImGui) draw above it.
   returns the hit creature if any. Cached in `state::crosshair`.
 * **Look** (`game::look_around`): FP `draw()` keeps the eye on the player (F2) and draws the
   cursor marker at `lp`. Arrow/numpad keys move `lp` by `get_direction(action, true)`, which is
-  already rotated by `view_eighths()`, so "right" moves the cursor to screen-right. Space
+  already rotated by `view_eighths()`, so "right" moves the cursor to screen-right. `/`
   (`r3d_fp_select_ahead`) sets `lp = crosshair`. Mouse hover and click work via `get_coordinates`.
   Fast scroll etc. unchanged.
 * **Examine / open / close / smash / `choose_adjacent`**: when `R3D_FP_USE_HEADING` is on, the
@@ -445,7 +456,7 @@ in `w_terrain`'s pixel rectangle, so overlays (inventory, ImGui) draw above it.
   direction key; the keys are rotated by the heading as everywhere else. Pressing the action key
   twice (e.g. `e e` with Q/E turning off, the default) therefore examines what is ahead.
 * **Fire / throw** (`target_ui` in `ranged.cpp`): the aim cursor starts on the last target as
-  now; Space snaps it to the crosshair tile; the trajectory `animation_line` becomes posts
+  now; `/` snaps it to the crosshair tile; the trajectory `animation_line` becomes posts
   (§3.6). `target_ui::set_view_offset` is ignored by the FP camera (F2). The aim window stays a
   curses overlay.
 * **Mouse "look under cursor"** keeps working through `pick()`; the hover label uses the mouse
@@ -560,7 +571,7 @@ Each milestone is independently testable in the game and with the existing tooli
   keys, wheel option. Keybinding JSON + action enum + names.
 * Verify: with WASD on, W/S/A/D step forward/back/strafe at all 8 headings (walk a square and
   come back to the start tile; check the message log shows no wasted turns on Q/E); in look mode
-  Space selects the tile under the crosshair; Tab faces a spawned zombie; `e` with the option on
+  `/` selects the tile under the crosshair; Tab faces a spawned zombie; `e` with the option on
   pre-selects the tile ahead; keybindings menu lists the new actions; menus (inventory, crafting)
   still receive plain q/e/arrows.
 

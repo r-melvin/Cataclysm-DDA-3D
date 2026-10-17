@@ -3483,21 +3483,21 @@
     "name": "3D view (first person): pick the tile ahead",
     "category": "DEFAULTMODE",
     "id": "r3d_fp_select_ahead",
-    "bindings": [ { "input_method": "keyboard_any", "key": "SPACE" } ]
+    "bindings": [ { "input_method": "keyboard_any", "key": "/" } ]
   },
   {
     "type": "keybinding",
     "name": "3D view (first person): pick the tile under the crosshair",
     "category": "LOOK",
     "id": "r3d_fp_select_ahead",
-    "bindings": [ { "input_method": "keyboard_any", "key": "SPACE" } ]
+    "bindings": [ { "input_method": "keyboard_any", "key": "/" } ]
   },
   {
     "type": "keybinding",
     "name": "3D view (first person): aim at the tile under the crosshair",
     "category": "TARGET",
     "id": "r3d_fp_select_ahead",
-    "bindings": [ { "input_method": "keyboard_any", "key": "SPACE" } ]
+    "bindings": [ { "input_method": "keyboard_any", "key": "/" } ]
   },
   {
     "type": "keybinding",

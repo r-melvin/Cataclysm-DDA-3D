@@ -2699,8 +2699,8 @@ void options_manager::add_options_graphics()
 
         get_option( "R3D_FP_CROSSHAIR" ).setPrerequisite( "RENDERER_3D" );
 
-        add( "R3D_FP_USE_HEADING", page_id, to_translation( "3D first-person: Space picks the tile ahead" ),
-             to_translation( "In first person, direction prompts (close, examine, smash and so on) also accept Space for the tile you are facing." ),
+        add( "R3D_FP_USE_HEADING", page_id, to_translation( "3D first-person: a key picks the tile ahead" ),
+             to_translation( "In first person, direction prompts (close, examine, smash and so on) also accept the \"pick the tile ahead\" key (/ by default) for the tile you are facing.  In look and aiming mode the same key moves the cursor to the tile under the crosshair either way." ),
              true, COPT_CURSES_HIDE
            );
 

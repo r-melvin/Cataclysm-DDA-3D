@@ -41,10 +41,16 @@ uint32_t lighten( uint32_t rgb, float factor )
 uint32_t wall_tint( uint32_t tileset_color, uint32_t preset )
 {
     constexpr float grey_mean = 200.0f;
-    const uint32_t rgb = ( tileset_color >> 24 ) != 0 ? tileset_color & 0xffffffu : preset;
+    // The material's own colour, leaning a little towards the tileset's sprite: a painted wall
+    // keeps a hint of its paint without turning a whole room lime green.
+    constexpr float sprite_share = 0.3f;
+    const bool has_sprite = ( tileset_color >> 24 ) != 0;
     uint32_t out = 0;
     for( int shift : { 16, 8, 0 } ) {
-        const float c = static_cast<float>( ( rgb >> shift ) & 255u ) * 255.0f / grey_mean;
+        const float base = static_cast<float>( ( preset >> shift ) & 255u );
+        const float sprite = static_cast<float>( ( tileset_color >> shift ) & 255u );
+        const float mixed = has_sprite ? base * ( 1.0f - sprite_share ) + sprite * sprite_share : base;
+        const float c = mixed * 255.0f / grey_mean;
         out |= static_cast<uint32_t>( std::min( c, 255.0f ) ) << shift;
     }
     return out;
@@ -400,13 +406,8 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
                 { ox + sd.rx, oy + sd.ry, zs }, { ox + sd.lx, oy + sd.ly, zs }
             }
         };
-        // A slab's sides are its own wood, darker than the seat so the thickness shows even
-        // where the sprite's edge rows are the same colour as its top.
-        light_ref side_ref = refs[sd.ref];
-        if( slab > 0.0f ) {
-            side_ref.shade = static_cast<uint8_t>( side_ref.shade * 3 / 4 );
-        }
-        sink.add( s, c, slab > 0.0f ? plain_uv : sd.face == front ? side_uv : plain_uv, side_ref );
+        // A slab's sides are its own wood (the lid's colour), lit like any side.
+        sink.add( s, c, slab > 0.0f ? plain_uv : sd.face == front ? side_uv : plain_uv, refs[sd.ref] );
     }
     if( zs <= z0 ) {
         return;
@@ -930,6 +931,18 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                         emit_floor_under( lx, ly, nb.north.kind == shape_kind::block ||
                                           nb.south.kind == shape_kind::block );
                     }
+                    // A second cap at the cutaway stub height, shown only where the cutaway
+                    // removes the wall above it.
+                    if( ts.height > cutaway_stub_height ) {
+                        light_ref stub_ref = make_ref( lx, ly, 0, 0, 0, face_shade[0] );
+                        stub_ref.stub = true;
+                        if( terrain.cap.valid ) {
+                            emit_top( sink, terrain.cap, lx, ly, cutaway_stub_height,
+                                      tinted( stub_ref, terrain.cap_tint ) );
+                        } else {
+                            emit_top_layers( sink, terrain, lx, ly, cutaway_stub_height, stub_ref );
+                        }
+                    }
                     if( ( faces & face_top ) != 0 ) {
                         if( terrain.cap.valid ) {
                             emit_top( sink, terrain.cap, lx, ly, ts.height,
@@ -1046,6 +1059,13 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             };
             emit_box( sink, spr, lx, ly, ts.height, fs.height, layout, visible_faces( fs, nb ) | all_sides,
                       refs, facing, joined, fs.slab );
+            // Tall pieces (lockers, shelves) get a lid at the cutaway stub height too.
+            if( fs.slab <= 0.0f && fs.height > cutaway_stub_height ) {
+                light_ref stub_ref = make_ref( lx, ly, 0, 0, 0, face_shade[0] );
+                stub_ref.stub = true;
+                emit_top( sink, spr, lx, ly, cutaway_stub_height, stub_ref,
+                          front_fraction( fs.height - ts.height ) );
+            }
         }
     }
     chunk_mesh mesh = sink.finish();

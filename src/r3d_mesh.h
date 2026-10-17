@@ -140,6 +140,9 @@ struct light_ref {
     // a floor top: shown as dark floor rather than left out where its tile was never seen,
     // so unexplored rooms are a dark floor between their seen walls, not a hole
     bool floor = false;
+    // a cap drawn at the cutaway stub height: shown only inside the cutaway, where the tile
+    // above it is removed, so a cut wall or locker reads as a low one rather than a stump
+    bool stub = false;
 };
 
 struct mesh_batch {

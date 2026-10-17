@@ -23,6 +23,7 @@ layout(location = 1) out vec4 v_light;
 layout(location = 2) out vec3 v_world;
 layout(location = 3) flat out vec4 v_cut;
 layout(location = 4) flat out vec4 v_cut2;
+layout(location = 5) flat out float v_stub;
 
 void main()
 {
@@ -41,4 +42,7 @@ void main()
     v_world = pos;
     v_cut = u.cut;
     v_cut2 = u.cut2;
+    // In the terrain pass (no billboard pull) the light's alpha flags a cap that is only drawn
+    // inside the cutaway, where the tile above it is removed.
+    v_stub = u.pull.w > 0.0 ? 0.0 : a_light.a;
 }

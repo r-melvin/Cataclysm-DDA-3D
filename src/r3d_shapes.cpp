@@ -17,7 +17,7 @@ constexpr float low_height = 0.36f;
 constexpr float surface_height = 0.4f;
 constexpr float default_furniture_height = 0.5f;
 constexpr float tall_furniture_height = 0.9f;
-constexpr float slab_thickness = 0.09f;
+constexpr float slab_thickness = 0.06f;
 // Floor-like furniture (rugs, carpets) sits just above the terrain floor.
 constexpr float decal_height = floor_height + 0.01f;
 } // namespace

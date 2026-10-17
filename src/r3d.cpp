@@ -428,6 +428,8 @@ void update_chunk_light( state &s, chunk_gpu &c, const tripoint_abs_sm &pos,
                          static_cast<uint8_t>( ( ( tile >> 0 ) & 255u ) * shade / 255u * r.tint_r / 255u ),
                          static_cast<uint8_t>( ( ( tile >> 8 ) & 255u ) * shade / 255u * r.tint_g / 255u ),
                          static_cast<uint8_t>( ( ( tile >> 16 ) & 255u ) * shade / 255u * r.tint_b / 255u ) );
+        // The light's alpha flags stub caps for the shader (see r3d_block.frag).
+        c.light[i] = ( c.light[i] & 0x00ffffffu ) | ( r.stub ? 0xff000000u : 0u );
     }
     s.device.upload( c.lights, c.light.data(),
                      static_cast<uint32_t>( c.light.size() * sizeof( uint32_t ) ), true );
@@ -445,10 +447,10 @@ void set_cutaway( block_uniforms &u, const mat4 &view_proj, float aspect, const 
     ( void )view_proj;
     ( void )aspect;
     // Half-width in tiles of the hole across the view; along the view it is stretched by the
-    // pitch so it looks round on screen. Below keep_below (above the player's floor) nothing is
-    // cut, so the floor and low furniture around them stay. See r3d_block.frag.
+    // pitch so it looks round on screen. Below the stub height nothing is cut, so the floor and
+    // low furniture around the player stay and taller things become low walls. See
+    // r3d_block.frag.
     constexpr float radius = 1.3f;
-    constexpr float keep_below = 0.3f;
     const vec3 middle = tile_to_world( { static_cast<float>( p.x() - center.x() ) + 0.5f,
                                          static_cast<float>( p.y() - center.y() ) + 0.5f, 0.0f } );
     const vec3 eye = cam.eye();
@@ -456,7 +458,7 @@ void set_cutaway( block_uniforms &u, const mat4 &view_proj, float aspect, const 
     const vec3 forward = normalize( vec3{ target.x - eye.x, target.y - eye.y, 0.0f } );
     u.cut[0] = middle.x;
     u.cut[1] = middle.y;
-    u.cut[2] = floor_height + keep_below;
+    u.cut[2] = cutaway_stub_height;
     u.cut[3] = radius;
     u.cut2[0] = forward.x;
     u.cut2[1] = forward.y;

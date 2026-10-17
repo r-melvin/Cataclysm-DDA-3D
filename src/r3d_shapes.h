@@ -28,6 +28,9 @@ struct shape {
 };
 
 constexpr float floor_height = 0.1f;
+// Height (in levels, from the floor's base) that walls and tall furniture are cut down to
+// around the player in the orbit view; they keep a cap there so they read as low walls.
+constexpr float cutaway_stub_height = 0.4f;
 
 /** The terrain/furniture properties that decide a tile's shape, flattened from ter_t / furn_t. */
 struct tile_traits {

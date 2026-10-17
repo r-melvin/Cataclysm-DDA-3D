@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <string>
 #include <utility>
@@ -51,6 +52,15 @@ void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &laye
     const float tx = toward_world.x;
     const float ty = -toward_world.y;
     const float tz = toward_world.z;
+    // Facing the camera squarely leans the top away from it, into whatever stands behind the
+    // tile (a wall). Sliding the quad towards the camera along the line of sight keeps it where
+    // it is on screen but brings the top back inside the tile's own footprint.
+    const float lean = height * std::sqrt( up_world.x * up_world.x + up_world.y * up_world.y );
+    const float toward_ground = std::sqrt( toward_world.x * toward_world.x +
+                                           toward_world.y * toward_world.y );
+    constexpr float half_tile = 0.45f;
+    const float pull = std::clamp( ( lean - half_tile ) / std::max( toward_ground, 0.05f ), 0.0f,
+                                   8.0f );
     // The quad faces the camera squarely (leaning back with its up vector), so sprites keep the
     // full size and detail they have in the flat view instead of being squashed by the pitch.
     const float ux = up_world.x * height;
@@ -61,7 +71,7 @@ void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &laye
         if( !s.valid ) {
             return;
         }
-        const float lift = 0.01f * static_cast<float>( depth++ );
+        const float lift = pull + 0.01f * static_cast<float>( depth++ );
         const float ox = cx + tx * lift;
         const float oy = cy + ty * lift;
         const float oz = z_base + tz * lift;

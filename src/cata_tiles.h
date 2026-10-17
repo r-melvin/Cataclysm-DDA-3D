@@ -425,7 +425,6 @@ class tileset
         };
 
         std::string tileset_id;
-        uint64_t tileset_loads_ = 0;
 
         bool tile_isometric = false;
         // Unscaled default size of sprites. See cata_tiles::tile_(width|height)
@@ -515,11 +514,6 @@ class tileset
         }
         float get_prevent_occlusion_max_dist() const {
             return prevent_occlusion_max_dist;
-        }
-        /** Counts tileset loads, so a view that caches sprite positions can tell a reload
-         *  of the same tileset (new textures, possibly a new atlas layout) from no change. */
-        uint64_t tileset_loads() const {
-            return tileset_loads_;
         }
         const std::string &get_tileset_id() const {
             return tileset_id;
@@ -838,6 +832,11 @@ class cata_tiles
             bool mirrored = false;                                  // facing left
         };
         character_layers get_character_layers( const Character &ch );
+        /** Counts tileset loads, so a view that caches sprite positions can tell a reload
+         *  of the same tileset (new textures, possibly a new atlas layout) from no change. */
+        uint64_t tileset_loads() const {
+            return tileset_loads_;
+        }
 
         /** One-frame markers queued by the game for the map view (see get_frame_markers). */
         struct frame_markers {
@@ -1202,6 +1201,7 @@ class cata_tiles
         // Variant pass is process-lifetime, owned alongside the renderer.
         // Consumers reach it via get_shared_variant_pass in sdltiles.h.
         std::shared_ptr<const tileset> tileset_ptr;
+        uint64_t tileset_loads_ = 0;
 
         // the scaled default sprite width and height. in non-isometric mode,
         // the basic tile width and height equal the default sprite width and

@@ -32,6 +32,11 @@ void reset_progress();
 // Play Now get guided hints under the default option.
 void prepare_new_game( bool play_now );
 
+// The scenario a Play Now (Default Scenario) character starts in when guided hints and the
+// guided start kit are on, or an empty string for the usual default scenario.  Call it after
+// prepare_new_game().
+std::string start_scenario();
+
 // Whether hints are on for this game at all.
 bool enabled();
 

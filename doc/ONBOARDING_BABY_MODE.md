@@ -48,6 +48,18 @@ Done:
     does not use F2 itself (the trade screen does) and hints are on.
   - Both keys can be rebound in the keybindings menu like any other.
 
+- **M3**: guided start and the first days.
+  - Option **Guided start kit** (`ONBOARDING_SOFT_START`, default on): with guided hints on,
+    *Play Now! (Default Scenario)* starts in the new scenario **Evacuee (guided)** with the
+    profession **Prepared Survivor** (`data/json/onboarding/soft_start.json`): the usual
+    evacuation shelter and clothes plus a backpack, a charged flashlight, a bottle of clean water
+    and a pocket knife. It is an ordinary scenario anyone can pick; rules are unchanged. With
+    the option off, or hints off, Play Now uses the usual default scenario.
+  - Phase 3 lessons in `data/json/onboarding/lessons_phase3.json`: the Tutorial Game as a
+    practice room (shown the first time you are hurt), advanced inventory, zones and sorting,
+    shooting and reloading, corpses and butchering, fire safety, wet and cold, vehicles, other
+    survivors, missions, stairs and levels.
+
 How to try it: build, start the game, **New Game > Play Now! (Default Scenario)**. A welcome popup
 appears on the first turn. Press Enter; the sidebar then reads `Next: Walk around (0/12)` and the
 log has the hint. Walk five steps, press `.`, look with `;`, stand next to a locker and press `e`,
@@ -71,7 +83,10 @@ exists in orbit view. Key names always come from the input manager (`<keybind:..
 walk instead. A lesson can name `"requires_action"` (used for the planned `status_report` action
 of the UI overhaul); it is skipped while that action does not exist or has no key.
 
-Not done yet: see the M3 list in section 4.
+Not done yet (see also section 4, M4 and M5): no "Show me in Help" deep link from a lesson
+into `data/core/help.json`; the suggested world options of the soft start (spawn rate etc.) are
+not shown; the old Tutorial Game is unchanged (M4 cleanup not started); no lesson timing dump
+(M5).
 
 ---
 

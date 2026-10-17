@@ -1881,6 +1881,13 @@ void options_manager::add_options_interface()
     },
     "play_now" );
 
+    add( "ONBOARDING_SOFT_START", "interface", to_translation( "Guided start kit" ),
+         to_translation( "With guided hints on, Play Now! (Default Scenario) starts in the "
+                         "\"Evacuee (guided)\" scenario: the usual evacuation shelter, with a "
+                         "backpack, a flashlight, a bottle of water and a pocket knife.  Off: the "
+                         "usual default scenario." ),
+         true );
+
     add_empty_line();
 
     add_option_group( "interface", Group( "measurement_unit", to_translation( "Measurement units" ),

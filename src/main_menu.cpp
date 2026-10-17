@@ -1055,13 +1055,14 @@ bool main_menu::new_character_tab()
                 play_type = character_type::FULL_RANDOM;
                 break;
         }
+        // Before creating the character: the guided start kit picks its scenario.
+        onboarding::prepare_new_game( is_play_now );
         if( !pc.create( play_type ) ) {
             load_char_templates();
             MAPBUFFER.clear();
             overmap_buffer.clear();
             return false;
         }
-        onboarding::prepare_new_game( is_play_now );
 
         if( !g->start_game() ) {
             return false;

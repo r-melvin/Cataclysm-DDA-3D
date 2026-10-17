@@ -53,6 +53,7 @@
 #include "monster.h"
 #include "mutation.h"
 #include "npc.h"
+#include "onboarding.h"
 #include "options.h"
 #include "output.h"
 #include "overmap_ui.h"
@@ -789,10 +790,16 @@ bool avatar::create( character_type type, const std::string &tempname )
             randomize( true );
             //tabs.position.last();
             break;
-        case character_type::NOW:
+        case character_type::NOW: {
             //default world, fixed scenario, random name
+            // Guided hints may start new players with a small kit (see onboarding.h).
+            const string_id<scenario> guided( onboarding::start_scenario() );
+            if( !guided.str().empty() && guided.is_valid() ) {
+                set_scenario( &guided.obj() );
+            }
             randomize( false, true );
             break;
+        }
         case character_type::FULL_RANDOM:
             //default world, random scenario, random name
             randomize( true, true );

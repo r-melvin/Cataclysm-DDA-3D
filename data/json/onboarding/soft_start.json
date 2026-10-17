@@ -1,0 +1,40 @@
+[
+  {
+    "type": "scenario",
+    "id": "evacuee_guided",
+    "//": "The guided start for new players (guided hints, option ONBOARDING_SOFT_START).  The usual Evacuee start with a small kit, so the first lessons (carrying more, light) can be done without luck.  An ordinary scenario anyone can pick.",
+    "name": "Evacuee (guided)",
+    "points": 0,
+    "description": "You have survived the initial wave of panic, and have reached (relative) safety in one of the many government evac shelters.  You grabbed a few useful things on the way.  A good first game.",
+    "allowed_locs": [ "sloc_shelter_safe" ],
+    "start_name": "Evac Shelter",
+    "professions": [ "survivor_guided" ],
+    "flags": [ "CITY_START", "FORGIVING" ]
+  },
+  {
+    "type": "profession",
+    "id": "survivor_guided",
+    "name": "Prepared Survivor",
+    "description": "Nothing much about you stands out, but on the way to the shelter you had the sense to grab a backpack, a flashlight, some water and a pocket knife.",
+    "npc_background": "BG_survival_story_EVACUEE",
+    "points": 1,
+    "items": {
+      "both": {
+        "entries": [
+          { "item": "jeans" },
+          { "item": "longshirt" },
+          { "item": "socks" },
+          { "item": "sneakers" },
+          { "item": "backpack" },
+          { "group": "charged_flashlight" },
+          { "item": "pockknife" },
+          { "item": "water_clean" },
+          { "group": "charged_smart_phone", "contents-item": "guidebook" },
+          { "group": "starter_wallet_full" }
+        ]
+      },
+      "male": { "entries": [ { "item": "boxer_shorts" } ] },
+      "female": { "entries": [ { "item": "bra" }, { "item": "panties" } ] }
+    }
+  }
+]

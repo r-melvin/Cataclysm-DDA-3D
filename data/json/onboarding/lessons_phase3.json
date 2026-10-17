@@ -1,0 +1,128 @@
+[
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_practice_room",
+    "//": "Phase 3: the first days.  This one points at the Tutorial Game once the player has been hurt.",
+    "phase": 3,
+    "order": 0,
+    "title": "Practice somewhere safe",
+    "short": "Main menu > Tutorial Game: a safe building to practise in.",
+    "text": "If you would like to try things without risking your character, the main menu has a Tutorial Game: a small building where you can practise fighting, guns, crafting and more, with nothing that can kill you.  Your save here is not affected.",
+    "trigger": [ { "event": "character_takes_damage" } ],
+    "done_when": [ { "after_turns": 1 } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_adv_inventory",
+    "phase": 3,
+    "order": 1,
+    "title": "Move many items",
+    "short": "Press <keybind:advinv> to move items between two lists.",
+    "text": "Press <keybind:advinv> for the advanced inventory: two lists side by side, each showing a place (your inventory, the ground around you, a container, a vehicle).  Move items from one side to the other to pick up, drop or store many things at once.  Press <keybind:EXPLAIN_SCREEN> there for help.",
+    "prerequisites": [ "ob_storage" ],
+    "trigger": [ { "after_turns": 600 } ],
+    "done_when": [ { "action": "advinv" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_zones",
+    "phase": 3,
+    "order": 2,
+    "title": "Zones and sorting",
+    "short": "<keybind:zones> marks zones; <keybind:loot> sorts loot into them.",
+    "text": "Once you have a base, press <keybind:zones> to mark areas on the ground: a zone for food, one for tools, one for loot to sort.  Then <keybind:loot> sorts everything for you.  It saves a lot of time once you have more than you can carry.",
+    "prerequisites": [ "ob_adv_inventory" ],
+    "trigger": [ { "after_turns": 3000 } ],
+    "done_when": [ { "action": "zones" }, { "action": "loot" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_aim_fire",
+    "phase": 3,
+    "order": 3,
+    "title": "Shooting",
+    "short": "Press <keybind:fire> to aim and fire; guns are loud.",
+    "text": "You are holding a gun.  Press <keybind:fire> to aim; move the cursor to a target and aim for longer to hit more often.  Guns are very loud: every shot can bring more zombies, so they are for emergencies, not for every fight.  <keybind:reload_item> reloads, and <keybind:unload> takes the ammunition out.",
+    "trigger": [ { "state": "wields_gun" } ],
+    "done_when": [ { "action": "fire" }, { "event": "character_ranged_attacks_monster" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_butcher",
+    "phase": 3,
+    "order": 4,
+    "title": "Corpses",
+    "short": "<keybind:butcher> butchers an animal; never eat zombie meat.",
+    "text": "There is a corpse here.  Press <keybind:butcher> to butcher it; you need a cutting tool such as a knife.  Animals give meat that you must cook.  Zombie meat is tainted and makes you sick, so never eat it.",
+    "trigger": [ { "state": "corpse_here" } ],
+    "done_when": [ { "event": "character_butchered_corpse" }, { "action": "butcher" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_fire",
+    "phase": 3,
+    "order": 5,
+    "title": "Fire",
+    "short": "Make fire in a fireplace, a brazier or outside, never on the floor.",
+    "text": "Fire cooks food and boils water.  Light it with a lighter or matches (<keybind:apply>) in a fireplace, a wood stove, a brazier or outside on bare ground, and feed it wood or paper.  A fire on an indoor floor can burn the whole building down, with you in it.  Smoke and light can be seen from far away.",
+    "prerequisites": [ "ob_crafting" ],
+    "trigger": [ { "after_turns": 3000 } ],
+    "done_when": [ { "after_turns": 600 } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_weather",
+    "phase": 3,
+    "order": 6,
+    "title": "Wet and cold",
+    "short": "You are wet.  Get dry and warm; layers keep you warm.",
+    "text": "You are wet.  Wet clothes make you cold and unhappy, and being cold for long is dangerous.  Get inside, dry off (a towel helps), and wear layers when it is cold.  The sidebar shows your warmth; the character sheet (<keybind:player_data>) shows it per body part.",
+    "trigger": [ { "state": "is_wet" } ],
+    "done_when": [ { "after_turns": 600 } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_vehicle",
+    "phase": 3,
+    "order": 7,
+    "title": "Vehicles",
+    "short": "<keybind:examine> a vehicle to open doors; <keybind:control_vehicle> drives.",
+    "text": "This is a vehicle.  Walk into a door or <keybind:examine> it to open it and look inside; vehicles often hold useful items.  To drive, sit at the controls and press <keybind:control_vehicle>; you need a working engine, fuel and a key or hotwiring.  Drive slowly at first: crashing hurts you and the car.",
+    "trigger": [ { "state": "adjacent_vehicle" } ],
+    "done_when": [ { "action": "control_vehicle" }, { "after_turns": 300 } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_npc",
+    "phase": 3,
+    "order": 8,
+    "title": "Other survivors",
+    "short": "Press <keybind:chat> to talk.  Do not hurt people by accident.",
+    "text": "There is another person nearby.  Press <keybind:chat> to talk to them: survivors can trade, give you jobs, or join you.  Hurting a survivor, even by accident, can turn them and their friends against you.",
+    "trigger": [ { "state": "npc_in_view" } ],
+    "done_when": [ { "action": "chat" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_missions",
+    "phase": 3,
+    "order": 9,
+    "title": "Missions",
+    "short": "Press <keybind:missions> to see the jobs people gave you.",
+    "text": "People you talk to can give you missions.  Press <keybind:missions> to see them; the mission target is marked on the map (<keybind:map>).  Missions are optional, and some are much harder than they sound.",
+    "prerequisites": [ "ob_npc" ],
+    "trigger": [ { "after_turns": 100 } ],
+    "done_when": [ { "action": "missions" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_stairs",
+    "phase": 3,
+    "order": 10,
+    "title": "Stairs and levels",
+    "short": "<keybind:LEVEL_DOWN> goes down, <keybind:LEVEL_UP> goes up.",
+    "text": "You are on stairs.  Press <keybind:LEVEL_DOWN> to go down and <keybind:LEVEL_UP> to go up.  Basements are dark and can hide monsters: bring a light.  Roofs and upper floors are good lookouts.",
+    "trigger": [ { "state": "on_stairs" } ],
+    "done_when": [ { "action": "LEVEL_DOWN" }, { "action": "LEVEL_UP" } ]
+  }
+]

@@ -14,6 +14,7 @@
 
 #include "action.h"
 #include "avatar.h"
+#include "bodypart.h"
 #include "calendar.h"
 #include "cata_scope_helpers.h"
 #include "cata_variant.h"
@@ -42,8 +43,10 @@
 #include "onboarding_core.h"
 #include "options.h"
 #include "output.h"
+#include "npc.h"
 #include "point.h"
 #include "popup.h"
+#include "scenario.h"
 #include "string_formatter.h"
 #include "talker.h"
 #include "translation.h"
@@ -162,7 +165,8 @@ const std::set<std::string> &known_states()
 {
     static const std::set<std::string> states = {
         "standing_on_items", "items_nearby", "adjacent_door", "adjacent_examinable",
-        "hostile_in_view", "worn_storage", "dark_here", "carries_book", "low_morale"
+        "hostile_in_view", "worn_storage", "dark_here", "carries_book", "low_morale",
+        "wields_gun", "corpse_here", "is_wet", "adjacent_vehicle", "npc_in_view", "on_stairs"
     };
     return states;
 }
@@ -845,6 +849,36 @@ bool manager::poll( size_t lesson, const ob_matcher &match ) const
         } );
     } else if( name == "low_morale" ) {
         return u.get_morale_level() < -10;
+    } else if( name == "wields_gun" ) {
+        const item_location wielded = u.get_wielded_item();
+        return wielded && wielded->is_gun();
+    } else if( name == "corpse_here" ) {
+        for( const item &it : here.i_at( pos ) ) {
+            if( it.is_corpse() ) {
+                return true;
+            }
+        }
+    } else if( name == "is_wet" ) {
+        for( const bodypart_id &bp : u.get_all_body_parts() ) {
+            if( u.get_part_wetness( bp ) > 0 ) {
+                return true;
+            }
+        }
+    } else if( name == "adjacent_vehicle" ) {
+        for( const tripoint_bub_ms &p : here.points_in_radius( pos, 1 ) ) {
+            if( here.veh_at( p ) ) {
+                return true;
+            }
+        }
+    } else if( name == "npc_in_view" ) {
+        for( npc &guy : g->all_npcs() ) {
+            if( !guy.is_hallucination() && u.sees( here, guy ) ) {
+                return true;
+            }
+        }
+    } else if( name == "on_stairs" ) {
+        return here.has_flag( ter_furn_flag::TFLAG_GOES_DOWN, pos ) ||
+               here.has_flag( ter_furn_flag::TFLAG_GOES_UP, pos );
     } else if( name == "worn_storage" ) {
         // Clothes have small pockets; anything that holds five liters is a bag.
         for( const item_location &worn : u.get_visible_worn_items() ) {
@@ -1001,6 +1035,17 @@ void prepare_new_game( bool play_now )
     manager &m = get_manager();
     m.reset_progress();
     m.guided = play_now;
+}
+
+std::string start_scenario()
+{
+    static const std::string guided_scenario = "evacuee_guided";
+    manager &m = get_manager();
+    if( m.level() == ob_level::off || !option_on( "ONBOARDING_SOFT_START" ) ||
+        !string_id<scenario>( guided_scenario ).is_valid() ) {
+        return std::string();
+    }
+    return guided_scenario;
 }
 
 bool enabled()

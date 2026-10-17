@@ -178,7 +178,7 @@ chunk_mesh build_entity_mesh( const entity_view &view )
                 }
                 const std::string id = stack.begin()->typeId().str();
                 const tile_info &sprite = view.cache.named( TILE_CATEGORY::ITEM, id, view.tiles );
-                emit_flat( sink, sprite, frame_x( p ), frame_y( p ), frame_z( p ) + floor_height + 0.02f,
+                emit_flat( sink, sprite, frame_x( p ), frame_y( p ), frame_z( p ) + view.surface( p ) + 0.02f,
                            light );
             }
         }
@@ -218,7 +218,7 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         }
         const uint32_t color = critter.is_avatar() ? white : view.light( p );
         emit_billboard( sink, layers, right, up, toward, view.cam.z_scale, frame_x( p ), frame_y( p ),
-                        frame_z( p ) + floor_height, color == pack_light( 0, 0, 0 ) ? white : color,
+                        frame_z( p ) + view.surface( p ), color == pack_light( 0, 0, 0 ) ? white : color,
                         mirrored );
     }
     // Markers last; they sit just above the surface so the depth test keeps them in front of it.

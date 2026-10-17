@@ -43,6 +43,9 @@ struct entity_view {
         const tile_info *info = nullptr;
     };
     std::vector<standing> uprights;
+
+    /** Height within its level of what stands on a tile: the floor, or a bench or counter top. */
+    std::function<float( const tripoint_bub_ms & )> surface;
 };
 
 /**

@@ -77,17 +77,13 @@ uint8_t visible_faces( const shape &self, const neighbourhood &n )
         case shape_kind::pane:
             return 0;
         case shape_kind::floor:
-            if( n.up.kind != shape_kind::block ) {
-                faces |= face_top;
-            }
-            return faces;
+            // Tops are kept even under a block: the levels above may be cut away.
+            return face_top;
         case shape_kind::block:
         case shape_kind::prism:
             break;
     }
-    if( n.up.kind != shape_kind::block ) {
-        faces |= face_top;
-    }
+    faces |= face_top;
     if( !hides_side( self, n.north ) ) {
         faces |= face_north;
     }

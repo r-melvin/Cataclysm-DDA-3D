@@ -368,13 +368,14 @@ TEST_CASE( "r3d_face_visibility", "[r3d]" )
     CHECK( r3d::visible_faces( block, open ) ==
            ( r3d::face_top | r3d::face_north | r3d::face_south | r3d::face_west | r3d::face_east ) );
 
-    // Block with another block to the east and above: those two faces are hidden.
+    // Block with another block to the east and above: the east side is hidden, but the top
+    // stays, since the level above may be cut away.
     r3d::neighbourhood packed;
     packed.east = block;
     packed.up = block;
     const uint8_t faces = r3d::visible_faces( block, packed );
     CHECK( ( faces & r3d::face_east ) == 0 );
-    CHECK( ( faces & r3d::face_top ) == 0 );
+    CHECK( ( faces & r3d::face_top ) != 0 );
     CHECK( ( faces & r3d::face_west ) != 0 );
 
     // A block beside a floor still shows that side, because the floor is lower.
@@ -382,11 +383,11 @@ TEST_CASE( "r3d_face_visibility", "[r3d]" )
     beside_floor.south = floor;
     CHECK( ( r3d::visible_faces( block, beside_floor ) & r3d::face_south ) != 0 );
 
-    // A floor only ever has a top face, and loses it under a block.
+    // A floor only ever has a top face, even under a block.
     CHECK( r3d::visible_faces( floor, open ) == r3d::face_top );
     r3d::neighbourhood roofed;
     roofed.up = block;
-    CHECK( r3d::visible_faces( floor, roofed ) == 0 );
+    CHECK( r3d::visible_faces( floor, roofed ) == r3d::face_top );
 
     // Air, upright sprites and panes emit nothing through this path.
     CHECK( r3d::visible_faces( air, open ) == 0 );

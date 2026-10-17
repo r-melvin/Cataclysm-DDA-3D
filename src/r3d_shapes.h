@@ -63,7 +63,10 @@ struct neighbourhood {
     shape east;
 };
 
-/** Which faces of a shape are worth emitting given what surrounds it. Bottom faces never are. */
+/**
+ * Which faces of a shape are worth emitting given what surrounds it. Bottom faces never are; top
+ * faces always are, since the 3D view may cut the levels above away.
+ */
 uint8_t visible_faces( const shape &self, const neighbourhood &n );
 
 } // namespace r3d

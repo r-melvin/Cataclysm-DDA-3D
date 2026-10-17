@@ -137,16 +137,23 @@ bool is_tall( const sprite_ref &s )
     return s.valid && s.size_y > s.size_x;
 }
 
+// Rows of a sprite shown on a side, as fractions of its height from the top (0) to the bottom
+// (1). Unset (negative) means the bottom of the sprite, one tile per unit of box height.
+struct sprite_band {
+    float top = -1.0f;
+    float bottom = -1.0f;
+};
+
 void emit_side( quad_sink &sink, const sprite_ref &s, int x, int y, face_bit face, float z_base,
                 float z_top, const light_ref &ref, float shift_x = 0.0f, float shift_y = 0.0f,
-                float front = -1.0f )
+                const sprite_band &band = {} )
 {
     const float x0 = static_cast<float>( x ) + shift_x;
     const float y0 = static_cast<float>( y ) + shift_y;
     const float dv = s.v1 - s.v0;
-    // With front set the side shows the sprite's front strip, whatever the box height.
-    const float v_top = front >= 0.0f ? s.v1 - dv * front : s.v1 - dv * ( z_top - z_base );
-    const float v_bot = s.v1;
+    const bool banded = band.top >= 0.0f;
+    const float v_top = banded ? s.v0 + dv * band.top : s.v1 - dv * ( z_top - z_base );
+    const float v_bot = banded ? s.v0 + dv * band.bottom : s.v1;
     // left/right are as seen from outside the box, so sprites are never mirrored.
     float lx = 0.0f;
     float ly = 0.0f;
@@ -213,10 +220,10 @@ void emit_top_layers( quad_sink &sink, const tile_info &t, int x, int y, float z
 }
 
 void emit_side_layers( quad_sink &sink, const tile_info &t, int x, int y, face_bit face, float z_base,
-                       float z_top, const light_ref &ref, float front = -1.0f )
+                       float z_top, const light_ref &ref, const sprite_band &band = {} )
 {
     if( t.backdrop.valid ) {
-        emit_side( sink, t.backdrop, x, y, face, z_base, z_top, ref, 0.0f, 0.0f, front );
+        emit_side( sink, t.backdrop, x, y, face, z_base, z_top, ref, 0.0f, 0.0f, band );
     }
     // Pushing the foreground outwards means shifting the whole face by its normal.
     float dx = 0.0f;
@@ -225,7 +232,7 @@ void emit_side_layers( quad_sink &sink, const tile_info &t, int x, int y, face_b
         dx = face == face_east ? layer_lift : face == face_west ? -layer_lift : 0.0f;
         dy = face == face_south ? layer_lift : face == face_north ? -layer_lift : 0.0f;
     }
-    emit_side( sink, t.sprite, x, y, face, z_base, z_top, ref, dx, dy, front );
+    emit_side( sink, t.sprite, x, y, face, z_base, z_top, ref, dx, dy, band );
 }
 
 // How much of a 3/4-view furniture sprite is its front, for a box of the given height (in
@@ -617,8 +624,15 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                                  make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
                 continue;
             }
-            // A box: top of the sprite on top, its front strip on every side.
+            // A box: top of the sprite on top. Tall pieces (lockers) show the sprite's front strip
+            // on every side; on low ones (benches, counters) that strip is mostly legs and shadow,
+            // so their sides repeat the lid's front edge instead.
             const float front = front_fraction( fs.height - ts.height );
+            constexpr float low_box = 0.6f;
+            constexpr float lid_edge = 0.12f;
+            const sprite_band band = fs.height < low_box ?
+                                     sprite_band{ 1.0f - front - lid_edge, 1.0f - front } :
+                                     sprite_band{ 1.0f - front, 1.0f };
             const uint8_t furn_faces = visible_faces( fs, nb );
             if( ( furn_faces & face_top ) != 0 ) {
                 emit_top_layers( sink, furn, lx, ly, fs.height,
@@ -636,7 +650,7 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             for( const auto &s : sides ) {
                 if( ( furn_faces & s.face ) != 0 ) {
                     emit_side_layers( sink, furn, lx, ly, s.face, ts.height, fs.height,
-                                      make_ref( lx, ly, s.dx, s.dy, 0, s.shade ), front );
+                                      make_ref( lx, ly, s.dx, s.dy, 0, s.shade ), band );
                 }
             }
         }

@@ -223,6 +223,21 @@ uint32_t remembered_light()
     return pack_light( 64, 77, 107 );
 }
 
+// Where things on a tile stand: the floor, or the top of furniture that can be climbed onto
+// (benches, counters, tables are boxes; anything that is not a full tile can be stood on).
+float surface_height( state &s, const map &here, const tripoint_bub_ms &p )
+{
+    if( !here.inbounds( p ) ) {
+        return floor_height;
+    }
+    const shape t = s.cache.terrain( here.ter( p ), *tilecontext ).sh;
+    if( t.kind != shape_kind::floor ) {
+        return floor_height;
+    }
+    const shape f = s.cache.furniture( here.furn( p ), *tilecontext ).sh;
+    return f.kind == shape_kind::prism ? std::max( t.height, f.height ) : t.height;
+}
+
 // Turns the game's own visibility knowledge into a light colour per tile: lit tiles are shown
 // normally, unseen but remembered ones dim and bluish, everything else black.
 struct light_sampler {
@@ -672,7 +687,10 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     entity_view entities_view{ *tilecontext, s.cache, s.cam, center, z_lo, z_hi,
                                      [&sampler]( const tripoint_bub_ms & p ) {
         return sampler.color_at( p );
-    }, {}, std::move( upright_list ) };
+    }, {}, std::move( upright_list ), [&s, &here]( const tripoint_bub_ms & p )
+    {
+        return surface_height( s, here, p );
+    } };
     // The game queues its cursors and highlights for cata_tiles::draw, which is skipped here.
     {
         const cata_tiles::frame_markers queued = tilecontext->get_frame_markers();

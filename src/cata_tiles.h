@@ -425,6 +425,7 @@ class tileset
         };
 
         std::string tileset_id;
+        uint64_t tileset_loads_ = 0;
 
         bool tile_isometric = false;
         // Unscaled default size of sprites. See cata_tiles::tile_(width|height)
@@ -514,6 +515,11 @@ class tileset
         }
         float get_prevent_occlusion_max_dist() const {
             return prevent_occlusion_max_dist;
+        }
+        /** Counts tileset loads, so a view that caches sprite positions can tell a reload
+         *  of the same tileset (new textures, possibly a new atlas layout) from no change. */
+        uint64_t tileset_loads() const {
+            return tileset_loads_;
         }
         const std::string &get_tileset_id() const {
             return tileset_id;

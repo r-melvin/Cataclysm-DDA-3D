@@ -587,6 +587,7 @@ bool service_mode2_upload_interrupt( const atlas_upload_interrupt interrupt,
 void cata_tiles::load_tileset( const std::string &tileset_id, const bool precheck,
                                const bool force, const bool pump_events, const bool terrain )
 {
+    ++tileset_loads_;
     renderer_texture_generations gens = renderer_coordinator.texture_generations();
     // Skip the reload only when the same tileset is already bound against the
     // current renderer, texture generations and memory-map configuration; a

@@ -109,8 +109,8 @@ struct state {
     unsigned failed_epoch = 0;
     uint64_t frame = 0;
     bool drawn = false;
-    // Held (not just compared) so its address cannot be reused by a new sheet after a reload.
-    std::shared_ptr<SDL_Texture> probe_sheet;
+    // The tileset load the cached sprites and meshes were built from.
+    uint64_t tileset_loads = 0;
     bool env_camera_applied = false;
     bool screenshot_taken = false;
     // Per-frame buffers for creatures and items, grown as needed and re-uploaded every frame.
@@ -797,7 +797,7 @@ void shutdown()
     release_dynamic( s );
     s.cache.set_wall_sides( nullptr );
     s.walls_on = false;
-    s.probe_sheet.reset();
+    s.tileset_loads = 0;
     s.device.shutdown();
     s.epoch_valid = false;
     s.drawn = false;
@@ -846,16 +846,12 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         s.walls_on = want_walls;
     }
 
-    // A tileset reload swaps the sheet textures without necessarily bumping the epoch.
-    {
-        const std::optional<texture_draw_data> probe = tilecontext->get_sprite_draw_data( "t_grass",
-                TILE_CATEGORY::TERRAIN, tripoint_bub_ms( 0, 0, 0 ) );
-        const std::shared_ptr<SDL_Texture> sheet = probe ? probe->owner : nullptr;
-        if( sheet != s.probe_sheet ) {
-            release_all_chunks( s );
-            s.cache.clear();
-            s.probe_sheet = sheet;
-        }
+    // A tileset (re)load swaps the sheet textures and may lay the atlas out differently
+    // without bumping the epoch: everything cached from the old sheets is dropped.
+    if( tilecontext->tileset_loads() != s.tileset_loads ) {
+        release_all_chunks( s );
+        s.cache.clear();
+        s.tileset_loads = tilecontext->tileset_loads();
     }
 
     ++s.frame;

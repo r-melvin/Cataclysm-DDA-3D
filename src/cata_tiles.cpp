@@ -3141,7 +3141,6 @@ bool cata_tiles::draw_from_id_string_internal( const std::string &id, TILE_CATEG
         } else if( category == TILE_CATEGORY::OVERMAP_NOTE ) {
             sym = static_cast<uint8_t>( id[5] );
             col = color_from_string( id.substr( 7, id.length() - 1 ) );
-        }
         } else {
             fallback_symbol( category, found_id, variant, sym, col );
         }

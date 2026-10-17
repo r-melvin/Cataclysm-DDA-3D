@@ -55,9 +55,20 @@ for _ in $(seq 1 120); do
     sleep 1
 done
 [ -z "${win:-}" ] && { echo "no game window (see $userdir/stdout.log)"; exit 1; }
-# Wait for the game's own "tileset loaded" line (the last step of loading) before the menus.
+# Wait for the main menu: the game is loading while its debug log keeps growing, and idle at
+# the menu once the log has been still for a while. (Tilesets are only loaded with a world, so
+# their log lines cannot be waited for here.)
+quiet=0
+last=-1
 for _ in $(seq 1 ${LOAD_TIMEOUT:-300}); do
-    tail -n +"$((log_base + 1))" "$log" 2>/dev/null | grep -q "Loaded tileset: Larwick Overmap" && break
+    size="$(wc -c < "$log" 2>/dev/null || echo 0)"
+    if [ "$size" = "$last" ]; then
+        quiet=$((quiet + 1))
+        [ "$quiet" -ge "${QUIET_SECONDS:-8}" ] && break
+    else
+        quiet=0
+        last="$size"
+    fi
     kill -0 "$game_pid" 2>/dev/null || break
     sleep 1
 done

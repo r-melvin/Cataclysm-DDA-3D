@@ -126,6 +126,11 @@ class tile_info_cache
         const tile_info &named( TILE_CATEGORY category, const std::string &id, cata_tiles &tiles );
         /** Ground drawn under trees and bushes, which are terrain with a transparent background. */
         const tile_info &ground( cata_tiles &tiles );
+        /**
+         * Plain plaster for ceilings: the middle of the wall texture "plaster". Invalid when wall
+         * textures are off. tint is 0xRRGGBB, multiplied into the (grey) texture.
+         */
+        sprite_ref ceiling( uint32_t &tint ) const;
 
     private:
         std::unordered_map<int, tile_info> terrain_;
@@ -220,6 +225,8 @@ uint32_t pack_light( uint8_t r, uint8_t g, uint8_t b );
 struct mesh_options {
     /** The first-person view: stairs get an upright copy of their sprite (visible at eye level). */
     bool first_person = false;
+    /** Ceilings under storeys above, which are only seen from below (so only first person). */
+    bool ceilings = false;
 };
 
 /** Meshes the terrain and furniture of one submap. Returns an empty mesh if it is not loaded. */

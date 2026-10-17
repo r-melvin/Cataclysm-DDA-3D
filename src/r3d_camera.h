@@ -86,6 +86,7 @@ struct camera {
     float eye_height = 0.8f;   // above the target, in stretched space (see z_scale)
     float glance_yaw = 0.0f;   // mouse glance, display only; snaps back to 0
     float glance_pitch = 0.0f;
+    float tween_yaw = 0.0f;    // the turn still to be shown while a turn is eased, display only
     float fovx = 1.5708f;      // horizontal field of view, 90 degrees
 
     bool first_person() const {
@@ -129,6 +130,12 @@ struct camera {
     void pitch_steps( int steps );
     void zoom_steps( int steps );
 };
+
+/**
+ * The heading (1/8 turns clockwise from north, 0..7) that looks from a tile towards one dx tiles
+ * east and dy tiles south of it (map convention, y south). 0 for the same tile.
+ */
+int eighths_towards( int dx, int dy );
 
 /** Extracts the six clip planes from a view-projection matrix (depth range [0, 1]). */
 frustum frustum_from_matrix( const mat4 &view_proj );

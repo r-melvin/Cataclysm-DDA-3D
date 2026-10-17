@@ -38,7 +38,7 @@ vec3 camera::stretched_target() const
 
 float camera::fp_yaw() const
 {
-    return static_cast<float>( heading ) * eighth_turn + glance_yaw;
+    return static_cast<float>( heading ) * eighth_turn + glance_yaw + tween_yaw;
 }
 
 vec3 camera::fp_forward() const
@@ -166,6 +166,16 @@ void camera::zoom_steps( int steps )
     // Positive steps move the camera closer.
     distance = std::clamp( distance * std::pow( 1.0f / zoom_factor, static_cast<float>( steps ) ),
                            min_distance, max_distance );
+}
+
+int eighths_towards( int dx, int dy )
+{
+    if( dx == 0 && dy == 0 ) {
+        return 0;
+    }
+    const int turns = static_cast<int>( std::lround( std::atan2( static_cast<float>( dx ),
+                                        static_cast<float>( -dy ) ) / eighth_turn ) );
+    return ( turns % 8 + 8 ) % 8;
 }
 
 frustum frustum_from_matrix( const mat4 &m )

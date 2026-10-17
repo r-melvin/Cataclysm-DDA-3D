@@ -600,6 +600,30 @@ light_ref wall_ref( int lx, int ly, int dx, int dy, int dz, uint8_t shade )
     return r;
 }
 
+// The underside of the storey above, one storey up from the cell's floor (before the stretch).
+// What it is made of: plaster when the wall textures are on, else the floor sprite, darker.
+void emit_ceiling( quad_sink &sink, tile_info_cache &cache, const tile_info &floor_info,
+                   int x, int y )
+{
+    uint32_t tint = 0xffffffu;
+    const sprite_ref plaster = cache.ceiling( tint );
+    const sprite_ref &s = plaster.valid ? plaster : floor_info.main();
+    if( !s.valid ) {
+        return;
+    }
+    const float x0 = static_cast<float>( x );
+    const float y0 = static_cast<float>( y );
+    constexpr float z = 1.0f;
+    // Wound the other way round from a top face, so it faces down.
+    const corners_t c = {{ { x0, y0, z }, { x0, y0 + 1, z }, { x0 + 1, y0 + 1, z }, { x0 + 1, y0, z } }};
+    const uvs_t uv = {{ { s.u0, s.v0 }, { s.u0, s.v1 }, { s.u1, s.v1 }, { s.u1, s.v0 } }};
+    light_ref ref = make_ref( x, y, 0, 0, 0, plaster.valid ? 170 : 150 );
+    if( plaster.valid ) {
+        ref = tinted( ref, tint );
+    }
+    sink.add( s, c, uv, ref );
+}
+
 } // namespace
 
 uint32_t pack_light( uint8_t r, uint8_t g, uint8_t b )
@@ -699,6 +723,38 @@ int orientation_key( int id, int subtile, int rota )
     return id * 128 + ( subtile + 1 ) * 8 + ( rota + 1 );
 }
 } // namespace
+
+sprite_ref tile_info_cache::ceiling( uint32_t &tint ) const
+{
+    const sprite_ref none;
+    tint = 0xffffffu;
+    if( !wall_sides_ ) {
+        return none;
+    }
+    const auto found = std::find( wall_sides_->names.begin(), wall_sides_->names.end(), "plaster" );
+    if( found == wall_sides_->names.end() ) {
+        return none;
+    }
+    const uv_rect uv = atlas_cell( static_cast<int>( found - wall_sides_->names.begin() ),
+                                   wall_sides_->cell, wall_sides_->width, wall_sides_->height );
+    if( !uv.valid ) {
+        return none;
+    }
+    sprite_ref sprite;
+    sprite.sheet = wall_sides_->atlas.get();
+    sprite.owner = wall_sides_->atlas;
+    // The middle of the cell, like a wall's cap: an even surface.
+    const float du = ( uv.u1 - uv.u0 ) * 0.4f;
+    const float dv = ( uv.v1 - uv.v0 ) * 0.4f;
+    sprite.u0 = uv.u0 + du;
+    sprite.u1 = uv.u1 - du;
+    sprite.v0 = uv.v0 + dv;
+    sprite.v1 = uv.v1 - dv;
+    sprite.valid = true;
+    const auto color = wall_sides_->colors.find( "plaster" );
+    tint = color != wall_sides_->colors.end() ? color->second : 0xc4baa0u;
+    return sprite;
+}
 
 const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int subtile, int rota )
 {
@@ -959,7 +1015,9 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
     }
     for( int ly = 0; ly < side; ++ly ) {
         for( int lx = 0; lx < side; ++lx ) {
-            up[static_cast<size_t>( ly * side + lx )] = occupancy_at( above, lx, ly );
+            // Terrain alone: furniture up there stands on a floor, which is what closes the room.
+            up[static_cast<size_t>( ly * side + lx )] = above ?
+                    cache.terrain( above->get_ter( point_sm_ms( lx, ly ) ), tiles ).sh : shape();
         }
     }
     auto level_at = [&]( int lx, int ly ) -> const shape & {
@@ -1022,6 +1080,9 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             constexpr uint8_t all_sides = face_north | face_south | face_west | face_east;
             const uint8_t faces = visible_faces( ts, nb ) |
                                   ( ts.kind == shape_kind::block ? all_sides : 0 );
+            if( options.ceilings && ( faces & face_ceiling ) != 0 ) {
+                emit_ceiling( sink, cache, terrain, lx, ly );
+            }
             switch( ts.kind ) {
                 case shape_kind::floor:
                     if( ( faces & face_top ) != 0 ) {

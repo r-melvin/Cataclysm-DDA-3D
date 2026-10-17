@@ -3183,6 +3183,27 @@ bool game::do_regular_action( action_id &act, avatar &player_character,
             r3d::toggle_first_person();
             break;
 
+        case ACTION_R3D_FACE_THREAT:
+            if( r3d::first_person() ) {
+                // Free: only the picture turns. The nearest hostile the player can see.
+                Creature *nearest = nullptr;
+                int nearest_distance = 0;
+                for( Creature *critter : player_character.get_hostile_creatures( MAX_VIEW_DISTANCE ) ) {
+                    const int distance = rl_dist( player_character.pos_bub(), critter->pos_bub() );
+                    if( !nearest || distance < nearest_distance ) {
+                        nearest = critter;
+                        nearest_distance = distance;
+                    }
+                }
+                if( nearest ) {
+                    const tripoint_rel_ms away = nearest->pos_bub() - player_character.pos_bub();
+                    r3d::face_towards( away.x(), away.y() );
+                } else {
+                    add_msg( m_info, _( "You see no hostile creature to turn towards." ) );
+                }
+            }
+            break;
+
         case ACTION_ITEMACTION:
             item_action_menu();
             break;

@@ -84,6 +84,7 @@ enum face_bit : uint8_t {
     face_south = 4,
     face_west = 8,
     face_east = 16,
+    face_ceiling = 32, // the underside, closing a room whose level above has a floor
 };
 
 /** Neighbouring shapes around a cell, in tile space. */
@@ -97,7 +98,9 @@ struct neighbourhood {
 
 /**
  * Which faces of a shape are worth emitting given what surrounds it. Bottom faces never are; top
- * faces always are, since the 3D view may cut the levels above away.
+ * faces always are, since the 3D view may cut the levels above away. The one exception is the
+ * ceiling of a floor or prism cell under a solid level above, which only the first-person view
+ * draws (the mesher decides).
  */
 uint8_t visible_faces( const shape &self, const neighbourhood &n );
 

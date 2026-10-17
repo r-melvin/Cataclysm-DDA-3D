@@ -459,11 +459,12 @@ TEST_CASE( "r3d_face_visibility", "[r3d]" )
     beside_floor.south = floor;
     CHECK( ( r3d::visible_faces( block, beside_floor ) & r3d::face_south ) != 0 );
 
-    // A floor only ever has a top face, even under a block.
+    // A floor only ever has a top face, even under a block, plus a ceiling there (drawn by the
+    // first-person view only).
     CHECK( r3d::visible_faces( floor, open ) == r3d::face_top );
     r3d::neighbourhood roofed;
     roofed.up = block;
-    CHECK( r3d::visible_faces( floor, roofed ) == r3d::face_top );
+    CHECK( r3d::visible_faces( floor, roofed ) == ( r3d::face_top | r3d::face_ceiling ) );
 
     // Air, upright sprites and panes emit nothing through this path.
     CHECK( r3d::visible_faces( air, open ) == 0 );
@@ -659,4 +660,47 @@ TEST_CASE( "r3d_first_person_pick_finds_the_tile_ahead", "[r3d]" )
         CHECK( hit.x == dx );
         CHECK( hit.y == dy );
     }
+}
+
+TEST_CASE( "r3d_eighths_towards_names_the_nearest_heading", "[r3d]" )
+{
+    // Map convention: x east, y south; heading 0 is north, 2 east, 4 south, 6 west.
+    CHECK( r3d::eighths_towards( 0, -3 ) == 0 );
+    CHECK( r3d::eighths_towards( 2, -2 ) == 1 );
+    CHECK( r3d::eighths_towards( 5, 0 ) == 2 );
+    CHECK( r3d::eighths_towards( 1, 1 ) == 3 );
+    CHECK( r3d::eighths_towards( 0, 4 ) == 4 );
+    CHECK( r3d::eighths_towards( -1, 1 ) == 5 );
+    CHECK( r3d::eighths_towards( -7, 0 ) == 6 );
+    CHECK( r3d::eighths_towards( -1, -1 ) == 7 );
+    // Off-axis offsets round to the closer of the two neighbouring headings.
+    CHECK( r3d::eighths_towards( 1, -5 ) == 0 );
+    CHECK( r3d::eighths_towards( 5, -1 ) == 2 );
+    CHECK( r3d::eighths_towards( 0, 0 ) == 0 );
+}
+
+TEST_CASE( "r3d_visible_faces_adds_a_ceiling_under_a_solid_level_above", "[r3d]" )
+{
+    r3d::shape floor;
+    floor.kind = r3d::shape_kind::floor;
+    floor.height = r3d::floor_height;
+    r3d::shape block;
+    block.kind = r3d::shape_kind::block;
+    block.height = 1.0f;
+    r3d::shape prism;
+    prism.kind = r3d::shape_kind::prism;
+    prism.height = 0.5f;
+    r3d::neighbourhood nb;
+    // Open air above: sky, no ceiling.
+    CHECK( ( r3d::visible_faces( floor, nb ) & r3d::face_ceiling ) == 0 );
+    // A floor above (a room under a roof or a second storey): ceiling.
+    nb.up = floor;
+    CHECK( ( r3d::visible_faces( floor, nb ) & r3d::face_ceiling ) != 0 );
+    CHECK( ( r3d::visible_faces( floor, nb ) & r3d::face_top ) != 0 );
+    CHECK( ( r3d::visible_faces( prism, nb ) & r3d::face_ceiling ) != 0 );
+    // A wall needs none inside itself.
+    CHECK( ( r3d::visible_faces( block, nb ) & r3d::face_ceiling ) == 0 );
+    // A wall above closes the room as well.
+    nb.up = block;
+    CHECK( ( r3d::visible_faces( floor, nb ) & r3d::face_ceiling ) != 0 );
 }

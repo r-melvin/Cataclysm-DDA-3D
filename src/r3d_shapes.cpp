@@ -110,6 +110,13 @@ bool hides_side( const shape &self, const shape &other )
     return solid && other.height >= self.height;
 }
 
+// A cell whose level above has a floor, or a wall, has a ceiling; open air above means sky.
+uint8_t ceiling_under( const shape &up )
+{
+    return up.kind == shape_kind::floor || up.kind == shape_kind::block ||
+           up.kind == shape_kind::prism ? face_ceiling : 0;
+}
+
 } // namespace
 
 uint8_t visible_faces( const shape &self, const neighbourhood &n )
@@ -122,12 +129,15 @@ uint8_t visible_faces( const shape &self, const neighbourhood &n )
             return 0;
         case shape_kind::floor:
             // Tops are kept even under a block: the levels above may be cut away.
-            return face_top;
+            return static_cast<uint8_t>( face_top | ceiling_under( n.up ) );
         case shape_kind::block:
         case shape_kind::prism:
             break;
     }
     faces |= face_top;
+    if( self.kind == shape_kind::prism ) {
+        faces |= ceiling_under( n.up );
+    }
     if( !hides_side( self, n.north ) ) {
         faces |= face_north;
     }

@@ -7165,12 +7165,29 @@ static std::optional<uint32_t> android_touch_wait_ms( const uint32_t now )
 #endif
 }
 
+// Draws the next frame of a first-person ease while the game waits for input.
+static void animate_3d()
+{
+    if( last_input.type == input_event_t::error && r3d::animating() ) {
+        if( g ) {
+            g->invalidate_main_ui_adaptor();
+        }
+        ui_manager::redraw_invalidated();
+        needupdate = true;
+    }
+}
+
 // how long input loop may block before CheckMessages has work
 static int input_wait_ms( const std::optional<uint32_t> &input_ms )
 {
     const uint32_t now = GetTicks();
     input_wait_state s;
     s.input_ms = input_ms;
+    if( r3d::animating() ) {
+        // A first-person step is easing in: wake up for the next frame (about 60 Hz).
+        constexpr uint32_t frame_ms = 16;
+        s.input_ms = input_ms ? std::min( *input_ms, frame_ms ) : frame_ms;
+    }
     if( needupdate ) {
         // try_sdl_update presents once now - lastupdate >= interval
         s.present_ms = ms_until_elapsed_reaches( lastupdate, now, interval );
@@ -7258,6 +7275,7 @@ input_event input_manager::get_input_event( const keyboard_mode preferred_keyboa
         while( last_input.type == input_event_t::error ) {
             WaitForEvent( input_wait_ms( std::nullopt ) );
             CheckMessages();
+            animate_3d();
         }
     } else if( inputdelay > 0 ) {
         const uint32_t starttime = GetTicks();
@@ -7271,6 +7289,7 @@ input_event input_manager::get_input_event( const keyboard_mode preferred_keyboa
             }
             WaitForEvent( input_wait_ms( left ) );
             CheckMessages();
+            animate_3d();
         }
     } else {
         CheckMessages();

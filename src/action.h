@@ -333,6 +333,8 @@ enum action_id : int {
     ACTION_R3D_RESET,
     /** 3D view: toggle between the orbit and the first-person camera */
     ACTION_R3D_FIRST_PERSON,
+    /** 3D view (first person): turn to face the nearest visible hostile */
+    ACTION_R3D_FACE_THREAT,
     /** Open the the action menu */
     ACTION_ACTIONMENU,
     /** Open the item uses menu */

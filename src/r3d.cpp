@@ -126,6 +126,17 @@ struct state {
     bool walls_on = false; // whether the cache was given the wall side rules and atlas
     bool plaster_atlas = false; // whether painted walls take the atlas plaster (see the option)
     bool chunks_first_person = false; // the mode the chunk meshes were built for
+    // First-person easing: the player and the heading jump, the picture catches up. The offsets
+    // are what is left to show, measured from the logical camera back to where it was.
+    bool fp_prev_valid = false;
+    tripoint_abs_ms fp_prev_pos;
+    int fp_prev_heading = 0;
+    float fp_ease_dx = 0.0f; // tiles east and south at the start of the ease
+    float fp_ease_dy = 0.0f;
+    float fp_ease_yaw = 0.0f; // radians at the start of the ease
+    uint32_t fp_ease_start = 0;
+    uint32_t fp_ease_ms = 0;
+    bool fp_easing = false; // the last frame was drawn mid-ease, so another is needed
 };
 
 state &st()
@@ -193,6 +204,7 @@ bool rebuild_chunk( state &s, chunk_gpu &c, const tripoint_abs_sm &pos, uint64_t
 {
     mesh_options options;
     options.first_person = s.chunks_first_person;
+    options.ceilings = s.chunks_first_person;
     chunk_mesh mesh = build_chunk_mesh( pos, lookup, s.cache, *tilecontext, options );
     release_chunk( s, c );
     c.stamp = stamp;
@@ -522,6 +534,55 @@ void sync_camera_mode( camera &cam )
     }
 }
 
+// First person: eases the picture from where the camera was to where the player now is. The
+// game state (position, heading, picking) always has the end values; only what is drawn lags, for
+// at most R3D_FP_TWEEN_MS. Sets the offsets to add to the camera this frame and the yaw to show.
+void update_fp_ease( state &s, const tripoint_abs_ms &pos, float &offset_x, float &offset_y )
+{
+    constexpr float eighth = 0.78539816f;
+    avatar &you = get_avatar();
+    const uint32_t now = static_cast<uint32_t>( SDL_GetTicks() );
+    uint32_t length = static_cast<uint32_t>( std::max( 0, get_option<int>( "R3D_FP_TWEEN_MS" ) ) );
+    // Travelling and activities make many moves in a row; showing each would only slow them.
+    if( you.is_auto_moving() || you.activity || !get_option<bool>( "ANIMATIONS" ) ) {
+        length = 0;
+    }
+    // What is still to be shown of the ease in progress: it fades out cubically.
+    auto remaining = [&]() {
+        if( s.fp_ease_ms == 0 || now - s.fp_ease_start >= s.fp_ease_ms ) {
+            return 0.0f;
+        }
+        const float left = 1.0f - static_cast<float>( now - s.fp_ease_start ) /
+                           static_cast<float>( s.fp_ease_ms );
+        return left * left * left;
+    };
+    if( s.fp_prev_valid && length > 0 ) {
+        const tripoint_rel_ms step = pos - s.fp_prev_pos;
+        const bool stepped = ( step.x() != 0 || step.y() != 0 ) && step.z() == 0 &&
+                             std::abs( step.x() ) <= 1 && std::abs( step.y() ) <= 1;
+        const int turned = ( ( s.cam.heading - s.fp_prev_heading + 12 ) % 8 ) - 4;
+        if( stepped || turned != 0 ) {
+            // Carry over what is left, so a held key flows from one step into the next.
+            const float left = remaining();
+            s.fp_ease_dx = s.fp_ease_dx * left - ( stepped ? static_cast<float>( step.x() ) : 0.0f );
+            s.fp_ease_dy = s.fp_ease_dy * left - ( stepped ? static_cast<float>( step.y() ) : 0.0f );
+            s.fp_ease_yaw = s.fp_ease_yaw * left - static_cast<float>( turned ) * eighth;
+            s.fp_ease_start = now;
+            s.fp_ease_ms = length;
+        }
+    } else if( length == 0 ) {
+        s.fp_ease_ms = 0;
+    }
+    s.fp_prev_valid = true;
+    s.fp_prev_pos = pos;
+    s.fp_prev_heading = s.cam.heading;
+    const float left = remaining();
+    s.fp_easing = left > 0.0f;
+    offset_x = s.fp_ease_dx * left;
+    offset_y = s.fp_ease_dy * left;
+    s.cam.tween_yaw = s.fp_ease_yaw * left;
+}
+
 void apply_env_camera( camera &cam )
 {
     // CATA_R3D_CAMERA="yaw_deg,pitch_deg,distance[,ortho[,fp_heading[,fp_pitch_deg]]]" gives
@@ -777,6 +838,12 @@ int view_eighths()
     return s.shown.cam.first_person() ? s.cam.heading : s.shown.cam.forward_eighths();
 }
 
+bool animating()
+{
+    const state &s = st();
+    return s.fp_easing && active() && s.shown.valid && s.shown.cam.first_person();
+}
+
 bool first_person()
 {
     const state &s = st();
@@ -807,6 +874,24 @@ void end_glance()
     cam.glance_pitch = 0.0f;
 }
 
+std::optional<tripoint_bub_ms> crosshair()
+{
+    const shown_view &v = st().shown;
+    if( !first_person() ) {
+        return std::nullopt;
+    }
+    return pick( v.x + v.w * 0.5f, v.y + v.h * 0.5f );
+}
+
+void face_towards( int dx, int dy )
+{
+    camera &cam = st().cam;
+    if( cam.first_person() && ( dx != 0 || dy != 0 ) ) {
+        cam.heading = eighths_towards( dx, dy );
+        end_glance();
+    }
+}
+
 void rotate( int dir )
 {
     camera &cam = st().cam;
@@ -823,7 +908,17 @@ void pitch( int dir )
 
 void zoom( int dir )
 {
-    st().cam.zoom_steps( dir );
+    camera &cam = st().cam;
+    if( cam.first_person() ) {
+        // There is no distance to change: the same keys look one level up or down, which is a
+        // 45 degree tilt of the view and back.
+        constexpr float level_tilt = 0.7854f;
+        const int now = cam.look_pitch > 0.4f ? 1 : cam.look_pitch < -0.4f ? -1 : 0;
+        cam.look_pitch = static_cast<float>( std::clamp( now + ( dir > 0 ? 1 : -1 ), -1, 1 ) ) *
+                         level_tilt;
+        return;
+    }
+    cam.zoom_steps( dir );
 }
 
 void reset()
@@ -1082,15 +1177,21 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     // The scene is drawn in a frame whose origin is the viewed tile, which keeps floats small.
     s.cam.z_scale = static_cast<float>( get_option<int>( "R3D_LEVEL_HEIGHT" ) ) / 100.0f;
     if( fp ) {
+        float ease_x = 0.0f;
+        float ease_y = 0.0f;
+        update_fp_ease( s, get_map().get_abs( player_pos ), ease_x, ease_y );
         // The camera stands on the player's tile, at the height of what they stand on.
         s.cam.target = tile_to_world( {
-            static_cast<float>( player_pos.x() - center.x() ) + 0.5f,
-            static_cast<float>( player_pos.y() - center.y() ) + 0.5f,
+            static_cast<float>( player_pos.x() - center.x() ) + 0.5f + ease_x,
+            static_cast<float>( player_pos.y() - center.y() ) + 0.5f + ease_y,
             static_cast<float>( player_pos.z() - center.z() ) + surface_height( s, here, player_pos )
         } );
         s.cam.fovx = static_cast<float>( get_option<int>( "R3D_FP_FOV" ) ) * 0.017453293f;
         s.cam.eye_height = static_cast<float>( get_option<int>( "R3D_FP_EYE_HEIGHT" ) ) / 100.0f;
     } else {
+        s.fp_prev_valid = false;
+        s.fp_easing = false;
+        s.cam.tween_yaw = 0.0f;
         s.cam.target = tile_to_world( { 0.5f, 0.5f, 0.5f } ) + s.pan;
     }
     const float aspect = static_cast<float>( target_w ) / static_cast<float>( target_h );
@@ -1186,7 +1287,19 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
                                        entities.indices.data(),
                                        static_cast<uint32_t>( entities.indices.size() * sizeof( uint32_t ) ) );
 
-    if( !s.device.begin_pass( 0.05f, 0.05f, 0.07f ) ) {
+    // The background is what shows through open air. In first person that is the sky, which
+    // follows the time of day (grey-blue by day, near black at night).
+    float sky[3] = { 0.05f, 0.05f, 0.07f };
+    if( fp ) {
+        const float day = std::clamp( sun_moon_light_at( calendar::turn ) / default_daylight_level(),
+                                      0.0f, 1.0f );
+        constexpr float night_sky[3] = { 0.02f, 0.025f, 0.05f };
+        constexpr float day_sky[3] = { 0.50f, 0.65f, 0.85f };
+        for( int i = 0; i < 3; ++i ) {
+            sky[i] = night_sky[i] + ( day_sky[i] - night_sky[i] ) * day;
+        }
+    }
+    if( !s.device.begin_pass( sky[0], sky[1], sky[2] ) ) {
         s.device.abort_frame();
         // This frame's uploads may not have happened, so no chunk's buffers can be trusted.
         release_all_chunks( s );

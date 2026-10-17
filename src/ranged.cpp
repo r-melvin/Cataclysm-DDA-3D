@@ -71,6 +71,7 @@
 #include "pocket_type.h"
 #include "point.h"
 #include "projectile.h"
+#include "r3d.h"
 #include "ret_val.h"
 #include "rng.h"
 #include "skill.h"
@@ -3158,6 +3159,9 @@ void target_ui::init_window_and_input()
     ctxt.register_directions();
     ctxt.register_action( "COORDINATE" );
     ctxt.register_action( "SELECT" );
+    if( r3d::first_person() ) {
+        ctxt.register_action( "r3d_fp_select_ahead" );
+    }
     ctxt.register_action( "FIRE" );
     ctxt.register_action( "NEXT_TARGET" );
     ctxt.register_action( "PREV_TARGET" );
@@ -3237,6 +3241,10 @@ bool target_ui::handle_cursor_movement( const std::string &action, bool &skip_re
     } else if( action == "SELECT" &&
                ( mouse_pos = ctxt.get_coordinates( g->w_terrain, g->ter_view_p.raw().xy() ) ) ) {
         // Set pos by clicking with mouse
+        mouse_pos->z() = you->posz() + you->view_offset.z();
+        set_cursor_pos( *mouse_pos );
+    } else if( action == "r3d_fp_select_ahead" && ( mouse_pos = r3d::crosshair() ) ) {
+        // First person: aim at the tile under the middle of the picture
         mouse_pos->z() = you->posz() + you->view_offset.z();
         set_cursor_pos( *mouse_pos );
     } else if( action == "LEVEL_UP" || action == "LEVEL_DOWN" ) {

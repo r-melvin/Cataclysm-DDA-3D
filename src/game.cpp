@@ -2701,7 +2701,7 @@ input_context get_default_mode_input_context()
         ctxt.register_action( "zoom_in" );
         for( const char *r3d_action : { "r3d_toggle", "r3d_rotate_left", "r3d_rotate_right",
                                         "r3d_pitch_up", "r3d_pitch_down", "r3d_zoom_in", "r3d_zoom_out", "r3d_reset",
-                                        "r3d_first_person"
+                                        "r3d_first_person", "r3d_fp_face_threat"
                                       } ) {
             ctxt.register_action( r3d_action );
         }
@@ -6058,6 +6058,9 @@ look_around_result game::look_around(
     ctxt.register_action( "CHANGE_MONSTER_NAME" );
     ctxt.register_action( "EXTENDED_DESCRIPTION" );
     ctxt.register_action( "SELECT" );
+    if( r3d::first_person() ) {
+        ctxt.register_action( "r3d_fp_select_ahead" );
+    }
     if( peeking ) {
         ctxt.register_action( "throw_blind" );
         ctxt.register_action( "throw_blind_wielded" );
@@ -6262,6 +6265,12 @@ look_around_result game::look_around(
                 string_input_popup_imgui popup( 50, mon->nickname );
                 popup.set_label( _( "Nickname:" ) );
                 mon->nickname = popup.query();
+            }
+        } else if( action == "r3d_fp_select_ahead" ) {
+            // First person: the cursor goes to the tile under the middle of the picture.
+            if( const std::optional<tripoint_bub_ms> ahead = r3d::crosshair() ) {
+                lx = ahead->x();
+                ly = ahead->y();
             }
         } else if( action == "CENTER" ) {
             center = u.pos_bub();

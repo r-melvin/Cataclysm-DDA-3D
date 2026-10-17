@@ -3473,6 +3473,34 @@
   },
   {
     "type": "keybinding",
+    "name": "3D view (first person): face the nearest hostile",
+    "category": "DEFAULTMODE",
+    "id": "r3d_fp_face_threat",
+    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "TAB" } ]
+  },
+  {
+    "type": "keybinding",
+    "name": "3D view (first person): pick the tile ahead",
+    "category": "DEFAULTMODE",
+    "id": "r3d_fp_select_ahead",
+    "bindings": [ { "input_method": "keyboard_any", "key": "SPACE" } ]
+  },
+  {
+    "type": "keybinding",
+    "name": "3D view (first person): pick the tile under the crosshair",
+    "category": "LOOK",
+    "id": "r3d_fp_select_ahead",
+    "bindings": [ { "input_method": "keyboard_any", "key": "SPACE" } ]
+  },
+  {
+    "type": "keybinding",
+    "name": "3D view (first person): aim at the tile under the crosshair",
+    "category": "TARGET",
+    "id": "r3d_fp_select_ahead",
+    "bindings": [ { "input_method": "keyboard_any", "key": "SPACE" } ]
+  },
+  {
+    "type": "keybinding",
     "name": "Toggle debug mode",
     "category": "DEFAULTMODE",
     "id": "debug_mode"

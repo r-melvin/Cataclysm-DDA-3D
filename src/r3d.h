@@ -5,11 +5,11 @@
 // Public entry points of the 3D renderer. No SDL types here so game code can include it in
 // every build; without TILES everything is an inline no-op.
 
-#if defined(TILES)
 #include <optional>
 
 #include "coordinates.h"
 
+#if defined(TILES)
 struct SDL_Renderer;
 #endif
 
@@ -64,6 +64,12 @@ void toggle_first_person();
 bool first_person();
 /** Ends a mouse glance: the first-person view snaps back to the heading. */
 void end_glance();
+/** First person: a step or turn is still being eased in; the game should redraw soon. */
+bool animating();
+/** First person: the tile under the centre of the picture, nothing when it shows no tile. */
+std::optional<tripoint_bub_ms> crosshair();
+/** First person: turns to face a tile dx east and dy south of the player (no game time). */
+void face_towards( int dx, int dy );
 /** Orbit the camera by one step; dir < 0 is left, dir > 0 right. */
 void rotate( int dir );
 /** Tilt the camera by one step; dir > 0 raises the view towards top-down. */
@@ -99,6 +105,15 @@ inline bool first_person()
     return false;
 }
 inline void end_glance() {}
+inline bool animating()
+{
+    return false;
+}
+inline std::optional<tripoint_bub_ms> crosshair()
+{
+    return std::nullopt;
+}
+inline void face_towards( int, int ) {}
 inline void rotate( int ) {}
 inline void pitch( int ) {}
 inline void zoom( int ) {}

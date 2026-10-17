@@ -367,6 +367,8 @@ std::string action_ident( action_id act )
             return "r3d_reset";
         case ACTION_R3D_FIRST_PERSON:
             return "r3d_first_person";
+        case ACTION_R3D_FACE_THREAT:
+            return "r3d_fp_face_threat";
         case ACTION_TOGGLE_FULLSCREEN:
             return "toggle_fullscreen";
         case ACTION_TOGGLE_PIXEL_MINIMAP:
@@ -490,6 +492,7 @@ bool can_action_change_worldstate( const action_id act )
         case ACTION_R3D_ZOOM_OUT:
         case ACTION_R3D_RESET:
         case ACTION_R3D_FIRST_PERSON:
+        case ACTION_R3D_FACE_THREAT:
         case ACTION_TOGGLE_PIXEL_MINIMAP:
         case ACTION_TOGGLE_PANEL_ADM:
         case ACTION_PANEL_MGMT:
@@ -1118,6 +1121,7 @@ action_id handle_action_menu( map &here )
                 REGISTER_ACTION( ACTION_R3D_ZOOM_OUT );
                 REGISTER_ACTION( ACTION_R3D_RESET );
                 REGISTER_ACTION( ACTION_R3D_FIRST_PERSON );
+                REGISTER_ACTION( ACTION_R3D_FACE_THREAT );
             }
 #endif
         }
@@ -1235,6 +1239,11 @@ std::optional<tripoint_rel_ms> choose_direction( const std::string &message,
         ctxt.register_action( "MOUSE_MOVE" );
         ctxt.register_action( "SELECT" );
     }
+    // First person: one key picks the tile the player faces.
+    const bool ahead_key = r3d::first_person() && get_option<bool>( "R3D_FP_USE_HEADING" );
+    if( ahead_key ) {
+        ctxt.register_action( "r3d_fp_select_ahead" );
+    }
 
     static_popup popup;
     popup.message( allow_mouse
@@ -1260,6 +1269,8 @@ std::optional<tripoint_rel_ms> choose_direction( const std::string &message,
             return vec;
         } else if( action == "pause" ) {
             return tripoint_rel_ms::zero;
+        } else if( ahead_key && action == "r3d_fp_select_ahead" ) {
+            return tripoint_rel_ms( rotate_eighths( point_rel_ms::north, r3d::view_eighths() ), 0 );
         } else if( action == "LEVEL_UP" ) {
             return tripoint_rel_ms::above;
         } else if( action == "LEVEL_DOWN" ) {

@@ -8,8 +8,11 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
 
 * FP0 camera: done (not yet seen in the game).
 * FP1 billboards, items, markers: done (not yet seen in the game).
-* FP2 controls: not started.
-* FP3 ceilings and sky: not started.
+* FP2 controls: done (not yet seen in the game). Q/E turning was dropped by decision (arrows
+  turn, `e` stays examine).
+* FP3 ceilings and sky: done (not yet seen in the game).
+* FP4 tweening and redraw loop: done (not yet seen in the game); instant by default.
+* FP5 HUD: not started.
 
 What to test locally (FP0): toggle with ctrl+F in a house; the picture is a perspective view from
 eye height; left/right arrows (with `R3D_WASD` on, the default) or ctrl+left/right turn by 45
@@ -21,6 +24,20 @@ FP1: creatures and trees stand straight up facing the screen with their feet on 
 own sprite is not drawn); items on the floor are small upright stands; stairs and ladders also get
 an upright copy of their sprite; the look/aim cursor is a box and the aim line is a row of posts.
 Spawn a zombie next to you and another five tiles away to check they are not clipped or leaning.
+
+FP2 keys: **Space** picks the tile you face in look mode, in aiming mode and in direction prompts
+(close, examine, smash ...; option `R3D_FP_USE_HEADING`, on by default; it replaces the idea of
+pre-selecting a default direction). **ctrl+Tab** turns (free) to the nearest visible hostile.
+ctrl+PgUp/PgDn (the zoom keys) look one level up/down as a 45 degree tilt (display only; the mouse
+wheel does the same).
+
+FP3: a ceiling (plaster texture, or the floor sprite darkened when wall textures are off) closes
+every room whose level above has a floor or wall; outdoors the sky colour follows the time of day.
+Ceilings exist only in first-person meshes (`mesh_options.ceilings`).
+
+FP4: `R3D_FP_TWEEN_MS` (0-250, default 0 = instant). When above 0 a step or turn slides into place
+over that time; it is skipped while travelling, during activities and with ANIMATIONS off. The game
+redraws at about 60 Hz only while an ease is live (`r3d::animating()`).
 
 Design for a first-person, **turn-based** view on top of the existing `r3d` renderer
 (`src/r3d*.{h,cpp}`, SDL3 GPU). Target branch: `feature/r3d-first-person`. Companion to

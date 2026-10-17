@@ -425,6 +425,32 @@ void update_chunk_light( state &s, chunk_gpu &c, const tripoint_abs_sm &pos,
                      static_cast<uint32_t>( c.light.size() * sizeof( uint32_t ) ), true );
 }
 
+// Cuts a hole around the player through whatever stands in front of them (see r3d_block.frag).
+void set_cutaway( block_uniforms &u, const mat4 &view_proj, float aspect, const camera &cam,
+                  const tripoint_bub_ms &center )
+{
+    const avatar &you = get_avatar();
+    const tripoint_bub_ms p = you.pos_bub();
+    if( !get_option<bool>( "R3D_CUTAWAY" ) || p.z() != center.z() ) {
+        return;
+    }
+    // Radius in tiles around the player's middle, and the height (above their floor) below which
+    // nothing is cut, so the floor and low furniture around them stay.
+    constexpr float radius = 1.3f;
+    constexpr float keep_below = 0.3f;
+    const float base = floor_height;
+    const vec3 middle = tile_to_world( { static_cast<float>( p.x() - center.x() ) + 0.5f,
+                                         static_cast<float>( p.y() - center.y() ) + 0.5f, base + 0.4f } );
+    const vec3 at = transform_point( view_proj, middle );
+    const vec3 side = transform_point( view_proj, middle + cam.ground_right() * radius );
+    u.cut[0] = at.x;
+    u.cut[1] = at.y;
+    u.cut[2] = at.z;
+    u.cut[3] = std::abs( side.x - at.x );
+    u.cut2[0] = 1.0f / std::max( aspect, 0.01f );
+    u.cut2[1] = base + keep_below;
+}
+
 void apply_env_camera( camera &cam )
 {
     // CATA_R3D_CAMERA="yaw_deg,pitch_deg,distance[,ortho]" gives repeatable views for
@@ -926,6 +952,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     s.device.bind_block_pipeline();
     block_uniforms uniforms;
     uniforms.view_proj = view_proj;
+    set_cutaway( uniforms, view_proj, aspect, s.cam, center );
     for( const visible_chunk &vc : visible ) {
         uniforms.offset[0] = vc.offset[0];
         uniforms.offset[1] = vc.offset[1];
@@ -936,6 +963,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         }
     }
     if( draw_entities ) {
+        uniforms.cut[3] = 0.0f; // creatures in front of the player stay
         uniforms.offset[0] = 0.0f;
         uniforms.offset[1] = 0.0f;
         uniforms.offset[2] = 0.0f;

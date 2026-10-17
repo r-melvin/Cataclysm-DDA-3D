@@ -31,8 +31,13 @@ struct block_uniforms {
     // xyz: world direction towards the camera; w: depth pull, in those units, of a vertex whose
     // light alpha is 1 (billboards; 0 for everything else). See r3d_block.vert.
     float pull[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    // Cutaway around the player: xy their position on screen (NDC), z their depth, w the radius
+    // in NDC x (0: off); cut2 x scales NDC y to NDC x, y is the world height below which nothing
+    // is cut.
+    float cut[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    float cut2[4] = { 1.0f, 0.0f, 0.0f, 0.0f };
 };
-static_assert( sizeof( block_uniforms ) == 96, "block_uniforms is mirrored by r3d_block.vert" );
+static_assert( sizeof( block_uniforms ) == 128, "block_uniforms is mirrored by r3d_block.vert" );
 
 /**
  * Owns the GPU objects of the 3D renderer: pipelines, sampler, and the offscreen colour+depth

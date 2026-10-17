@@ -250,12 +250,41 @@ void emit_pane( quad_sink &sink, const sprite_ref &s, int x, int y, bool along_x
     sink.add( s, top, edge_uv, ref );
 }
 
-// A furniture box laid out by furniture_box_layout, turned and mirrored like the flat view turns
-// the sprite. refs: top, north, south, west, east. faces says which sides neighbours leave open;
-// a side that stops short of its tile edge is always drawn.
+// Quarter turns (front from south, clockwise) for a piece with its back to a wall: of the sides
+// across its row (any side when it stands alone), the first with a wall; 0 when none has one.
+template<typename IsWall>
+int back_to_wall( bool row_x, bool row_y, IsWall is_wall )
+{
+    // back side and the facing that puts it there: north 0, east 1, south 2, west 3
+    struct candidate {
+        point dir;
+        int facing;
+        bool across_x_row;
+    };
+    static constexpr std::array<candidate, 4> sides = {{
+            { point( 0, -1 ), 0, true }, { point( 1, 0 ), 1, false },
+            { point( -1, 0 ), 3, false }, { point( 0, 1 ), 2, true }
+        }
+    };
+    for( const candidate &c : sides ) {
+        if( ( row_x && !c.across_x_row ) || ( row_y && c.across_x_row ) ) {
+            continue;
+        }
+        if( is_wall( c.dir ) ) {
+            return c.facing;
+        }
+    }
+    return 0;
+}
+
+// A furniture box laid out by furniture_box_layout, mirrored like the flat view mirrors the
+// sprite and turned clockwise facing quarter turns (its front from south). refs: top, north,
+// south, west, east. faces says which sides neighbours leave open; a side that stops short of
+// its tile edge is always drawn. joined (face bits) are the sides where the same furniture
+// continues: the box reaches the tile edge there, so a row of lockers or a bench is one piece.
 void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, float z1,
                const box_layout &b, uint8_t faces, const std::array<light_ref, 5> &refs,
-               float slab = 0.0f )
+               int facing, uint8_t joined, float slab = 0.0f )
 {
     if( !s.valid ) {
         return;
@@ -265,13 +294,25 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
     float fx1 = s.flip ? 1.0f - b.x0 : b.x1;
     float fy0 = b.y0;
     float fy1 = b.y1;
-    for( int t = 0; t < ( s.facing & 3 ); ++t ) {
+    for( int t = 0; t < ( facing & 3 ); ++t ) {
         const float nx0 = 1.0f - fy1;
         const float nx1 = 1.0f - fy0;
         fy0 = fx0;
         fy1 = fx1;
         fx0 = nx0;
         fx1 = nx1;
+    }
+    if( ( joined & face_north ) != 0 ) {
+        fy0 = 0.0f;
+    }
+    if( ( joined & face_south ) != 0 ) {
+        fy1 = 1.0f;
+    }
+    if( ( joined & face_west ) != 0 ) {
+        fx0 = 0.0f;
+    }
+    if( ( joined & face_east ) != 0 ) {
+        fx1 = 1.0f;
     }
     const float ox = static_cast<float>( x );
     const float oy = static_cast<float>( y );
@@ -311,7 +352,7 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
     const uvs_t plain_uv = {{ { edge_u0, sv0 }, { u1, sv0 }, { u1, sv1 }, { edge_u0, sv1 } }};
     // south, west, north, east: where the front ends up after each clockwise quarter turn
     static constexpr std::array<face_bit, 4> front_after = {{ face_south, face_west, face_north, face_east }};
-    const face_bit front = front_after[static_cast<size_t>( s.facing & 3 )];
+    const face_bit front = front_after[static_cast<size_t>( facing & 3 )];
     constexpr float edge = 0.01f;
     const struct {
         face_bit face;
@@ -705,6 +746,29 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
         return sm ? &cache.terrain( sm->get_ter( point_sm_ms( lx, ly ) ), tiles ) : nullptr;
     };
 
+    // Furniture of a tile of this level, which may lie in a horizontal neighbour (one tile out).
+    auto furniture_at = [&]( int lx, int ly ) -> furn_id {
+        const submap *sm = self;
+        if( lx < 0 )
+        {
+            sm = west;
+            lx = side - 1;
+        } else if( lx >= side )
+        {
+            sm = east;
+            lx = 0;
+        } else if( ly < 0 )
+        {
+            sm = north;
+            ly = side - 1;
+        } else if( ly >= side )
+        {
+            sm = south;
+            ly = 0;
+        }
+        return sm ? sm->get_furn( point_sm_ms( lx, ly ) ) : furn_str_id::NULL_ID().id();
+    };
+
     auto occupancy_at = [&]( const submap * sm, int sx, int sy ) -> shape {
         if( !sm )
         {
@@ -904,8 +968,37 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             // rows are mostly legs and shadow) on the sides.
             const sprite_ref &spr = furn.main();
             constexpr float low_box = 0.6f;
-            const box_layout layout = furniture_box_layout( spr.opaque_x0, spr.opaque_y0, spr.opaque_x1,
-                                      spr.opaque_y1, front_fraction( fs.height - ts.height ), fs.height < low_box );
+            box_layout layout = furniture_box_layout( spr.opaque_x0, spr.opaque_y0, spr.opaque_x1,
+                                spr.opaque_y1, front_fraction( fs.height - ts.height ), fs.height < low_box );
+            // The same furniture next door: a row of lockers, a long bench.
+            const furn_id here_furn = self->get_furn( p );
+            const std::array<point, 4> dirs = {{ point( 0, -1 ), point( 0, 1 ), point( -1, 0 ), point( 1, 0 ) }};
+            const std::array<face_bit, 4> dir_faces = {{ face_north, face_south, face_west, face_east }};
+            uint8_t joined = 0;
+            for( size_t i = 0; i < dirs.size(); ++i ) {
+                if( furniture_at( lx + dirs[i].x, ly + dirs[i].y ) == here_furn ) {
+                    joined |= dir_faces[i];
+                }
+            }
+            const bool row_x = ( joined & ( face_west | face_east ) ) != 0;
+            const bool row_y = !row_x && ( joined & ( face_north | face_south ) ) != 0;
+            // A connected sprite's rotation says how it joins its neighbours, not where it faces.
+            int facing = furn_subtile >= 0 ? 0 : spr.facing;
+            if( fs.slab > 0.0f ) {
+                // A bench or table runs along its row, its seat across the middle of the tile.
+                const float depth = layout.y1 - layout.y0;
+                layout.y0 = ( 1.0f - depth ) * 0.5f;
+                layout.y1 = layout.y0 + depth;
+                if( row_x || row_y ) {
+                    facing = row_y ? 1 : 0;
+                }
+            } else if( facing == 0 ) {
+                // Lockers and cabinets stand with their back to a wall, their row along it.
+                facing = back_to_wall( row_x, row_y, [&]( const point & d ) {
+                    const tile_info *t = terrain_at( lx + d.x, ly + d.y );
+                    return t && t->sh.kind == shape_kind::block;
+                } );
+            }
             const std::array<light_ref, 5> refs = {{
                     make_ref( lx, ly, 0, 0, 0, face_shade[0] ), make_ref( lx, ly, 0, -1, 0, face_shade[1] ),
                     make_ref( lx, ly, 0, 1, 0, face_shade[2] ), make_ref( lx, ly, -1, 0, 0, face_shade[3] ),
@@ -913,7 +1006,7 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                 }
             };
             emit_box( sink, spr, lx, ly, ts.height, fs.height, layout, visible_faces( fs, nb ), refs,
-                      fs.slab );
+                      facing, joined, fs.slab );
         }
     }
     chunk_mesh mesh = sink.finish();

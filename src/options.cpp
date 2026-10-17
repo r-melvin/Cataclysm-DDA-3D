@@ -2634,6 +2634,13 @@ void options_manager::add_options_graphics()
 
         get_option( "R3D_WALL_TEXTURES" ).setPrerequisite( "RENDERER_3D" );
 
+        add( "R3D_CUTAWAY", page_id, to_translation( "3D cutaway around the player" ),
+             to_translation( "Leave out walls and furniture standing between the camera and the player in the 3D view, so the player is never hidden." ),
+             true, COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_CUTAWAY" ).setPrerequisite( "RENDERER_3D" );
+
         std::vector<options_manager::id_and_option> om_tilesets = build_tilesets_list();
         // filter out iso tilesets from overmap tilesets
         om_tilesets.erase( std::remove_if( om_tilesets.begin(), om_tilesets.end(), []( const auto & it ) {

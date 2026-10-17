@@ -12,10 +12,16 @@ layout(set = 1, binding = 0) uniform params {
     mat4 view_proj;
     vec4 offset; // xyz: translation applied to a_pos before projection
     vec4 pull;   // xyz: direction towards the camera; w: depth pull at light alpha 1
+    vec4 cut;    // xy: the player on screen (NDC), z: their depth, w: cutaway radius (0: off)
+    vec4 cut2;   // x: NDC y to NDC x scale, y: world height below which nothing is cut
 } u;
 
 layout(location = 0) out vec2 v_uv;
 layout(location = 1) out vec4 v_light;
+layout(location = 2) noperspective out vec3 v_ndc;
+layout(location = 3) out float v_height;
+layout(location = 4) flat out vec4 v_cut;
+layout(location = 5) flat out vec2 v_cut2;
 
 void main()
 {
@@ -31,4 +37,8 @@ void main()
         clip.z = pulled.z / pulled.w * clip.w;
     }
     gl_Position = clip;
+    v_ndc = clip.xyz / clip.w;
+    v_height = pos.z;
+    v_cut = u.cut;
+    v_cut2 = u.cut2.xy;
 }

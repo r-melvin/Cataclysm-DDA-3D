@@ -14,6 +14,11 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
 * FP4 tweening and redraw loop: done (not yet seen in the game); instant by default.
 * FP5 HUD: done in part (not yet seen in the game): compass strip with hostile ticks, edge alert,
   crosshair dot with label. Not done: sound markers, look-level line, auto-travel caret.
+* Minimap heading-up: done (not yet seen in the game). With `PIXEL_MINIMAP` on and option
+  `R3D_FP_MINIMAP_ROTATE` (default on), the pixel minimap turns in first person so the way you
+  face points up; your beacon stays put and the map turns under it. North-up in orbit mode, in
+  the flat view and with an isometric tileset. At 45 degree headings the square map leaves its
+  corners empty (the minimap background shows there).
 
 What to test locally (FP0): toggle with ctrl+F in a house; the picture is a perspective view from
 eye height; left/right arrows (with `R3D_WASD` on, the default) or ctrl+left/right turn by 45

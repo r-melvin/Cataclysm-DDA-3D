@@ -6,6 +6,7 @@
 #include "cata_catch.h"
 #include "r3d_camera.h"
 #include "r3d_dda.h"
+#include "r3d_hud.h"
 #include "r3d_math.h"
 #include "r3d_shapes.h"
 #include "r3d_wall_rules.h"
@@ -703,4 +704,34 @@ TEST_CASE( "r3d_visible_faces_adds_a_ceiling_under_a_solid_level_above", "[r3d]"
     // A wall above closes the room as well.
     nb.up = block;
     CHECK( ( r3d::visible_faces( floor, nb ) & r3d::face_ceiling ) != 0 );
+}
+
+TEST_CASE( "r3d_minimap_turns_the_heading_up", "[r3d]" )
+{
+    // Screen space: x right, y down; the player sits at (100, 100). A tile one step from them
+    // in the direction they face must end up straight above them, whatever the heading.
+    const float cx = 100.0f;
+    const float cy = 100.0f;
+    for( int h = 0; h < 8; ++h ) {
+        const float angle = static_cast<float>( h ) * 0.78539816f;
+        // North-up minimap: map x east is screen right, map y south is screen down.
+        float x = cx + 10.0f * std::sin( angle );
+        float y = cy - 10.0f * std::cos( angle );
+        r3d::turn_on_screen( x, y, cx, cy, r3d::minimap_turn( h ) );
+        CHECK( approx( x, cx ) );
+        CHECK( approx( y, cy - 10.0f ) );
+    }
+    // Facing east: north swings to the left of the screen, south to the right.
+    float nx = cx;
+    float ny = cy - 10.0f;
+    r3d::turn_on_screen( nx, ny, cx, cy, r3d::minimap_turn( 2 ) );
+    CHECK( approx( nx, cx - 10.0f ) );
+    CHECK( approx( ny, cy ) );
+    // Heading north is no turn at all, and the player stays where they are.
+    CHECK( approx( r3d::minimap_turn( 0 ), 0.0f ) );
+    float px = cx;
+    float py = cy;
+    r3d::turn_on_screen( px, py, cx, cy, r3d::minimap_turn( 3 ) );
+    CHECK( approx( px, cx ) );
+    CHECK( approx( py, cy ) );
 }

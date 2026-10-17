@@ -29,6 +29,13 @@ class quad_batch
         const SDL_Vertex *vertex_data() const;
         const int *index_data() const;
         void reserve_quads( int quads );
+        // Moves every vertex through f( float &x, float &y ), e.g. to turn the whole batch.
+        template<typename F>
+        void transform_positions( F f ) {
+            for( SDL_Vertex &v : vertices_ ) {
+                f( v.position.x, v.position.y );
+            }
+        }
 
     private:
         void append( float x, float y, float w, float h, const SDL_FColor &color,

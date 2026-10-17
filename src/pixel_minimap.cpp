@@ -25,7 +25,10 @@
 #include "mdarray.h"
 #include "monster.h"
 #include "mtype.h"
+#include "options.h"
 #include "pixel_minimap_projectors.h"
+#include "r3d.h"
+#include "r3d_hud.h"
 #include "sdl_utils.h"
 #include "type_id.h"
 #include "vehicle.h"
@@ -289,7 +292,34 @@ void pixel_minimap::draw( const SDL_Rect &screen_rect, const tripoint_bub_ms &ce
 
     set_screen_rect( screen_rect );
     build_batches( center );
+    turn_to_heading();
     present();
+}
+
+void pixel_minimap::turn_to_heading()
+{
+    // The first-person 3D view shows the minimap heading-up: the map turns under the player,
+    // who stays where they are. Orbit mode, the flat view and the isometric layout stay north-up.
+    if( type != pixel_minimap_type::ortho || !r3d::first_person() ||
+        !get_option<bool>( "R3D_FP_MINIMAP_ROTATE" ) ) {
+        return;
+    }
+    const int heading = r3d::view_eighths();
+    if( heading == 0 ) {
+        return;
+    }
+    // The player's beacon is centred on the corner of their cell (see build_batches): turning
+    // about that point keeps it exactly in place.
+    const point mid = projector->get_tile_pos( { total_tiles_count.x / 2, total_tiles_count.y / 2 },
+                      total_tiles_count );
+    const float cx = static_cast<float>( snap_to_pixel( tf_.origin_x, tf_.scale_x, mid.x ) );
+    const float cy = static_cast<float>( snap_to_pixel( tf_.origin_y, tf_.scale_y, mid.y ) );
+    const float turn = r3d::minimap_turn( heading );
+    const auto rotate = [cx, cy, turn]( float & x, float & y ) {
+        r3d::turn_on_screen( x, y, cx, cy, turn );
+    };
+    terrain_batch_.transform_positions( rotate );
+    beacon_batch_.transform_positions( rotate );
 }
 
 std::unique_ptr<pixel_minimap_projector> pixel_minimap::create_projector(

@@ -2706,6 +2706,13 @@ void options_manager::add_options_graphics()
 
         get_option( "R3D_FP_USE_HEADING" ).setPrerequisite( "RENDERER_3D" );
 
+        add( "R3D_FP_MINIMAP_ROTATE", page_id, to_translation( "3D first-person: minimap turns with you" ),
+             to_translation( "In first person, the pixel minimap is drawn heading-up: the way you face points up and the map turns around you.  Off keeps north up.  Orbit mode and the flat view always keep north up." ),
+             true, COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_FP_MINIMAP_ROTATE" ).setPrerequisite( "RENDERER_3D" );
+
         std::vector<options_manager::id_and_option> om_tilesets = build_tilesets_list();
         // filter out iso tilesets from overmap tilesets
         om_tilesets.erase( std::remove_if( om_tilesets.begin(), om_tilesets.end(), []( const auto & it ) {

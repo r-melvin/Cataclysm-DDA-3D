@@ -55,6 +55,8 @@ class pixel_minimap
     private:
         void set_screen_rect( const SDL_Rect &screen_rect );
         void build_batches( const tripoint_bub_ms &center );
+        // First person: turns the built batches so the 3D view's heading points up.
+        void turn_to_heading();
         void present();
 
         std::unique_ptr<pixel_minimap_projector> create_projector(

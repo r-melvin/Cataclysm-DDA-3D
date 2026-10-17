@@ -332,12 +332,55 @@ TEST_CASE( "r3d_terrain_shapes", "[r3d]" )
     CHECK( shrub.kind == r3d::shape_kind::upright );
     CHECK( shrub.height < 1.0f );
 
-    // An empty or broken window frame is passable and stands as a pane; an intact one blocks.
+    // Windows, broken or not, and closed doors stand in the wall line as panes.
     t = {};
     t.window = true;
     CHECK( r3d::classify_terrain( t ).kind == r3d::shape_kind::pane );
     t.move_cost = 0;
+    CHECK( r3d::classify_terrain( t ).kind == r3d::shape_kind::pane );
+    t = {};
+    t.door = true;
+    t.move_cost = 0;
+    CHECK( r3d::classify_terrain( t ).kind == r3d::shape_kind::pane );
+    // An open door lies flat; a wall stays a wall.
+    t.flat = true;
+    t.move_cost = 2;
+    CHECK( r3d::classify_terrain( t ).kind == r3d::shape_kind::floor );
+    t = {};
+    t.door = true;
+    t.wall = true;
+    t.move_cost = 0;
     CHECK( r3d::classify_terrain( t ).kind == r3d::shape_kind::block );
+}
+
+TEST_CASE( "r3d_furniture_box_layout", "[r3d]" )
+{
+    // A sprite filling its whole cell: a whole-tile box, lid above the front.
+    const r3d::box_layout full = r3d::furniture_box_layout( 0.0f, 0.0f, 1.0f, 1.0f, 0.4f, false );
+    CHECK( approx( full.x0, 0.0f ) );
+    CHECK( approx( full.x1, 1.0f ) );
+    CHECK( approx( full.y0, 0.0f ) );
+    CHECK( approx( full.y1, 1.0f ) );
+    CHECK( approx( full.lid_bottom, 0.6f ) );
+    CHECK( approx( full.side_top, 0.6f ) );
+    CHECK( approx( full.side_bottom, 1.0f ) );
+
+    // A narrow bench in the middle of its cell: the box is only as wide as the planks, and its
+    // sides take the lid's front edge, so they line up with the top.
+    const r3d::box_layout bench = r3d::furniture_box_layout( 0.3f, 0.2f, 0.7f, 0.9f, 0.4f, true );
+    CHECK( approx( bench.x0, 0.3f ) );
+    CHECK( approx( bench.x1, 0.7f ) );
+    CHECK( approx( bench.col0, bench.x0 ) );
+    CHECK( approx( bench.col1, bench.x1 ) );
+    CHECK( bench.y0 > 0.0f );
+    CHECK( bench.y1 > bench.y0 );
+    CHECK( approx( bench.side_bottom, bench.lid_bottom ) );
+    CHECK( bench.side_top < bench.side_bottom );
+
+    // No opaque pixels known: fall back to the whole sprite.
+    const r3d::box_layout none = r3d::furniture_box_layout( 0.0f, 0.0f, 0.0f, 0.0f, 0.4f, false );
+    CHECK( approx( none.x1, 1.0f ) );
+    CHECK( approx( none.y1, 1.0f ) );
 }
 
 TEST_CASE( "r3d_furniture_shapes", "[r3d]" )

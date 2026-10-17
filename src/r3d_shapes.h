@@ -40,10 +40,37 @@ struct tile_traits {
     bool low = false;       // TFLAG_SHORT
     bool flat_surface = false;
     bool window = false;
+    bool door = false;      // a door in a wall line, open or closed
     int move_cost = 100;    // <= 0: cannot be walked through
 };
 
 shape classify_terrain( const tile_traits &t );
+
+/**
+ * How a 3/4-view furniture sprite becomes a box. Tilesets draw furniture with its lid above its
+ * front, inside transparent margins; the box takes the opaque part's width, its lid rows become
+ * the box's top and some rows below them its sides. All values are fractions: footprint in the
+ * tile (x east, y south, before any rotation), rows and columns of the sprite.
+ */
+struct box_layout {
+    float x0 = 0.0f;
+    float x1 = 1.0f;
+    float y0 = 0.0f;
+    float y1 = 1.0f;
+    float col0 = 0.0f;
+    float col1 = 1.0f;
+    float lid_top = 0.0f;
+    float lid_bottom = 1.0f;
+    float side_top = 0.0f;
+    float side_bottom = 1.0f;
+};
+
+/**
+ * Layout for a sprite whose opaque pixels span columns [ox0, ox1] and rows [oy0, oy1] (fractions
+ * of the sprite). front is the share of the opaque rows that shows the front. Low furniture
+ * (benches) repeats the lid's front edge on its sides, since its front rows are mostly legs.
+ */
+box_layout furniture_box_layout( float ox0, float oy0, float ox1, float oy1, float front, bool low );
 shape classify_furniture( const tile_traits &t );
 
 enum face_bit : uint8_t {

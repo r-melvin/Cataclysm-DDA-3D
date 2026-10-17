@@ -37,6 +37,9 @@ tile_traits traits_of( const map_data_common_t &d )
     t.low = d.has_flag( ter_furn_flag::TFLAG_SHORT );
     t.flat_surface = d.has_flag( ter_furn_flag::TFLAG_FLAT_SURF );
     t.window = d.has_flag( ter_furn_flag::TFLAG_WINDOW );
+    // Locked and damaged doors lack DOOR but are barricadable as doors.
+    t.door = d.has_flag( ter_furn_flag::TFLAG_DOOR ) || d.has_flag( "BARRICADABLE_DOOR" ) ||
+             d.has_flag( "BARRICADABLE_DOOR_DAMAGED" ) || d.has_flag( "BARRICADABLE_DOOR_REINFORCED" );
     t.move_cost = d.movecost;
     return t;
 }
@@ -65,6 +68,14 @@ sprite_ref to_sprite_ref( const texture_draw_data &data )
     ref.size_y = data.size_y;
     ref.quarter_turns = data.quarter_turns;
     ref.flip = data.flip;
+    if( data.opaque.w > 0 && data.opaque.h > 0 && data.dimensions.w > 0 && data.dimensions.h > 0 ) {
+        const float w = static_cast<float>( data.dimensions.w );
+        const float h = static_cast<float>( data.dimensions.h );
+        ref.opaque_x0 = static_cast<float>( data.opaque.x ) / w;
+        ref.opaque_y0 = static_cast<float>( data.opaque.y ) / h;
+        ref.opaque_x1 = static_cast<float>( data.opaque.x + data.opaque.w ) / w;
+        ref.opaque_y1 = static_cast<float>( data.opaque.y + data.opaque.h ) / h;
+    }
     ref.valid = true;
     return ref;
 }
@@ -193,17 +204,104 @@ void emit_side( quad_sink &sink, const sprite_ref &s, int x, int y, face_bit fac
 }
 
 // Upright panel through the middle of the cell, along x (along_x) or along y, one tile high.
+// Door or window standing in the wall line: a thin slab through the middle of the cell, along
+// x (along_x) or y, with the sprite on both broad faces.
 void emit_pane( quad_sink &sink, const sprite_ref &s, int x, int y, bool along_x, float z_base,
                 float height, const light_ref &ref )
 {
+    constexpr float half_thickness = 0.08f;
     const float cx = static_cast<float>( x ) + 0.5f;
     const float cy = static_cast<float>( y ) + 0.5f;
     const float z_top = z_base + height;
     const uvs_t uv = {{ { s.u0, s.v0 }, { s.u1, s.v0 }, { s.u1, s.v1 }, { s.u0, s.v1 } }};
-    const corners_t c = along_x ?
-    corners_t{{ { cx - 0.5f, cy, z_top }, { cx + 0.5f, cy, z_top }, { cx + 0.5f, cy, z_base }, { cx - 0.5f, cy, z_base } }} :
-    corners_t{{ { cx, cy + 0.5f, z_top }, { cx, cy - 0.5f, z_top }, { cx, cy - 0.5f, z_base }, { cx, cy + 0.5f, z_base } }};
-    sink.add( s, c, uv, ref );
+    for( const float side : { -half_thickness, half_thickness } ) {
+        const corners_t c = along_x ?
+        corners_t{{ { cx - 0.5f, cy + side, z_top }, { cx + 0.5f, cy + side, z_top }, { cx + 0.5f, cy + side, z_base }, { cx - 0.5f, cy + side, z_base } }} :
+        corners_t{{ { cx + side, cy + 0.5f, z_top }, { cx + side, cy - 0.5f, z_top }, { cx + side, cy - 0.5f, z_base }, { cx + side, cy + 0.5f, z_base } }};
+        sink.add( s, c, uv, ref );
+    }
+    // The top edge, in the colour of the sprite's top rows.
+    const float v_edge = s.v0 + ( s.v1 - s.v0 ) * 0.08f;
+    const uvs_t edge_uv = {{ { s.u0, s.v0 }, { s.u1, s.v0 }, { s.u1, v_edge }, { s.u0, v_edge } }};
+    const corners_t top = along_x ?
+    corners_t{{ { cx - 0.5f, cy - half_thickness, z_top }, { cx + 0.5f, cy - half_thickness, z_top }, { cx + 0.5f, cy + half_thickness, z_top }, { cx - 0.5f, cy + half_thickness, z_top } }} :
+    corners_t{{ { cx - half_thickness, cy - 0.5f, z_top }, { cx + half_thickness, cy - 0.5f, z_top }, { cx + half_thickness, cy + 0.5f, z_top }, { cx - half_thickness, cy + 0.5f, z_top } }};
+    sink.add( s, top, edge_uv, ref );
+}
+
+// A furniture box laid out by furniture_box_layout, turned and mirrored like the flat view turns
+// the sprite. refs: top, north, south, west, east. faces says which sides neighbours leave open;
+// a side that stops short of its tile edge is always drawn.
+void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, float z1,
+               const box_layout &b, uint8_t faces, const std::array<light_ref, 5> &refs )
+{
+    if( !s.valid ) {
+        return;
+    }
+    // Footprint in the cell, mirrored and then turned clockwise (u east, v south).
+    float fx0 = s.flip ? 1.0f - b.x1 : b.x0;
+    float fx1 = s.flip ? 1.0f - b.x0 : b.x1;
+    float fy0 = b.y0;
+    float fy1 = b.y1;
+    for( int t = 0; t < ( s.quarter_turns & 3 ); ++t ) {
+        const float nx0 = 1.0f - fy1;
+        const float nx1 = 1.0f - fy0;
+        fy0 = fx0;
+        fy1 = fx1;
+        fx0 = nx0;
+        fx1 = nx1;
+    }
+    const float ox = static_cast<float>( x );
+    const float oy = static_cast<float>( y );
+    const float du = s.u1 - s.u0;
+    const float dv = s.v1 - s.v0;
+    const float u0 = s.u0 + du * b.col0;
+    const float u1 = s.u0 + du * b.col1;
+
+    // Top: the lid rows, turned like emit_top turns a whole sprite.
+    if( ( faces & face_top ) != 0 ) {
+        const float lv0 = s.v0 + dv * b.lid_top;
+        const float lv1 = s.v0 + dv * b.lid_bottom;
+        const float ul = s.flip ? u1 : u0;
+        const float ur = s.flip ? u0 : u1;
+        const uvs_t base = {{ { ul, lv0 }, { ur, lv0 }, { ur, lv1 }, { ul, lv1 } }};
+        uvs_t uv;
+        for( size_t i = 0; i < 4; ++i ) {
+            uv[i] = base[( i + 4 - static_cast<size_t>( s.quarter_turns & 3 ) ) % 4];
+        }
+        const corners_t c = {{ { ox + fx0, oy + fy0, z1 }, { ox + fx1, oy + fy0, z1 },
+                { ox + fx1, oy + fy1, z1 }, { ox + fx0, oy + fy1, z1 }
+            }
+        };
+        sink.add( s, c, uv, refs[0] );
+    }
+
+    // Sides: the side rows, never turned; left/right as seen from outside.
+    const float sv0 = s.v0 + dv * b.side_top;
+    const float sv1 = s.v0 + dv * b.side_bottom;
+    const uvs_t side_uv = {{ { u0, sv0 }, { u1, sv0 }, { u1, sv1 }, { u0, sv1 } }};
+    constexpr float edge = 0.01f;
+    const struct {
+        face_bit face;
+        bool short_of_edge;
+        float lx, ly, rx, ry;
+        size_t ref;
+    } sides[] = {
+        { face_north, fy0 > edge, fx1, fy0, fx0, fy0, 1 },
+        { face_south, fy1 < 1.0f - edge, fx0, fy1, fx1, fy1, 2 },
+        { face_west, fx0 > edge, fx0, fy0, fx0, fy1, 3 },
+        { face_east, fx1 < 1.0f - edge, fx1, fy1, fx1, fy0, 4 },
+    };
+    for( const auto &sd : sides ) {
+        if( ( faces & sd.face ) == 0 && !sd.short_of_edge ) {
+            continue;
+        }
+        const corners_t c = {{ { ox + sd.lx, oy + sd.ly, z1 }, { ox + sd.rx, oy + sd.ry, z1 },
+                { ox + sd.rx, oy + sd.ry, z0 }, { ox + sd.lx, oy + sd.ly, z0 }
+            }
+        };
+        sink.add( s, c, side_uv, refs[sd.ref] );
+    }
 }
 
 // Foreground decals sit this far in front of the backdrop so the depth test lets them through.
@@ -624,35 +722,20 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                                  make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
                 continue;
             }
-            // A box: top of the sprite on top. Tall pieces (lockers) show the sprite's front strip
-            // on every side; on low ones (benches, counters) that strip is mostly legs and shadow,
-            // so their sides repeat the lid's front edge instead.
-            const float front = front_fraction( fs.height - ts.height );
+            // A box sized to the sprite's opaque part: lid rows on top, the front rows (tall
+            // pieces like lockers) or the lid's front edge (low ones like benches, whose front
+            // rows are mostly legs and shadow) on the sides.
+            const sprite_ref &spr = furn.main();
             constexpr float low_box = 0.6f;
-            constexpr float lid_edge = 0.12f;
-            const sprite_band band = fs.height < low_box ?
-                                     sprite_band{ 1.0f - front - lid_edge, 1.0f - front } :
-                                     sprite_band{ 1.0f - front, 1.0f };
-            const uint8_t furn_faces = visible_faces( fs, nb );
-            if( ( furn_faces & face_top ) != 0 ) {
-                emit_top_layers( sink, furn, lx, ly, fs.height,
-                                 make_ref( lx, ly, 0, 0, 0, face_shade[0] ), front );
-            }
-            const struct {
-                face_bit face;
-                int dx;
-                int dy;
-                uint8_t shade;
-            } sides[] = {
-                { face_north, 0, -1, face_shade[1] }, { face_south, 0, 1, face_shade[2] },
-                { face_west, -1, 0, face_shade[3] }, { face_east, 1, 0, face_shade[4] },
-            };
-            for( const auto &s : sides ) {
-                if( ( furn_faces & s.face ) != 0 ) {
-                    emit_side_layers( sink, furn, lx, ly, s.face, ts.height, fs.height,
-                                      make_ref( lx, ly, s.dx, s.dy, 0, s.shade ), band );
+            const box_layout layout = furniture_box_layout( spr.opaque_x0, spr.opaque_y0, spr.opaque_x1,
+                                      spr.opaque_y1, front_fraction( fs.height - ts.height ), fs.height < low_box );
+            const std::array<light_ref, 5> refs = {{
+                    make_ref( lx, ly, 0, 0, 0, face_shade[0] ), make_ref( lx, ly, 0, -1, 0, face_shade[1] ),
+                    make_ref( lx, ly, 0, 1, 0, face_shade[2] ), make_ref( lx, ly, -1, 0, 0, face_shade[3] ),
+                    make_ref( lx, ly, 1, 0, 0, face_shade[4] )
                 }
-            }
+            };
+            emit_box( sink, spr, lx, ly, ts.height, fs.height, layout, visible_faces( fs, nb ), refs );
         }
     }
     chunk_mesh mesh = sink.finish();

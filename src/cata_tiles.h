@@ -718,6 +718,8 @@ struct texture_draw_data {
     // how the flat view would turn this sprite: clockwise quarter turns, or a horizontal flip
     int quarter_turns = 0;
     bool flip = false;
+    // bounding box of the sprite's opaque pixels, relative to dimensions (empty when unknown)
+    SDL_Rect opaque = { 0, 0, 0, 0 };
 };
 
 /** type used for color blocks overlays.

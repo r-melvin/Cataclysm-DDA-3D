@@ -40,6 +40,11 @@ struct sprite_ref {
     float size_y = 1.0f;
     int quarter_turns = 0; // clockwise, applied to top faces like the flat view turns the sprite
     bool flip = false;     // mirrored horizontally
+    // opaque part of the sprite as fractions of it (whole sprite when unknown)
+    float opaque_x0 = 0.0f;
+    float opaque_y0 = 0.0f;
+    float opaque_x1 = 1.0f;
+    float opaque_y1 = 1.0f;
     bool valid = false;
 };
 

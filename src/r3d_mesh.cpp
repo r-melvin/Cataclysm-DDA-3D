@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <optional>
 #include <string>
 
@@ -350,8 +351,11 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
 
     // Top: the lid rows, turned like emit_top turns a whole sprite.
     if( ( faces & face_top ) != 0 ) {
-        const float lv0 = s.v0 + dv * b.lid_top;
-        const float lv1 = s.v0 + dv * b.lid_bottom;
+        // A slab's top is the middle of the lid: the lid's edge rows are the sprite's outline
+        // and shadow, which would read as a raised rim on a seat.
+        const float lid_span = b.lid_bottom - b.lid_top;
+        const float lv0 = s.v0 + dv * ( slab > 0.0f ? b.lid_top + lid_span * 0.2f : b.lid_top );
+        const float lv1 = s.v0 + dv * ( slab > 0.0f ? b.lid_bottom - lid_span * 0.15f : b.lid_bottom );
         const float ul = s.flip ? u1 : u0;
         const float ur = s.flip ? u0 : u1;
         const uvs_t base = {{ { ul, lv0 }, { ur, lv0 }, { ur, lv1 }, { ul, lv1 } }};
@@ -676,7 +680,11 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int sub
         }
         const std::string name = match_wall_texture( wall_sides_->rules, chain );
         const auto found = std::find( wall_sides_->names.begin(), wall_sides_->names.end(), name );
-        if( !name.empty() && found != wall_sides_->names.end() ) {
+        // A wall of a patterned material (brick, wood, logs, stone, metal...) keeps the
+        // tileset's own look: its sprite is repeated up the sides and tops the wall. Painted
+        // and plain walls, whose sprites only give a colour, take the atlas texture instead.
+        const bool patterned_material = !name.empty() && name != "plaster" && info.sprite.valid;
+        if( !name.empty() && found != wall_sides_->names.end() && !patterned_material ) {
             const uv_rect uv = atlas_cell( static_cast<int>( found - wall_sides_->names.begin() ),
                                            wall_sides_->cell, wall_sides_->width, wall_sides_->height );
             if( uv.valid ) {
@@ -959,18 +967,6 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                         emit_floor_under( lx, ly, nb.north.kind == shape_kind::block ||
                                           nb.south.kind == shape_kind::block );
                     }
-                    // A second cap at the cutaway stub height, shown only where the cutaway
-                    // removes the wall above it.
-                    if( ts.height > cutaway_stub_height ) {
-                        light_ref stub_ref = make_ref( lx, ly, 0, 0, 0, face_shade[0] );
-                        stub_ref.stub = true;
-                        if( terrain.cap.valid ) {
-                            emit_top( sink, terrain.cap, lx, ly, cutaway_stub_height,
-                                      tinted( stub_ref, terrain.cap_tint ) );
-                        } else {
-                            emit_top_layers( sink, terrain, lx, ly, cutaway_stub_height, stub_ref );
-                        }
-                    }
                     if( ( faces & face_top ) != 0 ) {
                         if( terrain.cap.valid ) {
                             emit_top( sink, terrain.cap, lx, ly, ts.height,
@@ -1087,13 +1083,7 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             };
             emit_box( sink, spr, lx, ly, ts.height, fs.height, layout, visible_faces( fs, nb ) | all_sides,
                       refs, facing, joined, fs.slab );
-            // Tall pieces (lockers, shelves) get a lid at the cutaway stub height too.
-            if( fs.slab <= 0.0f && fs.height > cutaway_stub_height ) {
-                light_ref stub_ref = make_ref( lx, ly, 0, 0, 0, face_shade[0] );
-                stub_ref.stub = true;
-                emit_top( sink, spr, lx, ly, cutaway_stub_height, stub_ref,
-                          front_fraction( fs.height - ts.height ) );
-            }
+
         }
     }
     chunk_mesh mesh = sink.finish();

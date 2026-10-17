@@ -97,6 +97,8 @@ class gpu
         bool begin_pass( float r, float g, float b );
         /** Binds the block pipeline. */
         void bind_block_pipeline();
+        /** Binds the blended pipeline for the ghost pass (see r3d_block.frag). */
+        void bind_ghost_pipeline();
         /**
          * Draws indexed triangles from the given buffers with one sheet texture bound.
          * @param sheet an SDL_Texture of the GPU renderer holding the tileset sprites.
@@ -119,6 +121,9 @@ class gpu
         SDL_Renderer *renderer_ = nullptr;
         SDL_GPUDevice *device_ = nullptr;
         SDL_GPUGraphicsPipeline *block_pipeline_ = nullptr;
+        // Same shaders, alpha blended and without depth writes: draws what stands between the
+        // camera and the player as a see-through ghost after the opaque pass.
+        SDL_GPUGraphicsPipeline *ghost_pipeline_ = nullptr;
         SDL_GPUSampler *sampler_ = nullptr;
 
         SDL_GPUTexture *color_ = nullptr;

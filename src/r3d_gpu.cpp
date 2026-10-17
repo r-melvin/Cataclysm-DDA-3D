@@ -163,9 +163,21 @@ bool gpu::init( SDL_Renderer *renderer )
     pci.target_info.depth_stencil_format = depth_format_;
     pci.target_info.has_depth_stencil_target = true;
     block_pipeline_ = SDL_CreateGPUGraphicsPipeline( device_, &pci );
+    // The ghost pass blends over the finished opaque picture and leaves the depth alone.
+    SDL_GPUColorTargetDescription ghost_target = color_target;
+    ghost_target.blend_state.enable_blend = true;
+    ghost_target.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+    ghost_target.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+    ghost_target.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+    ghost_target.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+    ghost_target.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+    ghost_target.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+    pci.target_info.color_target_descriptions = &ghost_target;
+    pci.depth_stencil_state.enable_depth_write = false;
+    ghost_pipeline_ = SDL_CreateGPUGraphicsPipeline( device_, &pci );
     SDL_ReleaseGPUShader( device_, vs );
     SDL_ReleaseGPUShader( device_, fs );
-    if( !block_pipeline_ ) {
+    if( !block_pipeline_ || !ghost_pipeline_ ) {
         DebugLog( D_ERROR, DC_ALL ) << "r3d: SDL_CreateGPUGraphicsPipeline failed: " << SDL_GetError();
         shutdown();
         return false;
@@ -246,11 +258,15 @@ void gpu::shutdown()
         if( block_pipeline_ ) {
             SDL_ReleaseGPUGraphicsPipeline( device_, block_pipeline_ );
         }
+        if( ghost_pipeline_ ) {
+            SDL_ReleaseGPUGraphicsPipeline( device_, ghost_pipeline_ );
+        }
         if( sampler_ ) {
             SDL_ReleaseGPUSampler( device_, sampler_ );
         }
     }
     block_pipeline_ = nullptr;
+    ghost_pipeline_ = nullptr;
     sampler_ = nullptr;
     device_ = nullptr;
     renderer_ = nullptr;
@@ -504,6 +520,13 @@ void gpu::bind_block_pipeline()
 {
     if( pass_ ) {
         SDL_BindGPUGraphicsPipeline( pass_, block_pipeline_ );
+    }
+}
+
+void gpu::bind_ghost_pipeline()
+{
+    if( pass_ && ghost_pipeline_ ) {
+        SDL_BindGPUGraphicsPipeline( pass_, ghost_pipeline_ );
     }
 }
 

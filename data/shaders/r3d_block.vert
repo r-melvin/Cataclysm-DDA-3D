@@ -15,7 +15,7 @@ layout(set = 1, binding = 0) uniform params {
     vec4 cut;    // xy: the player in world space, z: height below which nothing is cut,
                  // w: cutaway half-width across the view, in tiles (0: off)
     vec4 cut2;   // xy: the view's forward direction on the ground, z: cutaway half-length
-                 // along it
+                 // along it, w: 1 in the ghost pass (draw only what the cutaway removed)
 } u;
 
 layout(location = 0) out vec2 v_uv;
@@ -23,7 +23,6 @@ layout(location = 1) out vec4 v_light;
 layout(location = 2) out vec3 v_world;
 layout(location = 3) flat out vec4 v_cut;
 layout(location = 4) flat out vec4 v_cut2;
-layout(location = 5) flat out float v_stub;
 
 void main()
 {
@@ -42,7 +41,4 @@ void main()
     v_world = pos;
     v_cut = u.cut;
     v_cut2 = u.cut2;
-    // In the terrain pass (no billboard pull) the light's alpha flags a cap that is only drawn
-    // inside the cutaway, where the tile above it is removed.
-    v_stub = u.pull.w > 0.0 ? 0.0 : a_light.a;
 }

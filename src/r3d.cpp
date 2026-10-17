@@ -428,8 +428,6 @@ void update_chunk_light( state &s, chunk_gpu &c, const tripoint_abs_sm &pos,
                          static_cast<uint8_t>( ( ( tile >> 0 ) & 255u ) * shade / 255u * r.tint_r / 255u ),
                          static_cast<uint8_t>( ( ( tile >> 8 ) & 255u ) * shade / 255u * r.tint_g / 255u ),
                          static_cast<uint8_t>( ( ( tile >> 16 ) & 255u ) * shade / 255u * r.tint_b / 255u ) );
-        // The light's alpha flags stub caps for the shader (see r3d_block.frag).
-        c.light[i] = ( c.light[i] & 0x00ffffffu ) | ( r.stub ? 0xff000000u : 0u );
     }
     s.device.upload( c.lights, c.light.data(),
                      static_cast<uint32_t>( c.light.size() * sizeof( uint32_t ) ), true );
@@ -446,10 +444,10 @@ void set_cutaway( block_uniforms &u, const mat4 &view_proj, float aspect, const 
     }
     ( void )view_proj;
     ( void )aspect;
-    // Half-width in tiles of the hole across the view; along the view it is stretched by the
+    // Half-width in tiles of the cutaway across the view; along the view it is stretched by the
     // pitch so it looks round on screen. Below the stub height nothing is cut, so the floor and
-    // low furniture around the player stay and taller things become low walls. See
-    // r3d_block.frag.
+    // low furniture around the player stay; what is cut is drawn again see-through by the ghost
+    // pass. See r3d_block.frag.
     constexpr float radius = 1.3f;
     const vec3 middle = tile_to_world( { static_cast<float>( p.x() - center.x() ) + 0.5f,
                                          static_cast<float>( p.y() - center.y() ) + 0.5f, 0.0f } );
@@ -1044,6 +1042,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
                                  b.first_index, b.index_count, b.sheet, uniforms );
         }
     }
+    const float cut_radius = uniforms.cut[3];
     if( draw_entities ) {
         uniforms.cut[3] = 0.0f; // creatures in front of the player stay
         uniforms.offset[0] = 0.0f;
@@ -1059,6 +1058,24 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         for( const mesh_batch &b : entities.batches ) {
             s.device.draw_block( s.dyn_positions, s.dyn_lights, s.dyn_indices, b.first_index, b.index_count,
                                  b.sheet, uniforms );
+        }
+    }
+    // Ghost pass: what the cutaway removed from the opaque pass is drawn again, see-through and
+    // without depth writes, over the finished picture, so a wall in front of the player reads as
+    // a wall you look through rather than a wall with a hole.
+    uniforms.cut[3] = cut_radius;
+    if( uniforms.cut[3] > 0.0f ) {
+        s.device.bind_ghost_pipeline();
+        uniforms.pull[3] = 0.0f;
+        uniforms.cut2[3] = 1.0f;
+        for( const visible_chunk &vc : visible ) {
+            uniforms.offset[0] = vc.offset[0];
+            uniforms.offset[1] = vc.offset[1];
+            uniforms.offset[2] = vc.offset[2];
+            for( const mesh_batch &b : vc.chunk->batches ) {
+                s.device.draw_block( vc.chunk->positions, vc.chunk->lights, vc.chunk->indices,
+                                     b.first_index, b.index_count, b.sheet, uniforms );
+            }
         }
     }
     SDL_Texture *const result = s.device.end_frame();

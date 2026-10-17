@@ -36,6 +36,8 @@ constexpr float item_size = 0.6f;
 constexpr float item_stand_size = 0.45f; // first person: size of an item standing on the floor
 constexpr float post_width = 0.3f;       // first person: markers along a line of fire
 constexpr float post_height = 0.6f;
+constexpr float heard_post_width = 0.35f; // first person: a sound heard there this turn
+constexpr float heard_post_height = 0.8f;
 
 // Light colour with a zero alpha: no depth pull (see r3d_block.vert), for everything in the
 // entity mesh that is not the top of a billboard.
@@ -162,10 +164,12 @@ void emit_stand( quad_sink &sink, const tile_info &sprite, const vec3 &right_wor
 }
 
 // Box standing on a tile with the sprite on its four sides, so a cursor reads as a 3D outline.
-// size is the footprint's width; the box is centred on the tile.
+// size is the footprint's width; the box is centred on the tile. An on_top box keeps a light
+// alpha of 1, which the first-person entity pass draws in front of everything (r3d_block.vert).
 void emit_marker_box( quad_sink &sink, const sprite_ref &s, float x0, float y0, float z0, float z1,
-                      uint32_t color, float size = 1.0f )
+                      uint32_t color, float size = 1.0f, bool on_top = false )
 {
+    const uint32_t vertex_color = on_top ? color | 0xff000000u : no_pull( color );
     x0 += ( 1.0f - size ) * 0.5f;
     y0 += ( 1.0f - size ) * 0.5f;
     const float x1 = x0 + size;
@@ -180,7 +184,7 @@ void emit_marker_box( quad_sink &sink, const sprite_ref &s, float x0, float y0, 
                 { e[0], e[1], z0 }
             }
         };
-        sink.add_colored( s, c, uv, light_ref{}, no_pull( color ) );
+        sink.add_colored( s, c, uv, light_ref{}, vertex_color );
     }
 }
 
@@ -316,6 +320,14 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         const float x0 = static_cast<float>( m.pos.x() - view.center.x() );
         const float y0 = static_cast<float>( m.pos.y() - view.center.y() );
         const float z = frame_z( m.pos ) + m.top + 0.03f;
+        if( m.heard ) {
+            const sprite_ref &s = m.sprite->main();
+            if( upright && s.valid ) {
+                emit_marker_box( sink, s, x0, y0, z, z + heard_post_height, white, heard_post_width,
+                                 true );
+            }
+            continue;
+        }
         emit_flat( sink, *m.sprite, x0 + 0.5f, y0 + 0.5f, z, white, 1.0f );
         if( upright && !m.box && !m.large ) {
             // A point along a line of fire: a post that can be seen from eye level.

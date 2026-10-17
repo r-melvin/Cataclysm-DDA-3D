@@ -13,7 +13,7 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
 * FP3 ceilings and sky: done (not yet seen in the game).
 * FP4 tweening and redraw loop: done (not yet seen in the game); instant by default.
 * FP5 HUD: done in part (not yet seen in the game): compass strip with hostile ticks, edge alert,
-  crosshair dot with label. Not done: sound markers, look-level line, auto-travel caret.
+  crosshair dot with label. Not done: look-level line, auto-travel caret.
 * Minimap heading-up: done (not yet seen in the game). With `PIXEL_MINIMAP` on and option
   `R3D_FP_MINIMAP_ROTATE` (default on), the pixel minimap turns in first person so the way you
   face points up; your beacon stays put and the map turns under it. North-up in orbit mode, in
@@ -29,6 +29,14 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
   hides the explored room behind it. Creatures, items and trees keep being left out when unseen.
   Not done from FP6: the linear-min sampler for distant floors, front-to-back chunk order, the
   item frustum pre-filter.
+* Sound markers: done (not yet seen in the game). The markers the game queues for the turn
+  (`sounds::get_footstep_markers`, what `cata_tiles::draw_footsteps_frame` draws in 2D) are
+  posts on their tile in first person, using the tileset's `footstep`/`footstep_above`/
+  `footstep_below` sprite (`highlight` when it has none). Since the game only places them where
+  you cannot see, the posts are drawn in front of everything (light alpha 1 plus uniform
+  `flags.y`), like the 2D marker drawn over the map. Sounds outside the horizontal field of
+  view are yellow ticks on the compass strip instead (dimmer at the strip's ends when behind).
+  The crosshair label now names only tiles you see or remember.
 
 What to test locally (FP0): toggle with ctrl+F in a house; the picture is a perspective view from
 eye height; left/right arrows (with `R3D_WASD` on, the default) or ctrl+left/right turn by 45

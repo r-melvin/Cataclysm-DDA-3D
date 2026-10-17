@@ -38,9 +38,11 @@
 #include "r3d_dda.h"
 #include "r3d_entities.h"
 #include "r3d_gpu.h"
+#include "r3d_hud.h"
 #include "r3d_mesh.h"
 #include "sdl_wrappers.h"
 #include "sdltiles.h"
+#include "sounds.h"
 #include "submap.h"
 #include "ui_manager.h"
 #include "uistate.h"
@@ -1082,25 +1084,20 @@ namespace
 // First-person overlay, drawn with the 2D renderer over the finished picture: a compass strip
 // (the game keeps full-circle vision, so this shows what is behind you), an alert on the edge
 // nearest an adjacent hostile that is out of the picture, and a crosshair with its label.
+// Bearings follow r3d_hud.h: radians clockwise from north, relative to the view's yaw.
 void draw_fp_hud( SDL_Renderer *renderer, float x, float y, float w, float h, const camera &cam )
 {
     constexpr float pi = 3.14159265f;
+    // The compass strip shows half a turn: the view in the middle, what is beside you at the ends.
+    constexpr float compass_span = pi;
     const std::string compass = get_option<std::string>( "R3D_FP_COMPASS" );
     const bool edge_alert = get_option<bool>( "R3D_FP_EDGE_ALERT" );
     const avatar &you = get_avatar();
     map &here = get_map();
-    // The bearing of a tile from the player relative to the view, in radians clockwise, -pi..pi.
-    auto relative_bearing = [&]( const tripoint_bub_ms & at ) {
+    const float view_yaw = cam.fp_yaw();
+    auto bearing_to = [&]( const tripoint_bub_ms & at ) {
         const tripoint_rel_ms d = at - you.pos_bub();
-        float rel = std::atan2( static_cast<float>( d.x() ), static_cast<float>( -d.y() ) ) -
-                    cam.fp_yaw();
-        while( rel > pi ) {
-            rel -= 2.0f * pi;
-        }
-        while( rel < -pi ) {
-            rel += 2.0f * pi;
-        }
-        return rel;
+        return relative_bearing( static_cast<float>( d.x() ), static_cast<float>( d.y() ), view_yaw );
     };
     auto fill = [&]( float rx, float ry, float rw, float rh, uint8_t r, uint8_t g, uint8_t b,
     uint8_t a ) {
@@ -1115,69 +1112,73 @@ void draw_fp_hud( SDL_Renderer *renderer, float x, float y, float w, float h, co
     };
 
     if( compass != "off" ) {
-        // The strip shows 180 degrees: the heading in the middle, what is beside you at the ends.
         const float strip_w = std::max( 120.0f, w * 0.4f );
         const float strip_h = 22.0f;
         const float left = x + ( w - strip_w ) * 0.5f;
         const float top = y + 6.0f;
         const float mid = left + strip_w * 0.5f;
-        auto bearing_x = [&]( float rel ) {
-            return mid + rel / ( pi * 0.5f ) * strip_w * 0.5f;
+        auto strip_x = [&]( float rel ) {
+            return mid + compass_offset( rel, strip_w, compass_span );
         };
         fill( left, top, strip_w, strip_h, 0, 0, 0, 110 );
         static const char *const names[8] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
         for( int i = 0; i < 8; ++i ) {
-            float rel = static_cast<float>( i ) * pi * 0.25f - cam.fp_yaw();
-            while( rel > pi ) {
-                rel -= 2.0f * pi;
-            }
-            while( rel < -pi ) {
-                rel += 2.0f * pi;
-            }
-            if( std::abs( rel ) > pi * 0.5f ) {
+            const float rel = wrap_angle( heading_bearing( i ) - view_yaw );
+            if( !on_compass( rel, compass_span ) ) {
                 continue;
             }
-            const float tx = bearing_x( rel );
+            const float tx = strip_x( rel );
             const std::string label = names[i];
             const bool cardinal = label.size() == 1;
             text( tx - 4.0f * static_cast<float>( label.size() ), top + 2.0f, label, cardinal ? 255 : 170,
                   cardinal ? 255 : 170, cardinal ? 255 : 170 );
         }
         fill( mid - 1.0f, top + strip_h - 5.0f, 2.0f, 5.0f, 255, 255, 255, 255 );
+        // Sounds heard this turn that are not in the picture: a short yellow tick each, dimmer
+        // when they lie behind the strip's ends. Those in the picture are posts on their tile.
+        const float half_fov = cam.fovx * 0.5f;
+        for( const tripoint_bub_ms &p : sounds::get_footstep_markers() ) {
+            const float rel = bearing_to( p );
+            if( std::abs( rel ) <= half_fov ) {
+                continue;
+            }
+            fill( strip_x( rel ) - 2.0f, top + strip_h - 9.0f, 4.0f, 9.0f, 240, 210, 60,
+                  on_compass( rel, compass_span ) ? 255 : 150 );
+        }
         if( compass == "threats" ) {
             for( Creature *critter : you.get_hostile_creatures( MAX_VIEW_DISTANCE ) ) {
                 if( critter->posz() != you.posz() ) {
                     continue;
                 }
-                const float rel = relative_bearing( critter->pos_bub() );
+                const float rel = bearing_to( critter->pos_bub() );
                 const int distance = std::max( 1, rl_dist( you.pos_bub(), critter->pos_bub() ) );
                 // Behind the player the tick sits at the end of the strip it is nearer to.
-                const float shown = std::clamp( rel, -pi * 0.5f, pi * 0.5f );
                 const float tick_h = std::clamp( 24.0f / static_cast<float>( distance ), 5.0f, strip_h );
                 const float tick_w = distance == 1 ? 5.0f : 3.0f;
-                fill( bearing_x( shown ) - tick_w * 0.5f, top + strip_h - tick_h, tick_w, tick_h, 230, 40, 40,
-                      std::abs( rel ) > pi * 0.5f ? 150 : 255 );
+                fill( strip_x( rel ) - tick_w * 0.5f, top + strip_h - tick_h, tick_w, tick_h, 230, 40, 40,
+                      on_compass( rel, compass_span ) ? 255 : 150 );
             }
         }
     }
 
     if( edge_alert ) {
-        const float half_fov = cam.fovx * 0.5f;
         constexpr float bar = 6.0f;
         for( Creature *critter : you.get_hostile_creatures( 1 ) ) {
             if( critter->posz() != you.posz() ) {
                 continue;
             }
-            const float rel = relative_bearing( critter->pos_bub() );
-            if( std::abs( rel ) <= half_fov ) {
-                continue; // in the picture
-            }
-            if( std::abs( rel ) > pi * 0.75f ) {
-                fill( x, y + h - bar, w, bar, 230, 40, 40, 200 );
-            } else if( rel < 0.0f ) {
-                fill( x, y, bar, h, 230, 40, 40, 200 );
-            } else {
-                fill( x + w - bar, y, bar, h, 230, 40, 40, 200 );
+            switch( edge_alert_side( bearing_to( critter->pos_bub() ), cam.fovx ) ) {
+                case edge_side::none:
+                    break;
+                case edge_side::behind:
+                    fill( x, y + h - bar, w, bar, 230, 40, 40, 200 );
+                    break;
+                case edge_side::left:
+                    fill( x, y, bar, h, 230, 40, 40, 200 );
+                    break;
+                case edge_side::right:
+                    fill( x + w - bar, y, bar, h, 230, 40, 40, 200 );
+                    break;
             }
         }
     }
@@ -1187,7 +1188,9 @@ void draw_fp_hud( SDL_Renderer *renderer, float x, float y, float w, float h, co
         const float cy = y + h * 0.5f;
         fill( cx - 2.0f, cy - 2.0f, 4.0f, 4.0f, 255, 255, 255, 200 );
         std::string label;
-        if( const std::optional<tripoint_bub_ms> at = crosshair() ) {
+        const std::optional<tripoint_bub_ms> at = crosshair();
+        // Only what the player sees or remembers is named: a black, unexplored wall stays unknown.
+        if( at && ( you.sees( here, *at ) || you.has_memory_at( here.get_abs( *at ) ) ) ) {
             const Creature *critter = get_creature_tracker().creature_at( *at );
             if( critter && you.sees( here, *critter ) ) {
                 label = critter->disp_name();
@@ -1423,7 +1426,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         bool box, bool large ) {
             const tile_info &sprite = s.cache.named( TILE_CATEGORY::NONE, id, *tilecontext );
             for( const tripoint_bub_ms &p : where ) {
-                entities_view.markers.push_back( { p, column_height( s, here, p ), &sprite, box, large } );
+                entities_view.markers.push_back( { p, column_height( s, here, p ), &sprite, box, large, false } );
             }
         };
         add_markers( queued.line, "animation_line", false, false );
@@ -1432,6 +1435,24 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         }
         add_markers( queued.highlights, "highlight", false, true );
         add_markers( queued.cursors, "cursor", true, true );
+        // Sounds heard this turn, which cata_tiles::draw_footsteps_frame would draw: posts on
+        // their tile, seen through walls; the compass strip points at those out of the picture.
+        if( fp ) {
+            const int player_z = player_pos.z();
+            for( const tripoint_bub_ms &p : sounds::get_footstep_markers() ) {
+                const char *const id = p.z() > player_z ? "footstep_above" :
+                                       p.z() < player_z ? "footstep_below" : "footstep";
+                const tile_info *sprite = &s.cache.named( TILE_CATEGORY::NONE, id, *tilecontext );
+                if( !sprite->main().valid ) {
+                    sprite = &s.cache.named( TILE_CATEGORY::NONE, "footstep", *tilecontext );
+                }
+                if( !sprite->main().valid ) {
+                    sprite = &s.cache.named( TILE_CATEGORY::NONE, "highlight", *tilecontext );
+                }
+                entities_view.markers.push_back( { p, column_height( s, here, p ), sprite, false, false,
+                                                   true } );
+            }
+        }
     }
     const chunk_mesh entities = build_entity_mesh( entities_view );
     const bool draw_entities = !entities.empty() &&

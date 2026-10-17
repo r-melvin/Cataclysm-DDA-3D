@@ -39,32 +39,47 @@ tile_traits traits_of( const map_data_common_t &d )
     return t;
 }
 
-sprite_ref resolve_sprite( cata_tiles &tiles, const std::string &id, TILE_CATEGORY category )
+sprite_ref to_sprite_ref( const texture_draw_data &data )
 {
-    const tripoint_bub_ms origin( 0, 0, 0 );
-    std::optional<texture_draw_data> data = tiles.get_sprite_draw_data( id, category, origin );
-    if( !data ) {
-        data = tiles.get_sprite_draw_data( "unknown", TILE_CATEGORY::NONE, origin );
-    }
-    if( !data || !data->texture ) {
+    if( !data.texture ) {
         return {};
     }
     float tex_w = 0.0f;
     float tex_h = 0.0f;
-    if( !SDL_GetTextureSize( data->texture, &tex_w, &tex_h ) || tex_w <= 0.0f || tex_h <= 0.0f ) {
+    if( !SDL_GetTextureSize( data.texture, &tex_w, &tex_h ) || tex_w <= 0.0f || tex_h <= 0.0f ) {
         return {};
     }
     // Half a texel in from each edge so nearest sampling never picks up a neighbouring sprite.
     const float half_u = 0.5f / tex_w;
     const float half_v = 0.5f / tex_h;
     sprite_ref ref;
-    ref.sheet = data->texture;
-    ref.u0 = data->uv0.first + half_u;
-    ref.v0 = data->uv0.second + half_v;
-    ref.u1 = data->uv1.first - half_u;
-    ref.v1 = data->uv1.second - half_v;
+    ref.sheet = data.texture;
+    ref.u0 = data.uv0.first + half_u;
+    ref.v0 = data.uv0.second + half_v;
+    ref.u1 = data.uv1.first - half_u;
+    ref.v1 = data.uv1.second - half_v;
     ref.valid = true;
     return ref;
+}
+
+// Looks up both layers of a tile. A tile with neither falls back to the tileset's "unknown" sprite.
+void resolve_layers( cata_tiles &tiles, const std::string &id, TILE_CATEGORY category,
+                     tile_info &out )
+{
+    const tripoint_bub_ms origin( 0, 0, 0 );
+    if( const std::optional<texture_draw_data> bg = tiles.get_sprite_draw_data( id, category, origin,
+            true ) ) {
+        out.backdrop = to_sprite_ref( *bg );
+    }
+    if( const std::optional<texture_draw_data> fg = tiles.get_sprite_draw_data( id, category, origin ) ) {
+        out.sprite = to_sprite_ref( *fg );
+    }
+    if( !out.backdrop.valid && !out.sprite.valid ) {
+        if( const std::optional<texture_draw_data> unknown = tiles.get_sprite_draw_data( "unknown",
+                TILE_CATEGORY::NONE, origin ) ) {
+            out.sprite = to_sprite_ref( *unknown );
+        }
+    }
 }
 
 shape combine( const shape &terrain, const shape &furniture )
@@ -80,67 +95,6 @@ shape combine( const shape &terrain, const shape &furniture )
 
 constexpr std::array<uint8_t, 5> face_shade = { 255, 178, 204, 153, 191 }; // top N S W E
 
-struct quad {
-    SDL_Texture *sheet = nullptr;
-    std::array<vertex, 4> v;
-    std::array<light_ref, 4> r;
-};
-
-class quad_sink
-{
-    public:
-        // Tile space corners (x east, y south, z up) are flipped into the right-handed world frame.
-        void add( const sprite_ref &sprite, const std::array<std::array<float, 3>, 4> &corners,
-                  const std::array<std::array<float, 2>, 4> &uvs, const light_ref &ref ) {
-            if( !sprite.valid ) {
-                return;
-            }
-            quad q;
-            q.sheet = sprite.sheet;
-            for( size_t i = 0; i < 4; ++i ) {
-                q.v[i] = vertex{ corners[i][0], -corners[i][1], corners[i][2], uvs[i][0], uvs[i][1] };
-                q.r[i] = ref;
-            }
-            quads_.push_back( q );
-        }
-
-        chunk_mesh finish() {
-            std::stable_sort( quads_.begin(), quads_.end(), []( const quad & a, const quad & b ) {
-                return a.sheet < b.sheet;
-            } );
-            chunk_mesh mesh;
-            mesh.vertices.reserve( quads_.size() * 4 );
-            mesh.light.reserve( quads_.size() * 4 );
-            mesh.light_refs.reserve( quads_.size() * 4 );
-            mesh.indices.reserve( quads_.size() * 6 );
-            for( const quad &q : quads_ ) {
-                if( mesh.batches.empty() || mesh.batches.back().sheet != q.sheet ) {
-                    mesh_batch b;
-                    b.sheet = q.sheet;
-                    b.first_index = static_cast<uint32_t>( mesh.indices.size() );
-                    mesh.batches.push_back( b );
-                }
-                const uint32_t base = static_cast<uint32_t>( mesh.vertices.size() );
-                for( size_t i = 0; i < 4; ++i ) {
-                    mesh.vertices.push_back( q.v[i] );
-                    mesh.light_refs.push_back( q.r[i] );
-                    mesh.light.push_back( pack_light( q.r[i].shade, q.r[i].shade, q.r[i].shade ) );
-                }
-                for( uint32_t idx : { 0u, 1u, 2u, 0u, 2u, 3u } ) {
-                    mesh.indices.push_back( base + idx );
-                }
-                mesh.batches.back().index_count += 6;
-            }
-            return mesh;
-        }
-
-    private:
-        std::vector<quad> quads_;
-};
-
-using corners_t = std::array<std::array<float, 3>, 4>;
-using uvs_t = std::array<std::array<float, 2>, 4>;
-
 // All faces use the full sprite horizontally. Vertically the sprite spans one tile height starting
 // at z_base, so a shorter box shows only the lower part of it.
 void emit_top( quad_sink &sink, const sprite_ref &s, int x, int y, float z, const light_ref &ref )
@@ -153,10 +107,10 @@ void emit_top( quad_sink &sink, const sprite_ref &s, int x, int y, float z, cons
 }
 
 void emit_side( quad_sink &sink, const sprite_ref &s, int x, int y, face_bit face, float z_base,
-                float z_top, const light_ref &ref )
+                float z_top, const light_ref &ref, float shift_x = 0.0f, float shift_y = 0.0f )
 {
-    const float x0 = static_cast<float>( x );
-    const float y0 = static_cast<float>( y );
+    const float x0 = static_cast<float>( x ) + shift_x;
+    const float y0 = static_cast<float>( y ) + shift_y;
     const float dv = s.v1 - s.v0;
     const float v_top = s.v1 - dv * ( z_top - z_base );
     const float v_bot = s.v1;
@@ -218,6 +172,35 @@ void emit_cross( quad_sink &sink, const sprite_ref &s, int x, int y, float z_bas
     sink.add( s, b, uv, ref );
 }
 
+// Foreground decals sit this far in front of the backdrop so the depth test lets them through.
+constexpr float layer_lift = 0.004f;
+
+// Emits the backdrop (if the tile has one) and then the foreground slightly in front of it.
+void emit_top_layers( quad_sink &sink, const tile_info &t, int x, int y, float z,
+                      const light_ref &ref )
+{
+    if( t.backdrop.valid ) {
+        emit_top( sink, t.backdrop, x, y, z, ref );
+    }
+    emit_top( sink, t.sprite, x, y, t.backdrop.valid ? z + layer_lift : z, ref );
+}
+
+void emit_side_layers( quad_sink &sink, const tile_info &t, int x, int y, face_bit face, float z_base,
+                       float z_top, const light_ref &ref )
+{
+    if( t.backdrop.valid ) {
+        emit_side( sink, t.backdrop, x, y, face, z_base, z_top, ref );
+    }
+    // Pushing the foreground outwards means shifting the whole face by its normal.
+    float dx = 0.0f;
+    float dy = 0.0f;
+    if( t.backdrop.valid ) {
+        dx = face == face_east ? layer_lift : face == face_west ? -layer_lift : 0.0f;
+        dy = face == face_south ? layer_lift : face == face_north ? -layer_lift : 0.0f;
+    }
+    emit_side( sink, t.sprite, x, y, face, z_base, z_top, ref, dx, dy );
+}
+
 light_ref make_ref( int lx, int ly, int dx, int dy, int dz, uint8_t shade )
 {
     light_ref r;
@@ -238,10 +221,65 @@ uint32_t pack_light( uint8_t r, uint8_t g, uint8_t b )
            ( static_cast<uint32_t>( b ) << 16 ) | ( 255u << 24 );
 }
 
+void quad_sink::add( const sprite_ref &sprite, const corners_t &corners, const uvs_t &uvs,
+                     const light_ref &ref )
+{
+    add_colored( sprite, corners, uvs, ref, pack_light( ref.shade, ref.shade, ref.shade ) );
+}
+
+void quad_sink::add_colored( const sprite_ref &sprite, const corners_t &corners, const uvs_t &uvs,
+                             const light_ref &ref, uint32_t color )
+{
+    if( !sprite.valid ) {
+        return;
+    }
+    quad q;
+    q.sheet = sprite.sheet;
+    q.color = color;
+    for( size_t i = 0; i < 4; ++i ) {
+        // Tile space (x east, y south, z up) is flipped into the right-handed world frame.
+        q.v[i] = vertex{ corners[i][0], -corners[i][1], corners[i][2], uvs[i][0], uvs[i][1] };
+        q.r[i] = ref;
+    }
+    quads_.push_back( q );
+}
+
+chunk_mesh quad_sink::finish()
+{
+    std::stable_sort( quads_.begin(), quads_.end(), []( const quad & a, const quad & b ) {
+        return a.sheet < b.sheet;
+    } );
+    chunk_mesh mesh;
+    mesh.vertices.reserve( quads_.size() * 4 );
+    mesh.light.reserve( quads_.size() * 4 );
+    mesh.light_refs.reserve( quads_.size() * 4 );
+    mesh.indices.reserve( quads_.size() * 6 );
+    for( const quad &q : quads_ ) {
+        if( mesh.batches.empty() || mesh.batches.back().sheet != q.sheet ) {
+            mesh_batch b;
+            b.sheet = q.sheet;
+            b.first_index = static_cast<uint32_t>( mesh.indices.size() );
+            mesh.batches.push_back( b );
+        }
+        const uint32_t base = static_cast<uint32_t>( mesh.vertices.size() );
+        for( size_t i = 0; i < 4; ++i ) {
+            mesh.vertices.push_back( q.v[i] );
+            mesh.light_refs.push_back( q.r[i] );
+            mesh.light.push_back( q.color );
+        }
+        for( uint32_t idx : { 0u, 1u, 2u, 0u, 2u, 3u } ) {
+            mesh.indices.push_back( base + idx );
+        }
+        mesh.batches.back().index_count += 6;
+    }
+    return mesh;
+}
+
 void tile_info_cache::clear()
 {
     terrain_.clear();
     furniture_.clear();
+    named_.clear();
     ground_ = {};
     ground_loaded_ = false;
 }
@@ -256,9 +294,22 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles )
     const ter_t &t = id.obj();
     info.sh = classify_terrain( traits_of( t ) );
     if( info.sh.kind != shape_kind::empty ) {
-        info.sprite = resolve_sprite( tiles, t.id.str(), TILE_CATEGORY::TERRAIN );
+        resolve_layers( tiles, t.id.str(), TILE_CATEGORY::TERRAIN, info );
     }
     return terrain_.emplace( id.to_i(), info ).first->second;
+}
+
+const tile_info &tile_info_cache::named( TILE_CATEGORY category, const std::string &id,
+        cata_tiles &tiles )
+{
+    const std::string key = std::to_string( static_cast<int>( category ) ) + ":" + id;
+    auto it = named_.find( key );
+    if( it != named_.end() ) {
+        return it->second;
+    }
+    tile_info info;
+    resolve_layers( tiles, id, category, info );
+    return named_.emplace( key, info ).first->second;
 }
 
 const tile_info &tile_info_cache::furniture( furn_id id, cata_tiles &tiles )
@@ -274,15 +325,15 @@ const tile_info &tile_info_cache::furniture( furn_id id, cata_tiles &tiles )
         // Furniture has a "move cost mod": negative means impassable, anything else walkable.
         traits.move_cost = f.movecost < 0 ? 0 : 100;
         info.sh = classify_furniture( traits );
-        info.sprite = resolve_sprite( tiles, f.id.str(), TILE_CATEGORY::FURNITURE );
+        resolve_layers( tiles, f.id.str(), TILE_CATEGORY::FURNITURE, info );
     }
     return furniture_.emplace( id.to_i(), info ).first->second;
 }
 
-const sprite_ref &tile_info_cache::ground( cata_tiles &tiles )
+const tile_info &tile_info_cache::ground( cata_tiles &tiles )
 {
     if( !ground_loaded_ ) {
-        ground_ = resolve_sprite( tiles, "t_grass", TILE_CATEGORY::TERRAIN );
+        resolve_layers( tiles, "t_grass", TILE_CATEGORY::TERRAIN, ground_ );
         ground_loaded_ = true;
     }
     return ground_;
@@ -387,35 +438,35 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             switch( ts.kind ) {
                 case shape_kind::floor:
                     if( ( faces & face_top ) != 0 ) {
-                        emit_top( sink, terrain.sprite, lx, ly, ts.height,
-                                  make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                        emit_top_layers( sink, terrain, lx, ly, ts.height,
+                                        make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
                     }
                     break;
                 case shape_kind::block:
                     if( ( faces & face_top ) != 0 ) {
-                        emit_top( sink, terrain.sprite, lx, ly, ts.height,
-                                  make_ref( lx, ly, 0, 0, 1, face_shade[0] ) );
+                        emit_top_layers( sink, terrain, lx, ly, ts.height,
+                                        make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
                     }
                     if( ( faces & face_north ) != 0 ) {
-                        emit_side( sink, terrain.sprite, lx, ly, face_north, 0.0f, ts.height,
-                                   make_ref( lx, ly, 0, -1, 0, face_shade[1] ) );
+                        emit_side_layers( sink, terrain, lx, ly, face_north, 0.0f, ts.height,
+                                         make_ref( lx, ly, 0, -1, 0, face_shade[1] ) );
                     }
                     if( ( faces & face_south ) != 0 ) {
-                        emit_side( sink, terrain.sprite, lx, ly, face_south, 0.0f, ts.height,
-                                   make_ref( lx, ly, 0, 1, 0, face_shade[2] ) );
+                        emit_side_layers( sink, terrain, lx, ly, face_south, 0.0f, ts.height,
+                                         make_ref( lx, ly, 0, 1, 0, face_shade[2] ) );
                     }
                     if( ( faces & face_west ) != 0 ) {
-                        emit_side( sink, terrain.sprite, lx, ly, face_west, 0.0f, ts.height,
-                                   make_ref( lx, ly, -1, 0, 0, face_shade[3] ) );
+                        emit_side_layers( sink, terrain, lx, ly, face_west, 0.0f, ts.height,
+                                         make_ref( lx, ly, -1, 0, 0, face_shade[3] ) );
                     }
                     if( ( faces & face_east ) != 0 ) {
-                        emit_side( sink, terrain.sprite, lx, ly, face_east, 0.0f, ts.height,
-                                   make_ref( lx, ly, 1, 0, 0, face_shade[4] ) );
+                        emit_side_layers( sink, terrain, lx, ly, face_east, 0.0f, ts.height,
+                                         make_ref( lx, ly, 1, 0, 0, face_shade[4] ) );
                     }
                     break;
                 case shape_kind::cross:
-                    emit_top( sink, cache.ground( tiles ), lx, ly, floor_height,
-                              make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                    emit_top_layers( sink, cache.ground( tiles ), lx, ly, floor_height,
+                                     make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
                     emit_cross( sink, terrain.sprite, lx, ly, floor_height, ts.height,
                                 make_ref( lx, ly, 0, 0, 0, 230 ) );
                     break;
@@ -430,14 +481,14 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                 continue;
             }
             if( fs.kind == shape_kind::floor ) {
-                emit_top( sink, furn.sprite, lx, ly, fs.height,
-                          make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                emit_top_layers( sink, furn, lx, ly, fs.height,
+                                 make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
                 continue;
             }
             const uint8_t furn_faces = visible_faces( fs, nb );
             if( ( furn_faces & face_top ) != 0 ) {
-                emit_top( sink, furn.sprite, lx, ly, fs.height,
-                          make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                emit_top_layers( sink, furn, lx, ly, fs.height,
+                                 make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
             }
             const struct {
                 face_bit face;
@@ -450,8 +501,8 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             };
             for( const auto &s : sides ) {
                 if( ( furn_faces & s.face ) != 0 ) {
-                    emit_side( sink, furn.sprite, lx, ly, s.face, floor_height, fs.height,
-                               make_ref( lx, ly, s.dx, s.dy, 0, s.shade ) );
+                    emit_side_layers( sink, furn, lx, ly, s.face, floor_height, fs.height,
+                                      make_ref( lx, ly, s.dx, s.dy, 0, s.shade ) );
                 }
             }
         }

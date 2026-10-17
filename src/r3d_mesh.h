@@ -4,8 +4,10 @@
 
 #if defined(TILES)
 
+#include <array>
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -18,6 +20,7 @@
 
 class cata_tiles;
 class submap;
+enum class TILE_CATEGORY;
 
 namespace r3d
 {
@@ -34,7 +37,8 @@ struct sprite_ref {
 
 struct tile_info {
     shape sh;
-    sprite_ref sprite;
+    sprite_ref backdrop; // opaque background layer, drawn first when the tileset has one
+    sprite_ref sprite;   // foreground layer (alpha tested, may be sparse)
 };
 
 /**
@@ -47,13 +51,16 @@ class tile_info_cache
         void clear();
         const tile_info &terrain( ter_id id, cata_tiles &tiles );
         const tile_info &furniture( furn_id id, cata_tiles &tiles );
+        /** Sprite layers by tileset id, e.g. a monster type or "player_male". */
+        const tile_info &named( TILE_CATEGORY category, const std::string &id, cata_tiles &tiles );
         /** Ground drawn under trees and bushes, which are terrain with a transparent background. */
-        const sprite_ref &ground( cata_tiles &tiles );
+        const tile_info &ground( cata_tiles &tiles );
 
     private:
         std::unordered_map<int, tile_info> terrain_;
         std::unordered_map<int, tile_info> furniture_;
-        sprite_ref ground_;
+        std::unordered_map<std::string, tile_info> named_;
+        tile_info ground_;
         bool ground_loaded_ = false;
 };
 
@@ -84,6 +91,34 @@ struct chunk_mesh {
     bool empty() const {
         return indices.empty();
     }
+};
+
+using corners_t = std::array<std::array<float, 3>, 4>;
+using uvs_t = std::array<std::array<float, 2>, 4>;
+
+/**
+ * Collects textured quads and turns them into one indexed mesh grouped by sprite sheet. Corners
+ * are given in tile space (x east, y south, z up) and flipped into the world frame here.
+ */
+class quad_sink
+{
+    public:
+        /** Quad lit by its shade only; the light stream can later be recomputed from ref. */
+        void add( const sprite_ref &sprite, const corners_t &corners, const uvs_t &uvs,
+                  const light_ref &ref );
+        /** Quad with an explicit light colour (used by the dynamic entity geometry). */
+        void add_colored( const sprite_ref &sprite, const corners_t &corners, const uvs_t &uvs,
+                          const light_ref &ref, uint32_t color );
+        chunk_mesh finish();
+
+    private:
+        struct quad {
+            SDL_Texture *sheet = nullptr;
+            std::array<vertex, 4> v;
+            std::array<light_ref, 4> r;
+            uint32_t color = 0;
+        };
+        std::vector<quad> quads_;
 };
 
 using submap_lookup = std::function<const submap *( const tripoint_abs_sm & )>;

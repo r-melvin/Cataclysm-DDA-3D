@@ -3,12 +3,15 @@
 #include "r3d.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "avatar.h"
+#include "calendar.h"
 #include "cata_tiles.h"
 #include "coordinates.h"
 #include "map.h"
@@ -16,6 +19,7 @@
 #include "mapbuffer.h"
 #include "options.h"
 #include "r3d_camera.h"
+#include "r3d_entities.h"
 #include "r3d_gpu.h"
 #include "r3d_mesh.h"
 #include "sdltiles.h"
@@ -56,6 +60,9 @@ struct chunk_gpu {
     SDL_GPUBuffer *lights = nullptr;
     SDL_GPUBuffer *indices = nullptr;
     std::vector<mesh_batch> batches;
+    std::vector<light_ref> refs; // where each vertex samples its light
+    std::vector<uint32_t> light; // current RGBA8 light per vertex
+    uint64_t light_key = 0;      // light_key() the stream was last computed for
 };
 
 struct state {
@@ -72,6 +79,13 @@ struct state {
     SDL_Texture *probe_sheet = nullptr;
     bool env_camera_applied = false;
     bool screenshot_taken = false;
+    // Per-frame buffers for creatures and items, grown as needed and re-uploaded every frame.
+    SDL_GPUBuffer *dyn_positions = nullptr;
+    SDL_GPUBuffer *dyn_lights = nullptr;
+    SDL_GPUBuffer *dyn_indices = nullptr;
+    uint32_t dyn_position_bytes = 0;
+    uint32_t dyn_light_bytes = 0;
+    uint32_t dyn_index_bytes = 0;
 };
 
 state &st()
@@ -79,6 +93,35 @@ state &st()
     // Intentionally leaked: the GPU objects must not be destroyed after SDL has shut down.
     static state *s = new state();
     return *s;
+}
+
+void release_dynamic( state &s )
+{
+    s.device.release_buffer( s.dyn_positions );
+    s.device.release_buffer( s.dyn_lights );
+    s.device.release_buffer( s.dyn_indices );
+    s.dyn_positions = nullptr;
+    s.dyn_lights = nullptr;
+    s.dyn_indices = nullptr;
+    s.dyn_position_bytes = 0;
+    s.dyn_light_bytes = 0;
+    s.dyn_index_bytes = 0;
+}
+
+// Makes sure a dynamic buffer holds at least bytes, then queues the data for upload.
+bool upload_dynamic( state &s, SDL_GPUBuffer *&buffer, uint32_t &capacity, SDL_GPUBufferUsageFlags usage,
+                     const void *data, uint32_t bytes )
+{
+    if( !buffer || capacity < bytes ) {
+        s.device.release_buffer( buffer );
+        capacity = std::max( bytes, capacity * 2 );
+        buffer = s.device.create_buffer( usage, capacity );
+        if( !buffer ) {
+            capacity = 0;
+            return false;
+        }
+    }
+    return s.device.upload( buffer, data, bytes, true );
 }
 
 void release_chunk( state &s, chunk_gpu &c )
@@ -90,6 +133,9 @@ void release_chunk( state &s, chunk_gpu &c )
     c.lights = nullptr;
     c.indices = nullptr;
     c.batches.clear();
+    c.refs.clear();
+    c.light.clear();
+    c.light_key = 0;
     c.built = false;
 }
 
@@ -125,7 +171,107 @@ bool rebuild_chunk( state &s, chunk_gpu &c, const tripoint_abs_sm &pos, uint64_t
         return false;
     }
     c.batches = std::move( mesh.batches );
+    c.refs = std::move( mesh.light_refs );
+    c.light = std::move( mesh.light );
     return true;
+}
+
+// Turns the game's own visibility knowledge into a light colour per tile: lit tiles are shown
+// normally, unseen but remembered ones dim and bluish, everything else black.
+struct light_sampler {
+    const map &here;
+    const visibility_variables &vvc;
+    const avatar &you;
+
+    uint32_t color_at( const tripoint_bub_ms &p ) const {
+        if( !here.inbounds( p ) ) {
+            return pack_light( 0, 0, 0 );
+        }
+        // Debug aid: CATA_R3D_FULLBRIGHT=1 shows all loaded geometry regardless of visibility.
+        static const bool fullbright = std::getenv( "CATA_R3D_FULLBRIGHT" ) != nullptr;
+        if( fullbright ) {
+            return pack_light( 255, 255, 255 );
+        }
+        const lit_level ll = here.access_cache( p.z() ).visibility_cache[p.x()][p.y()];
+        const visibility_type vis = here.get_visibility( ll, vvc );
+        float r = 0.0f;
+        float g = 0.0f;
+        float b = 0.0f;
+        if( vis == visibility_type::CLEAR || vis == visibility_type::LIT ) {
+            switch( ll ) {
+                case lit_level::LIT:
+                case lit_level::BRIGHT:
+                    r = g = b = 1.0f;
+                    break;
+                case lit_level::BRIGHT_ONLY:
+                    r = g = b = 0.9f;
+                    break;
+                case lit_level::LOW:
+                    r = g = b = 0.75f;
+                    break;
+                case lit_level::DARK:
+                    r = g = b = 0.6f;
+                    break;
+                default:
+                    break;
+            }
+        } else if( you.has_memory_at( here.get_abs( p ) ) ) {
+            r = 0.25f;
+            g = 0.30f;
+            b = 0.42f;
+        }
+        const auto to_byte = []( float v ) {
+            return static_cast<uint8_t>( std::clamp( v, 0.0f, 1.0f ) * 255.0f + 0.5f );
+        };
+        return pack_light( to_byte( r ), to_byte( g ), to_byte( b ) );
+    }
+};
+
+uint64_t light_key( const tripoint_abs_ms &origin )
+{
+    uint64_t key = static_cast<uint64_t>( to_turn<int>( calendar::turn ) );
+    key = key * 1000003u + static_cast<uint64_t>( origin.x() );
+    key = key * 1000003u + static_cast<uint64_t>( origin.y() );
+    key = key * 1000003u + static_cast<uint64_t>( origin.z() + OVERMAP_DEPTH );
+    return key | 1u; // never 0, which means "not computed"
+}
+
+void update_chunk_light( state &s, chunk_gpu &c, const tripoint_abs_sm &pos,
+                         const tripoint_abs_ms &origin, const tripoint_bub_ms &center,
+                         const light_sampler &sampler, uint64_t key )
+{
+    c.light_key = key;
+    if( c.refs.empty() ) {
+        return;
+    }
+    constexpr int border = SEEX + 2;
+    const tripoint_abs_ms chunk_origin = project_to<coords::ms>( pos );
+    const tripoint_bub_ms base( center.x() + ( chunk_origin.x() - origin.x() ),
+                                center.y() + ( chunk_origin.y() - origin.y() ),
+                                center.z() + ( pos.z() - origin.z() ) );
+    // Light of the tiles in and around the chunk, on its level and the one above.
+    std::array<std::array<uint32_t, border *border>, 2> grid;
+    for( int dz = 0; dz < 2; ++dz ) {
+        for( int ly = -1; ly <= SEEY; ++ly ) {
+            for( int lx = -1; lx <= SEEX; ++lx ) {
+                grid[dz][static_cast<size_t>( ( ly + 1 ) * border + ( lx + 1 ) )] =
+                    sampler.color_at( tripoint_bub_ms( base.x() + lx, base.y() + ly, base.z() + dz ) );
+            }
+        }
+    }
+    for( size_t i = 0; i < c.refs.size(); ++i ) {
+        const light_ref &r = c.refs[i];
+        const int gx = std::clamp( r.lx + r.dx + 1, 0, border - 1 );
+        const int gy = std::clamp( r.ly + r.dy + 1, 0, border - 1 );
+        const uint32_t tile = grid[std::clamp( static_cast<int>( r.dz ), 0, 1 )][static_cast<size_t>
+                              ( gy * border + gx )];
+        const uint32_t shade = r.shade;
+        c.light[i] = pack_light( static_cast<uint8_t>( ( ( tile >> 0 ) & 255u ) * shade / 255u ),
+                                 static_cast<uint8_t>( ( ( tile >> 8 ) & 255u ) * shade / 255u ),
+                                 static_cast<uint8_t>( ( ( tile >> 16 ) & 255u ) * shade / 255u ) );
+    }
+    s.device.upload( c.lights, c.light.data(),
+                     static_cast<uint32_t>( c.light.size() * sizeof( uint32_t ) ), true );
 }
 
 void apply_env_camera( camera &cam )
@@ -200,6 +346,7 @@ void shutdown()
 {
     state &s = st();
     release_all_chunks( s );
+    release_dynamic( s );
     s.cache.clear();
     s.device.shutdown();
     s.epoch_valid = false;
@@ -289,6 +436,9 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         return MAPBUFFER.lookup_submap( p );
     };
 
+    const light_sampler sampler{ here, here.get_visibility_variables_cache(), get_avatar() };
+    const uint64_t frame_light_key = light_key( origin );
+
     // The scene is drawn in a frame whose origin is the viewed tile, which keeps floats small.
     s.cam.target = tile_to_world( { 0.5f, 0.5f, 0.5f } );
     const float aspect = static_cast<float>( target_w ) / static_cast<float>( target_h );
@@ -328,11 +478,31 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
                     rebuild_chunk( s, c, pos, stamp, lookup );
                 }
                 if( c.built && !c.batches.empty() ) {
+                    if( c.light_key != frame_light_key ) {
+                        update_chunk_light( s, c, pos, origin, center, sampler, frame_light_key );
+                    }
                     visible.push_back( { &c, { ox, oy, oz } } );
                 }
             }
         }
     }
+
+    // Creatures and items change every frame, so their geometry is rebuilt and re-uploaded.
+    const entity_view entities_view{ *tilecontext, s.cache, s.cam, center, z_lo, z_hi,
+                                     [&sampler]( const tripoint_bub_ms & p ) {
+        return sampler.color_at( p );
+    } };
+    const chunk_mesh entities = build_entity_mesh( entities_view );
+    const bool draw_entities = !entities.empty() &&
+                               upload_dynamic( s, s.dyn_positions, s.dyn_position_bytes, SDL_GPU_BUFFERUSAGE_VERTEX,
+                                       entities.vertices.data(),
+                                       static_cast<uint32_t>( entities.vertices.size() * sizeof( vertex ) ) ) &&
+                               upload_dynamic( s, s.dyn_lights, s.dyn_light_bytes, SDL_GPU_BUFFERUSAGE_VERTEX,
+                                       entities.light.data(),
+                                       static_cast<uint32_t>( entities.light.size() * sizeof( uint32_t ) ) ) &&
+                               upload_dynamic( s, s.dyn_indices, s.dyn_index_bytes, SDL_GPU_BUFFERUSAGE_INDEX,
+                                       entities.indices.data(),
+                                       static_cast<uint32_t>( entities.indices.size() * sizeof( uint32_t ) ) );
 
     if( !s.device.begin_pass( 0.05f, 0.05f, 0.07f ) ) {
         s.device.abort_frame();
@@ -348,6 +518,15 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         for( const mesh_batch &b : vc.chunk->batches ) {
             s.device.draw_block( vc.chunk->positions, vc.chunk->lights, vc.chunk->indices,
                                  b.first_index, b.index_count, b.sheet, uniforms );
+        }
+    }
+    if( draw_entities ) {
+        uniforms.offset[0] = 0.0f;
+        uniforms.offset[1] = 0.0f;
+        uniforms.offset[2] = 0.0f;
+        for( const mesh_batch &b : entities.batches ) {
+            s.device.draw_block( s.dyn_positions, s.dyn_lights, s.dyn_indices, b.first_index, b.index_count,
+                                 b.sheet, uniforms );
         }
     }
     SDL_Texture *const result = s.device.end_frame();

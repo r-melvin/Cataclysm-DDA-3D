@@ -2805,7 +2805,7 @@ std::optional<texture_draw_data> cata_tiles::get_texture_draw_data( const std::s
 }
 
 std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::string &id,
-        TILE_CATEGORY category, const tripoint_bub_ms &p )
+        TILE_CATEGORY category, const tripoint_bub_ms &p, bool background )
 {
     std::optional<tile_lookup_res> lookup_res = find_tile_looks_like( id, category, "" );
     if( !lookup_res ) {
@@ -2814,8 +2814,8 @@ std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::st
 
     const tile_type &ttype = lookup_res->tile();
     const unsigned int seed = get_variant_seed( ttype, category, p, lookup_res->id() );
-    const std::vector<int> *indices = ttype.fg.pick( seed );
-    if( !indices && ttype.multitile ) {
+    const std::vector<int> *indices = background ? ttype.bg.pick( seed ) : ttype.fg.pick( seed );
+    if( !indices && !background && ttype.multitile ) {
         // The base entry of a multitile tile can be empty; its sprites live in "<id>_<subtile>".
         for( const std::string &key : multitile_keys ) {
             const tile_type *sub = tileset_ptr->find_tile_type( lookup_res->id() + "_" + key );
@@ -2826,9 +2826,6 @@ std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::st
                 }
             }
         }
-    }
-    if( !indices ) {
-        indices = ttype.bg.pick( seed );
     }
     if( !indices || indices->empty() ) {
         return std::nullopt;

@@ -38,19 +38,15 @@ shape classify_furniture( const tile_traits &t )
     if( t.flat ) {
         return { shape_kind::floor, decal_height };
     }
-    if( t.tiny ) {
-        return { shape_kind::prism, tiny_height };
+    // Furniture sprites are drawn top-down with transparent margins, so wrapping them around a box
+    // gives hollow shells. Only solid, impassable furniture (lockers, fridges) gets sides; the
+    // rest is a sprite lying on top of the furniture's height.
+    const float height = t.tiny ? tiny_height : t.low ? low_height : t.flat_surface ? surface_height :
+                         t.move_cost <= 0 ? tall_furniture_height : default_furniture_height;
+    if( t.move_cost <= 0 && !t.tiny && !t.low && !t.flat_surface ) {
+        return { shape_kind::prism, height };
     }
-    if( t.low ) {
-        return { shape_kind::prism, low_height };
-    }
-    if( t.flat_surface ) {
-        return { shape_kind::prism, surface_height };
-    }
-    if( t.move_cost <= 0 ) {
-        return { shape_kind::prism, tall_furniture_height };
-    }
-    return { shape_kind::prism, default_furniture_height };
+    return { shape_kind::floor, height };
 }
 
 namespace

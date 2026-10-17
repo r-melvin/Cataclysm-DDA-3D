@@ -6,7 +6,9 @@
 // every build; without TILES everything is an inline no-op.
 
 #if defined(TILES)
-#include "coords_fwd.h"
+#include <optional>
+
+#include "coordinates.h"
 
 struct SDL_Renderer;
 #endif
@@ -30,6 +32,13 @@ void shutdown();
 
 /** True when the option is on, the GPU renderer is available and the 3D scene is drawn. */
 bool active();
+
+/**
+ * The map tile drawn under the point (x, y) of the renderer, in the same logical pixels as the
+ * rectangle given to draw(), as seen in the last drawn 3D frame. Nothing when the point is outside
+ * that frame, points at the sky, or the 3D view is not active.
+ */
+std::optional<tripoint_bub_ms> pick( float x, float y );
 
 /** Flips the RENDERER_3D option. */
 void toggle();

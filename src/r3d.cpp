@@ -14,11 +14,14 @@
 #include "calendar.h"
 #include "cata_tiles.h"
 #include "coordinates.h"
+#include "creature.h"
+#include "creature_tracker.h"
 #include "map.h"
 #include "map_scale_constants.h"
 #include "mapbuffer.h"
 #include "options.h"
 #include "r3d_camera.h"
+#include "r3d_dda.h"
 #include "r3d_entities.h"
 #include "r3d_gpu.h"
 #include "r3d_mesh.h"
@@ -65,6 +68,19 @@ struct chunk_gpu {
     uint64_t light_key = 0;      // light_key() the stream was last computed for
 };
 
+// What the last drawn frame showed, so mouse picks match the picture on screen.
+struct shown_view {
+    bool valid = false;
+    float x = 0.0f;
+    float y = 0.0f;
+    float w = 0.0f;
+    float h = 0.0f;
+    camera cam;
+    tripoint_bub_ms center;
+    int z_lo = 0;
+    int z_hi = 0;
+};
+
 struct state {
     gpu device;
     tile_info_cache cache;
@@ -86,6 +102,7 @@ struct state {
     uint32_t dyn_position_bytes = 0;
     uint32_t dyn_light_bytes = 0;
     uint32_t dyn_index_bytes = 0;
+    shown_view shown;
 };
 
 state &st()
@@ -174,6 +191,21 @@ bool rebuild_chunk( state &s, chunk_gpu &c, const tripoint_abs_sm &pos, uint64_t
     c.refs = std::move( mesh.light_refs );
     c.light = std::move( mesh.light );
     return true;
+}
+
+// Height of the solid part of a tile as drawn: 0 for open air, the floor slab, furniture or a
+// wall up to 1. Used for picking and for placing markers on top of things.
+float column_height( state &s, const map &here, const tripoint_bub_ms &p )
+{
+    if( !here.inbounds( p ) ) {
+        return 0.0f;
+    }
+    const shape t = s.cache.terrain( here.ter( p ), *tilecontext ).sh;
+    float h = t.height;
+    if( t.kind == shape_kind::floor ) {
+        h = std::max( h, s.cache.furniture( here.furn( p ), *tilecontext ).sh.height );
+    }
+    return std::min( h, 1.0f );
 }
 
 // Turns the game's own visibility knowledge into a light colour per tile: lit tiles are shown
@@ -342,6 +374,47 @@ void reset()
     s.env_camera_applied = false;
 }
 
+std::optional<tripoint_bub_ms> pick( float x, float y )
+{
+    state &s = st();
+    const shown_view &v = s.shown;
+    if( !active() || !v.valid || v.w <= 0.0f || v.h <= 0.0f || !tilecontext ) {
+        return std::nullopt;
+    }
+    if( x < v.x || y < v.y || x >= v.x + v.w || y >= v.y + v.h ) {
+        return std::nullopt;
+    }
+    map &here = get_map();
+    const avatar &you = get_avatar();
+    const creature_tracker &creatures = get_creature_tracker();
+    // Visible creatures count as a full-height column so clicking their sprite picks their tile.
+    const column_height_fn height = [&]( int dx, int dy, int dz ) {
+        const tripoint_bub_ms p( v.center.x() + dx, v.center.y() + dy, v.center.z() + dz );
+        if( p.z() < v.z_lo || p.z() > v.z_hi || !here.inbounds( p ) ) {
+            return 0.0f;
+        }
+        const float h = column_height( s, here, p );
+        const Creature *critter = creatures.creature_at( p );
+        if( critter && ( critter->is_avatar() || you.sees( here, *critter ) ) ) {
+            return 1.0f;
+        }
+        return h;
+    };
+    const float ndc_x = ( x - v.x ) / v.w * 2.0f - 1.0f;
+    const float ndc_y = 1.0f - ( y - v.y ) / v.h * 2.0f;
+    constexpr float max_pick_distance = 400.0f;
+    const voxel_hit hit = pick_cell( v.cam, ndc_x, ndc_y, v.w / v.h, max_pick_distance, height,
+                                     floor_height );
+    if( !hit.hit ) {
+        return std::nullopt;
+    }
+    const tripoint_bub_ms p( v.center.x() + hit.x, v.center.y() + hit.y, v.center.z() + hit.z );
+    if( !here.inbounds( p ) ) {
+        return std::nullopt;
+    }
+    return p;
+}
+
 void shutdown()
 {
     state &s = st();
@@ -351,6 +424,7 @@ void shutdown()
     s.device.shutdown();
     s.epoch_valid = false;
     s.drawn = false;
+    s.shown.valid = false;
 }
 
 bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
@@ -488,10 +562,24 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     }
 
     // Creatures and items change every frame, so their geometry is rebuilt and re-uploaded.
-    const entity_view entities_view{ *tilecontext, s.cache, s.cam, center, z_lo, z_hi,
+    entity_view entities_view{ *tilecontext, s.cache, s.cam, center, z_lo, z_hi,
                                      [&sampler]( const tripoint_bub_ms & p ) {
         return sampler.color_at( p );
-    } };
+    }, {} };
+    // The game queues its cursors and highlights for cata_tiles::draw, which is skipped here.
+    {
+        const cata_tiles::frame_markers queued = tilecontext->take_frame_markers();
+        const auto add_markers = [&]( const std::vector<tripoint_bub_ms> &where, const char *id,
+        bool box ) {
+            const tile_info &sprite = s.cache.named( TILE_CATEGORY::NONE, id, *tilecontext );
+            for( const tripoint_bub_ms &p : where ) {
+                entities_view.markers.push_back( { p, column_height( s, here, p ), &sprite, box } );
+            }
+        };
+        add_markers( queued.line, "animation_line", false );
+        add_markers( queued.highlights, "highlight", false );
+        add_markers( queued.cursors, "cursor", true );
+    }
     const chunk_mesh entities = build_entity_mesh( entities_view );
     const bool draw_entities = !entities.empty() &&
                                upload_dynamic( s, s.dyn_positions, s.dyn_position_bytes, SDL_GPU_BUFFERUSAGE_VERTEX,
@@ -545,6 +633,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
             ++it;
         }
     }
+    s.shown = { true, x, y, w, h, s.cam, center, z_lo, z_hi };
     s.drawn = true;
     return true;
 }

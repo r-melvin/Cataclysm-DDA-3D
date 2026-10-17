@@ -156,4 +156,29 @@ voxel_hit raycast_columns_reference( const vec3 &origin, const vec3 &dir, float 
     return best;
 }
 
+voxel_hit pick_cell( const camera &cam, float ndc_x, float ndc_y, float aspect, float max_t,
+                     const column_height_fn &height, float floor_z )
+{
+    const ray world = cam.screen_ray( ndc_x, ndc_y, aspect );
+    const vec3 origin = world_to_tile( world.origin );
+    const vec3 dir = world_to_tile( world.dir );
+    const voxel_hit hit = raycast_columns( origin, dir, max_t, height );
+    if( hit.hit || dir.z >= 0.0f ) {
+        return hit;
+    }
+    const float t = ( floor_z - origin.z ) / dir.z;
+    if( t < 0.0f ) {
+        return {};
+    }
+    const vec3 p = origin + dir * t;
+    voxel_hit plane;
+    plane.hit = true;
+    plane.x = static_cast<int>( std::floor( p.x ) );
+    plane.y = static_cast<int>( std::floor( p.y ) );
+    plane.z = static_cast<int>( std::floor( floor_z ) );
+    plane.t = t;
+    plane.face = hit_face::top;
+    return plane;
+}
+
 } // namespace r3d

@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <vector>
 
 #include "coordinates.h"
 #include "r3d_camera.h"
@@ -25,6 +26,15 @@ struct entity_view {
     int z_hi = 0;
     /** Light colour (RGBA8, see pack_light) of a tile; black means it cannot be seen. */
     std::function<uint32_t( const tripoint_bub_ms & )> light;
+
+    /** UI marker (cursor, highlight, line) laid on top of a tile's surface, always unlit. */
+    struct marker {
+        tripoint_bub_ms pos;
+        float top = 0.0f;           // surface height within the tile, see column_height
+        const tile_info *sprite = nullptr;
+        bool box = false;           // also draw the sprite on the sides of a box above the tile
+    };
+    std::vector<marker> markers;
 };
 
 /**

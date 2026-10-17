@@ -176,6 +176,66 @@ TEST_CASE( "r3d_raycast_wall_blocks_ground_behind_it", "[r3d]" )
     CHECK( h.face == r3d::hit_face::west );
 }
 
+TEST_CASE( "r3d_pick_finds_tile_drawn_under_cursor", "[r3d]" )
+{
+    // Floor everywhere on level 0 of the scene frame and a wall at tile (2, -3).
+    const r3d::column_height_fn world = []( int x, int y, int z ) {
+        if( z != 0 ) {
+            return 0.0f;
+        }
+        return x == 2 && y == -3 ? 1.0f : 0.1f;
+    };
+    for( float yaw : { 0.0f, 0.9f, 2.6f, 4.4f } ) {
+        for( bool ortho : { false, true } ) {
+            r3d::camera cam;
+            cam.target = r3d::tile_to_world( { 0.5f, 0.5f, 0.5f } ); // as r3d::draw sets it
+            cam.yaw = yaw;
+            cam.orthographic = ortho;
+            const float aspect = 1.5f;
+            const r3d::mat4 vp = cam.view_projection( aspect );
+            // The middle of the screen is the viewed tile.
+            const r3d::voxel_hit centre = r3d::pick_cell( cam, 0.0f, 0.0f, aspect, 500.0f, world,
+                                          r3d::floor_height );
+            REQUIRE( centre.hit );
+            CHECK( centre.x == 0 );
+            CHECK( centre.y == 0 );
+            CHECK( centre.z == 0 );
+            // Where a floor tile's centre is drawn, that tile is picked (unless the wall covers it).
+            for( int ty = -4; ty <= 4; ++ty ) {
+                for( int tx = -4; tx <= 4; ++tx ) {
+                    const r3d::vec3 top = { tx + 0.5f, ty + 0.5f, world( tx, ty, 0 ) };
+                    const r3d::vec3 ndc = r3d::transform_point( vp, r3d::tile_to_world( top ) );
+                    const r3d::voxel_hit h = r3d::pick_cell( cam, ndc.x, ndc.y, aspect, 500.0f, world,
+                                             r3d::floor_height );
+                    REQUIRE( h.hit );
+                    const bool is_tile = h.x == tx && h.y == ty && h.z == 0;
+                    const bool is_wall = h.x == 2 && h.y == -3;
+                    CHECK( ( is_tile || is_wall ) );
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE( "r3d_pick_falls_back_to_floor_plane", "[r3d]" )
+{
+    const r3d::column_height_fn nothing = []( int, int, int ) {
+        return 0.0f;
+    };
+    r3d::camera cam;
+    cam.target = r3d::tile_to_world( { 0.5f, 0.5f, 0.5f } );
+    const r3d::voxel_hit h = r3d::pick_cell( cam, 0.0f, 0.0f, 1.0f, 500.0f, nothing,
+                             r3d::floor_height );
+    REQUIRE( h.hit );
+    CHECK( h.x == 0 );
+    CHECK( h.y == 0 );
+    CHECK( h.z == 0 );
+    CHECK( h.face == r3d::hit_face::top );
+    // Above the horizon nothing can be picked.
+    cam.pitch = r3d::camera::min_pitch;
+    CHECK_FALSE( r3d::pick_cell( cam, 0.0f, 1.0f, 1.0f, 500.0f, nothing, r3d::floor_height ).hit );
+}
+
 TEST_CASE( "r3d_raycast_matches_reference", "[r3d]" )
 {
     std::mt19937 rng( 12345 );

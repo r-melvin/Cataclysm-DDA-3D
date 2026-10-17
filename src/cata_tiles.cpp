@@ -157,6 +157,140 @@ std::string get_ascii_tile_id( const uint32_t sym, const int FG, const int BG )
                         } );
 }
 
+// Curses symbol and colour of the categories whose look does not depend on drawing state, used
+// to pick an ASCII sprite for ids the tileset has no sprite for.
+void fallback_symbol( TILE_CATEGORY category, const std::string &found_id, const std::string &variant,
+                      uint32_t &sym, nc_color &col )
+{
+    if( category == TILE_CATEGORY::FURNITURE ) {
+        const furn_str_id fid( found_id );
+        if( fid.is_valid() ) {
+            const furn_t &f = fid.obj();
+            sym = f.symbol();
+            col = f.color();
+        }
+    } else if( category == TILE_CATEGORY::TERRAIN ) {
+        const ter_str_id tid( found_id );
+        if( tid.is_valid() ) {
+            const ter_t &t = tid.obj();
+            sym = t.symbol();
+            col = t.color();
+        }
+    } else if( category == TILE_CATEGORY::MONSTER ) {
+        const mtype_id mid( found_id );
+        if( mid.is_valid() ) {
+            const mtype &mt = mid.obj();
+            sym = UTF8_getch( mt.sym );
+            col = mt.color;
+        }
+    } else if( category == TILE_CATEGORY::FIELD ) {
+        const field_type_id fid = field_type_id( found_id );
+        sym = fid->get_intensity_level().symbol;
+        col = fid->get_intensity_level().color;
+    } else if( category == TILE_CATEGORY::TRAP ) {
+        const trap_str_id tmp( found_id );
+        if( tmp.is_valid() ) {
+            const trap &t = tmp.obj();
+            sym = t.sym;
+            col = t.color;
+        }
+    } else if( category == TILE_CATEGORY::ITEM ) {
+        item tmp;
+        if( string_starts_with( found_id, "corpse_" ) ) {
+            tmp = item( itype_corpse, calendar::turn_zero );
+        } else {
+            tmp = item( itype_id( found_id ), calendar::turn_zero );
+        }
+        if( !variant.empty() ) {
+            tmp.set_itype_variant( variant );
+        } else {
+            tmp.clear_itype_variant();
+        }
+        sym = static_cast<uint8_t>( tmp.symbol().empty() ? ' ' : tmp.symbol().front() );
+        col = tmp.color();
+    }
+}
+
+// Line drawing symbols have their own ASCII sprites.
+uint32_t ascii_line_symbol( uint32_t sym )
+{
+    switch( sym ) {
+        case LINE_XOXO:
+        case LINE_XOXO_UNICODE:
+            sym = LINE_XOXO_C;
+            break;
+        case LINE_OXOX:
+        case LINE_OXOX_UNICODE:
+            sym = LINE_OXOX_C;
+            break;
+        case LINE_XXOO:
+        case LINE_XXOO_UNICODE:
+            sym = LINE_XXOO_C;
+            break;
+        case LINE_OXXO:
+        case LINE_OXXO_UNICODE:
+            sym = LINE_OXXO_C;
+            break;
+        case LINE_OOXX:
+        case LINE_OOXX_UNICODE:
+            sym = LINE_OOXX_C;
+            break;
+        case LINE_XOOX:
+        case LINE_XOOX_UNICODE:
+            sym = LINE_XOOX_C;
+            break;
+        case LINE_XXXO:
+        case LINE_XXXO_UNICODE:
+            sym = LINE_XXXO_C;
+            break;
+        case LINE_XXOX:
+        case LINE_XXOX_UNICODE:
+            sym = LINE_XXOX_C;
+            break;
+        case LINE_XOXX:
+        case LINE_XOXX_UNICODE:
+            sym = LINE_XOXX_C;
+            break;
+        case LINE_OXXX:
+        case LINE_OXXX_UNICODE:
+            sym = LINE_OXXX_C;
+            break;
+        case LINE_XXXX:
+        case LINE_XXXX_UNICODE:
+            sym = LINE_XXXX_C;
+            break;
+        default:
+            // sym goes unchanged
+            break;
+    }
+    return sym;
+}
+
+// Id of the tileset's ASCII sprite for a symbol (after ascii_line_symbol), or an empty string if
+// there is none.
+std::string ascii_fallback_id( const tileset &ts, uint32_t sym, const nc_color &col )
+{
+    if( sym == 0 || sym >= 256 ) {
+        return {};
+    }
+    // see cursesport.cpp, function wattron
+    const int pairNumber = col.to_color_pair_index();
+    const cata_cursesport::pairs &colorpair = cata_cursesport::colorpairs[pairNumber];
+    // What about isBlink?
+    const bool isBold = col.is_bold();
+    const int FG = colorpair.FG + ( isBold ? 8 : 0 );
+    std::string generic_id = get_ascii_tile_id( sym, FG, -1 );
+    if( ts.find_tile_type( generic_id ) ) {
+        return generic_id;
+    }
+    // Try again without color this time (using default color).
+    generic_id = get_ascii_tile_id( sym, -1, -1 );
+    if( ts.find_tile_type( generic_id ) ) {
+        return generic_id;
+    }
+    return {};
+}
+
 pixel_minimap_mode pixel_minimap_mode_from_string( const std::string &mode )
 {
     if( mode == "solid" ) {
@@ -2809,7 +2943,17 @@ std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::st
 {
     std::optional<tile_lookup_res> lookup_res = find_tile_looks_like( id, category, "" );
     if( !lookup_res ) {
-        return std::nullopt;
+        // Like the flat view, fall back to the tileset's ASCII sprite of the curses symbol.
+        uint32_t sym = 0;
+        nc_color col = c_white;
+        fallback_symbol( category, id, "", sym, col );
+        const std::string generic_id = ascii_fallback_id( *tileset_ptr, ascii_line_symbol( sym ), col );
+        if( !generic_id.empty() ) {
+            lookup_res = find_tile_looks_like( generic_id, TILE_CATEGORY::NONE, "" );
+        }
+        if( !lookup_res ) {
+            return std::nullopt;
+        }
     }
 
     const tile_type &ttype = lookup_res->tile();
@@ -2944,28 +3088,7 @@ bool cata_tiles::draw_from_id_string_internal( const std::string &id, TILE_CATEG
         bool is_linear = false;
         uint32_t sym = UNKNOWN_UNICODE;
         nc_color col = c_white;
-        if( category == TILE_CATEGORY::FURNITURE ) {
-            const furn_str_id fid( found_id );
-            if( fid.is_valid() ) {
-                const furn_t &f = fid.obj();
-                sym = f.symbol();
-                col = f.color();
-            }
-        } else if( category == TILE_CATEGORY::TERRAIN ) {
-            const ter_str_id tid( found_id );
-            if( tid.is_valid() ) {
-                const ter_t &t = tid.obj();
-                sym = t.symbol();
-                col = t.color();
-            }
-        } else if( category == TILE_CATEGORY::MONSTER ) {
-            const mtype_id mid( found_id );
-            if( mid.is_valid() ) {
-                const mtype &mt = mid.obj();
-                sym = UTF8_getch( mt.sym );
-                col = mt.color;
-            }
-        } else if( category == TILE_CATEGORY::VEHICLE_PART ) {
+        if( category == TILE_CATEGORY::VEHICLE_PART ) {
             const vpart_id vpid( string_starts_with( found_id, "vp_" ) ? found_id.substr( 3 ) : found_id );
             if( vpid.is_valid() ) {
                 const vpart_info &vpi = *vpid;
@@ -2985,31 +3108,6 @@ bool cata_tiles::draw_from_id_string_internal( const std::string &id, TILE_CATEG
             } else if( ll != lit_level::MEMORIZED ) {
                 debugmsg( "invalid vpart_id '%s'", vpid.str() );
             }
-        } else if( category == TILE_CATEGORY::FIELD ) {
-            const field_type_id fid = field_type_id( found_id );
-            sym = fid->get_intensity_level().symbol;
-            col = fid->get_intensity_level().color;
-        } else if( category == TILE_CATEGORY::TRAP ) {
-            const trap_str_id tmp( found_id );
-            if( tmp.is_valid() ) {
-                const trap &t = tmp.obj();
-                sym = t.sym;
-                col = t.color;
-            }
-        } else if( category == TILE_CATEGORY::ITEM ) {
-            item tmp;
-            if( string_starts_with( found_id, "corpse_" ) ) {
-                tmp = item( itype_corpse, calendar::turn_zero );
-            } else {
-                tmp = item( itype_id( found_id ), calendar::turn_zero );
-            }
-            if( !variant.empty() ) {
-                tmp.set_itype_variant( variant );
-            } else {
-                tmp.clear_itype_variant();
-            }
-            sym = static_cast<uint8_t>( tmp.symbol().empty() ? ' ' : tmp.symbol().front() );
-            col = tmp.color();
         } else if( category == TILE_CATEGORY::OVERMAP_WEATHER ) {
             const weather_type_id weather_def( id );
             if( weather_def.is_valid() ) {
@@ -3044,77 +3142,18 @@ bool cata_tiles::draw_from_id_string_internal( const std::string &id, TILE_CATEG
             sym = static_cast<uint8_t>( id[5] );
             col = color_from_string( id.substr( 7, id.length() - 1 ) );
         }
-        // Special cases for walls
-        switch( sym ) {
-            case LINE_XOXO:
-            case LINE_XOXO_UNICODE:
-                sym = LINE_XOXO_C;
-                break;
-            case LINE_OXOX:
-            case LINE_OXOX_UNICODE:
-                sym = LINE_OXOX_C;
-                break;
-            case LINE_XXOO:
-            case LINE_XXOO_UNICODE:
-                sym = LINE_XXOO_C;
-                break;
-            case LINE_OXXO:
-            case LINE_OXXO_UNICODE:
-                sym = LINE_OXXO_C;
-                break;
-            case LINE_OOXX:
-            case LINE_OOXX_UNICODE:
-                sym = LINE_OOXX_C;
-                break;
-            case LINE_XOOX:
-            case LINE_XOOX_UNICODE:
-                sym = LINE_XOOX_C;
-                break;
-            case LINE_XXXO:
-            case LINE_XXXO_UNICODE:
-                sym = LINE_XXXO_C;
-                break;
-            case LINE_XXOX:
-            case LINE_XXOX_UNICODE:
-                sym = LINE_XXOX_C;
-                break;
-            case LINE_XOXX:
-            case LINE_XOXX_UNICODE:
-                sym = LINE_XOXX_C;
-                break;
-            case LINE_OXXX:
-            case LINE_OXXX_UNICODE:
-                sym = LINE_OXXX_C;
-                break;
-            case LINE_XXXX:
-            case LINE_XXXX_UNICODE:
-                sym = LINE_XXXX_C;
-                break;
-            default:
-                // sym goes unchanged
-                break;
+        } else {
+            fallback_symbol( category, found_id, variant, sym, col );
         }
-
+        // Special cases for walls
+        sym = ascii_line_symbol( sym );
         if( sym != 0 && sym < 256 ) {
-            // see cursesport.cpp, function wattron
-            const int pairNumber = col.to_color_pair_index();
-            const cata_cursesport::pairs &colorpair = cata_cursesport::colorpairs[pairNumber];
-            // What about isBlink?
-            const bool isBold = col.is_bold();
-            const int FG = colorpair.FG + ( isBold ? 8 : 0 );
-            std::string generic_id = get_ascii_tile_id( sym, FG, -1 );
-
             // do not rotate fallback tiles for non line drawings (roads and such)
             if( !is_linear ) {
                 rota = 0;
             }
-            if( tileset_ptr->find_tile_type( generic_id ) ) {
-                return draw_from_id_string_internal( generic_id, pos, subtile, rota,
-                                                     ll, retract, nv_color_active, height_3d );
-            }
-            // Try again without color this time (using default color).
-            generic_id = get_ascii_tile_id( sym, -1, -1 );
-            if( tileset_ptr->find_tile_type( generic_id ) ) {
+            const std::string generic_id = ascii_fallback_id( *tileset_ptr, sym, col );
+            if( !generic_id.empty() ) {
                 return draw_from_id_string_internal( generic_id, pos, subtile, rota,
                                                      ll, retract, nv_color_active, height_3d );
             }
@@ -5130,6 +5169,27 @@ void cata_tiles::void_line()
     line_pos = { -1, -1, -1 };
     line_endpoint_id.clear();
     line_trajectory.clear();
+}
+cata_tiles::frame_markers cata_tiles::take_frame_markers()
+{
+    frame_markers out;
+    if( do_draw_cursor ) {
+        out.cursors = cursors;
+    }
+    if( do_draw_highlight ) {
+        out.highlights = highlights;
+    }
+    if( do_draw_line && !line_trajectory.empty() &&
+        ( !is_target_line || get_player_view().sees( get_map(), line_pos ) ) ) {
+        out.line.assign( line_trajectory.begin(), line_trajectory.end() - 1 );
+    }
+    void_line();
+    void_cursor();
+    void_highlight();
+    void_weather();
+    void_sct();
+    void_zones();
+    return out;
 }
 void cata_tiles::void_cursor()
 {

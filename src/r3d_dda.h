@@ -4,6 +4,7 @@
 
 #include <functional>
 
+#include "r3d_camera.h"
 #include "r3d_math.h"
 
 namespace r3d
@@ -44,6 +45,15 @@ voxel_hit raycast_columns( const vec3 &origin, const vec3 &dir, float max_t,
 voxel_hit raycast_columns_reference( const vec3 &origin, const vec3 &dir, float max_t,
                                      const column_height_fn &height,
                                      int lo_x, int lo_y, int lo_z, int hi_x, int hi_y, int hi_z );
+
+/**
+ * The cell under a point of the viewport (ndc_x/ndc_y in [-1, 1], y up). The camera works in world
+ * space and the cells in tile space (see tile_to_world). When the ray hits no column within max_t
+ * it is intersected with the plane z = floor_z instead, so pointing at empty space still picks a
+ * cell there (with face top); hit is false only when the ray never reaches that plane either.
+ */
+voxel_hit pick_cell( const camera &cam, float ndc_x, float ndc_y, float aspect, float max_t,
+                     const column_height_fn &height, float floor_z );
 
 } // namespace r3d
 

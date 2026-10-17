@@ -7396,6 +7396,12 @@ std::optional<tripoint_bub_ms> input_context::get_coordinates( const catacurses:
         }
     }
 
+    if( use_tiles && g && capture_win == g->w_terrain && r3d::active() ) {
+        // The 3D view is not a grid of tiles: cast a ray into the scene that was drawn instead.
+        return r3d::pick( static_cast<float>( logical_coordinate.x ),
+                          static_cast<float>( logical_coordinate.y ) );
+    }
+
     const point win_max = win_min + win_size;
 
     // Translate mouse coordinates to map coordinates based on tile size

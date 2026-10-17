@@ -780,6 +780,18 @@ class cata_tiles
 
         std::unordered_set<std::string> get_all_portrait_tile_ids( bool male ) const;
 
+        /** One-frame markers queued by the game for the map view (see take_frame_markers). */
+        struct frame_markers {
+            std::vector<tripoint_bub_ms> cursors;
+            std::vector<tripoint_bub_ms> highlights;
+            std::vector<tripoint_bub_ms> line; // targeting line or path, without its end point
+        };
+        /**
+         * Hands over the cursors, highlights and line queued for this frame and drops them, along
+         * with the other one-frame layers, as draw() would. Used when the 3D view replaces draw().
+         */
+        frame_markers take_frame_markers();
+
     protected:
         /** How many rows and columns of tiles fit into given dimensions, fully
          ** or partially shown, but disregarding any extra contents outside the

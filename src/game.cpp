@@ -181,6 +181,7 @@
 #include "power_network.h"
 #include "profession.h"
 #include "proficiency.h"
+#include "r3d.h"
 #include "recipe.h"
 #include "recipe_dictionary.h"
 #include "regional_settings.h"
@@ -6392,6 +6393,11 @@ static constexpr int MAXIMUM_ZOOM_LEVEL = 4;
 void game::zoom_out()
 {
 #if defined(TILES)
+    if( r3d::active() ) {
+        // The 3D view zooms by moving its camera; the tileset keeps its scale.
+        r3d::zoom( -3 );
+        return;
+    }
     if( uistate.tileset_zoom > MAXIMUM_ZOOM_LEVEL ) {
         uistate.tileset_zoom = uistate.tileset_zoom / 2;
     } else {
@@ -6416,6 +6422,11 @@ void game::zoom_out_overmap()
 void game::zoom_in()
 {
 #if defined(TILES)
+    if( r3d::active() ) {
+        // The 3D view zooms by moving its camera; the tileset keeps its scale.
+        r3d::zoom( 3 );
+        return;
+    }
     if( uistate.tileset_zoom == 64 ) {
         uistate.tileset_zoom = MAXIMUM_ZOOM_LEVEL;
     } else {

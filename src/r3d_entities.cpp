@@ -58,10 +58,11 @@ void emit_billboard( quad_sink &sink, const tile_info &sprite, const vec3 &right
     layer( sprite.sprite, sprite.backdrop.valid ? 0.004f : 0.0f );
 }
 
-// Item sprite lying flat just above the floor.
-void emit_flat( quad_sink &sink, const tile_info &sprite, float cx, float cy, float z, uint32_t color )
+// Sprite lying flat at height z, size tiles wide.
+void emit_flat( quad_sink &sink, const tile_info &sprite, float cx, float cy, float z, uint32_t color,
+                float size = item_size )
 {
-    const float h = item_size * 0.5f;
+    const float h = size * 0.5f;
     const corners_t c = {{ { cx - h, cy - h, z }, { cx + h, cy - h, z }, { cx + h, cy + h, z },
             { cx - h, cy + h, z }
         }
@@ -72,6 +73,26 @@ void emit_flat( quad_sink &sink, const tile_info &sprite, float cx, float cy, fl
         }
         const uvs_t uv = {{ { s->u0, s->v0 }, { s->u1, s->v0 }, { s->u1, s->v1 }, { s->u0, s->v1 } }};
         sink.add_colored( *s, c, uv, light_ref{}, color );
+    }
+}
+
+// Box standing on a tile with the sprite on its four sides, so a cursor reads as a 3D outline.
+void emit_marker_box( quad_sink &sink, const sprite_ref &s, float x0, float y0, float z0, float z1,
+                      uint32_t color )
+{
+    const float x1 = x0 + 1.0f;
+    const float y1 = y0 + 1.0f;
+    const uvs_t uv = {{ { s.u0, s.v0 }, { s.u1, s.v0 }, { s.u1, s.v1 }, { s.u0, s.v1 } }};
+    const std::array<std::array<float, 4>, 4> sides = {{
+            { x0, y1, x1, y1 }, { x1, y0, x0, y0 }, { x1, y1, x1, y0 }, { x0, y0, x0, y1 }
+        }
+    };
+    for( const std::array<float, 4> &e : sides ) {
+        const corners_t c = {{ { e[0], e[1], z1 }, { e[2], e[3], z1 }, { e[2], e[3], z0 },
+                { e[0], e[1], z0 }
+            }
+        };
+        sink.add_colored( s, c, uv, light_ref{}, color );
     }
 }
 
@@ -148,6 +169,22 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         const uint32_t color = critter.is_avatar() ? white : view.light( p );
         emit_billboard( sink, sprite, right, frame_x( p ), frame_y( p ), frame_z( p ) + floor_height,
                         color == pack_light( 0, 0, 0 ) ? white : color );
+    }
+    // Markers last; they sit just above the surface so the depth test keeps them in front of it.
+    for( const entity_view::marker &m : view.markers ) {
+        if( !m.sprite || m.pos.z() < view.z_lo || m.pos.z() > view.z_hi ) {
+            continue;
+        }
+        const float x0 = static_cast<float>( m.pos.x() - view.center.x() );
+        const float y0 = static_cast<float>( m.pos.y() - view.center.y() );
+        const float z = frame_z( m.pos ) + m.top + 0.03f;
+        emit_flat( sink, *m.sprite, x0 + 0.5f, y0 + 0.5f, z, white, 1.0f );
+        if( m.box ) {
+            const sprite_ref &s = m.sprite->sprite.valid ? m.sprite->sprite : m.sprite->backdrop;
+            if( s.valid ) {
+                emit_marker_box( sink, s, x0, y0, z, z + billboard_height, white );
+            }
+        }
     }
     return sink.finish();
 }

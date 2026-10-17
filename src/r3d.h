@@ -50,6 +50,12 @@ int view_eighths();
 /** True when the main game takes WASD for walking and the arrow keys for the 3D camera. */
 bool wasd_controls();
 
+/**
+ * Debug capture for CATA_R3D_COMPARE (see r3d.cpp): saves the 3D view and the flat isometric
+ * view of the same turn once. Called from the input loop while waiting for input.
+ */
+void compare_capture();
+
 /** Flips the RENDERER_3D option. */
 void toggle();
 /** Orbit the camera by one step; dir < 0 is left, dir > 0 right. */

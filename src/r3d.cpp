@@ -23,6 +23,7 @@
 #include "creature_tracker.h"
 #include "debug.h"
 #include "flexbuffer_json.h"
+#include "game.h"
 #include "game_constants.h"
 #include "json_loader.h"
 #include "map.h"
@@ -38,6 +39,7 @@
 #include "sdl_wrappers.h"
 #include "sdltiles.h"
 #include "submap.h"
+#include "ui_manager.h"
 
 namespace r3d
 {
@@ -406,7 +408,9 @@ void update_chunk_light( state &s, chunk_gpu &c, const tripoint_abs_sm &pos,
 
 void apply_env_camera( camera &cam )
 {
-    // CATA_R3D_CAMERA="yaw_deg,pitch_deg,distance" gives repeatable views for screenshots.
+    // CATA_R3D_CAMERA="yaw_deg,pitch_deg,distance[,ortho]" gives repeatable views for
+    // screenshots; ortho 1 switches to an orthographic projection. "-45,30,20,1" matches the
+    // flat isometric view: looking north-east at 30 degrees, which draws tiles as 2:1 diamonds.
     const char *spec = std::getenv( "CATA_R3D_CAMERA" );
     if( !spec ) {
         return;
@@ -414,11 +418,16 @@ void apply_env_camera( camera &cam )
     float yaw = 0.0f;
     float pitch = 0.0f;
     float dist = 0.0f;
-    if( std::sscanf( spec, "%f,%f,%f", &yaw, &pitch, &dist ) == 3 ) {
+    int ortho = 0;
+    const int n = std::sscanf( spec, "%f,%f,%f,%d", &yaw, &pitch, &dist, &ortho );
+    if( n >= 3 ) {
         constexpr float deg = 0.017453293f;
         cam.yaw = yaw * deg;
         cam.pitch = std::clamp( pitch * deg, camera::min_pitch, camera::max_pitch );
         cam.distance = std::clamp( dist, camera::min_distance, camera::max_distance );
+        if( n >= 4 ) {
+            cam.orthographic = ortho != 0;
+        }
     }
 }
 
@@ -438,6 +447,74 @@ void maybe_take_screenshot( state &s )
 }
 
 } // namespace
+
+namespace
+{
+// Reloads the map tileset after its option changed, as the options menu does.
+bool reload_map_tileset()
+{
+    try {
+        closetilecontext->reinit();
+        closetilecontext->load_tileset( get_option<std::string>( "TILES" ), /*precheck=*/false,
+                                        /*force=*/false, /*pump_events=*/true, /*terrain=*/false );
+        g->reset_zoom();
+        g->mark_main_ui_adaptor_resize();
+        return true;
+    } catch( const std::exception &e ) {
+        DebugLog( D_ERROR, DC_ALL ) << "r3d compare: loading tileset " <<
+                                    get_option<std::string>( "TILES" ) << " failed: " << e.what();
+        return false;
+    }
+}
+
+// Draws the whole screen into the renderer and saves it before it is presented.
+bool capture( const std::string &path )
+{
+    g->invalidate_main_ui_adaptor();
+    ui_manager::redraw();
+    const bool ok = save_screenshot( path );
+    DebugLog( ok ? D_INFO : D_ERROR, DC_ALL ) << "r3d compare: " << ( ok ? "saved " : "failed " ) <<
+            path;
+    return ok;
+}
+} // namespace
+
+void compare_capture()
+{
+    // CATA_R3D_COMPARE=<prefix> saves <prefix>_3d.png (the 3D view as configured, e.g. with
+    // CATA_R3D_CAMERA="-45,30,20,1") and <prefix>_2d.png (the flat view of the same turn and
+    // place with the isometric tileset CATA_R3D_COMPARE_TILESET, default Ultica_iso), once, as
+    // soon as the 3D view has settled. No input is handled in between, so no turn passes.
+    // Afterwards the previous tileset and view come back, or with CATA_R3D_QUIT_AFTER_SHOT
+    // the game exits (status 0 when both shots were saved).
+    static const char *const prefix = std::getenv( "CATA_R3D_COMPARE" );
+    static bool done = false;
+    constexpr uint64_t settle_frames = 10;
+    if( !prefix || done || !g || !closetilecontext || !active() || st().frame < settle_frames ) {
+        return;
+    }
+    done = true;
+    const std::string base = prefix;
+    const bool ok_3d = capture( base + "_3d.png" );
+
+    options_manager::cOpt &tiles = get_options().get_option( "TILES" );
+    options_manager::cOpt &view_3d = get_options().get_option( "RENDERER_3D" );
+    const std::string old_tiles = tiles.getValue();
+    const std::string old_view_3d = view_3d.getValue();
+    const char *const iso = std::getenv( "CATA_R3D_COMPARE_TILESET" );
+    tiles.setValue( iso ? iso : "Ultica_iso" );
+    view_3d.setValue( "false" );
+    const bool ok_2d = reload_map_tileset() && capture( base + "_2d.png" );
+
+    if( std::getenv( "CATA_R3D_QUIT_AFTER_SHOT" ) ) {
+        std::_Exit( ok_3d && ok_2d ? 0 : 1 );
+    }
+    // Back to how it was; the options file was never written.
+    tiles.setValue( old_tiles );
+    view_3d.setValue( old_view_3d );
+    reload_map_tileset();
+    g->invalidate_main_ui_adaptor();
+}
 
 bool active()
 {

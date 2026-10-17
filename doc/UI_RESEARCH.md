@@ -1,5 +1,33 @@
 # UI research: what the 3D view should show, and what stays text
 
+## Status (branch `feature/ui-overhaul`)
+
+Work on the top ten (3.6) is under way. Everything below needs `RENDERER_3D`; with the 3D
+renderer off nothing changes. No game rules were changed.
+
+**Accessibility principle.** In-world presentation (sky, weather particles, wind, markers,
+status icons, hit direction) may replace sidebar text as the default 3D presentation. Every such
+piece of state stays available as text on demand: the status report action, state-change
+messages in the log, and the classic sidebar presets, which stay selectable and unchanged.
+
+**Simplicity principle.** One clear signal per piece of state, few options (two groups:
+`R3D_WEATHER` for the world, `R3D_HUD` for marks drawn over it), and anything the world already
+shows leaves the 3D sidebar preset.
+
+| # | Item | State | Option | How to try |
+|---|---|---|---|---|
+| 1 | Weather in 3D: rain/snow particles from the tileset's `weather_rain_drop` / `weather_snowflake` (built-in fallback), drifting with the wind; distance fog from the weather's sight penalty; sky colour by time of day darkened by cloud, lightning flash | done | `R3D_WEATHER` | Play outdoors in rain or snow. For screenshots `CATA_R3D_WEATHER=<weather id>` and `CATA_R3D_TIME_SHIFT=<hours>` change only what the 3D view draws |
+| 2 | Overlays the 3D path skipped: scrolling combat text (rises from the target's head), heard-sound footstep marks, the zone being placed | done | `R3D_HUD` | Fight something; make noise near a monster out of sight; place a zone (Zones manager) |
+
+Notes:
+
+* Particles are translucent sprites but the 3D pass has no blending: they are drawn dithered
+  (an ordered 4x4 pattern), which the 2x supersampled picture averages back into transparency.
+* They fall only over outdoor tiles the player sees now, as the flat view's animation does, and
+  move when the game redraws (every 125 ms with `ANIMATIONS` while it rains, as in 2D).
+* Never-seen ground is drawn as dark floor, so in orbit mode the sky colour shows only beyond the
+  loaded area (low camera pitch) and through gaps.
+
 Research note for the 3D renderer (`feature/r3d-renderer`, see `doc/R3D_STATUS.md`) and the
 first-person mode (`feature/r3d-first-person`, `doc/R3D_FIRST_PERSON.md` on that branch).
 Written 2026-10-17. No code was changed for this note.

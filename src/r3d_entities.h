@@ -47,6 +47,17 @@ struct entity_view {
     };
     std::vector<standing> uprights;
 
+    /** Small camera-facing sprites (rain, snow), unlit by the map: their colour is given. */
+    struct particle {
+        float x = 0.0f; // scene-frame tile space (x east, y south, z up in levels)
+        float y = 0.0f;
+        float z = 0.0f;
+        float size = 0.3f; // width and height in tiles
+        const sprite_ref *sprite = nullptr;
+        uint32_t color = 0;
+    };
+    std::vector<particle> particles;
+
     /** Height within its level of what stands on a tile: the floor, or a bench or counter top. */
     std::function<float( const tripoint_bub_ms & )> surface;
 };
@@ -56,6 +67,12 @@ struct entity_view {
  * (so drawn with a zero offset). Rebuilt every frame since they move.
  */
 chunk_mesh build_entity_mesh( const entity_view &view );
+
+/**
+ * Camera-facing quads for view.particles, in the scene frame. Kept apart from the entities: they
+ * are drawn with dithered transparency (block_uniforms::fog2).
+ */
+chunk_mesh build_particle_mesh( const entity_view &view );
 
 } // namespace r3d
 

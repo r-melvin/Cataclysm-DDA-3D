@@ -38,9 +38,13 @@
 #include "r3d_dda.h"
 #include "r3d_entities.h"
 #include "r3d_gpu.h"
+#include "r3d_hud.h"
+#include "r3d_hud_math.h"
 #include "r3d_mesh.h"
+#include "r3d_sky.h"
 #include "sdl_wrappers.h"
 #include "sdltiles.h"
+#include "sounds.h"
 #include "submap.h"
 #include "ui_manager.h"
 
@@ -120,11 +124,21 @@ struct state {
     uint32_t dyn_position_bytes = 0;
     uint32_t dyn_light_bytes = 0;
     uint32_t dyn_index_bytes = 0;
+    // The same for weather particles, drawn apart with dithered transparency.
+    SDL_GPUBuffer *fx_positions = nullptr;
+    SDL_GPUBuffer *fx_lights = nullptr;
+    SDL_GPUBuffer *fx_indices = nullptr;
+    uint32_t fx_position_bytes = 0;
+    uint32_t fx_light_bytes = 0;
+    uint32_t fx_index_bytes = 0;
     shown_view shown;
     bool map_drawn = false; // the game's map view has been on screen (a game is running)
     vec3 pan; // free camera: offset of the camera target from the viewed tile, world space
     bool walls_on = false; // whether the cache was given the wall side rules and atlas
     bool plaster_atlas = false; // whether painted walls take the atlas plaster (see the option)
+    std::vector<hud_text> texts; // drawn over the last frame by sdltiles
+    sky_sprites sky;        // sun, moon and fallback weather sprites (see r3d_sky.h)
+    bool sky_failed = false;
 };
 
 state &st()
@@ -145,6 +159,15 @@ void release_dynamic( state &s )
     s.dyn_position_bytes = 0;
     s.dyn_light_bytes = 0;
     s.dyn_index_bytes = 0;
+    s.device.release_buffer( s.fx_positions );
+    s.device.release_buffer( s.fx_lights );
+    s.device.release_buffer( s.fx_indices );
+    s.fx_positions = nullptr;
+    s.fx_lights = nullptr;
+    s.fx_indices = nullptr;
+    s.fx_position_bytes = 0;
+    s.fx_light_bytes = 0;
+    s.fx_index_bytes = 0;
 }
 
 // Makes sure a dynamic buffer holds at least bytes, then queues the data for upload.
@@ -521,6 +544,70 @@ void apply_env_camera( camera &cam )
     }
 }
 
+// Rain or snow falling around the camera target, on outdoor tiles the player can see (where the
+// flat view draws its weather animation too), drifting with the wind.
+void add_weather_particles( state &s, entity_view &view, const atmosphere &air, const map &here,
+                            const tripoint_bub_ms &center, const tripoint_abs_ms &origin,
+                            const light_sampler &sampler )
+{
+    if( air.particles <= 0 || air.particle_id.empty() ) {
+        return;
+    }
+    const tile_info &from_tileset = s.cache.named( TILE_CATEGORY::WEATHER, air.particle_id, *tilecontext );
+    const sprite_ref *sprite = from_tileset.sprite.valid ? &from_tileset.sprite :
+                               from_tileset.backdrop.valid ? &from_tileset.backdrop : nullptr;
+    if( !sprite && s.sky.loaded() ) {
+        sprite = &s.sky.cells[air.snow ? sky_sprites::snow : sky_sprites::rain];
+    }
+    if( !sprite ) {
+        return;
+    }
+    particle_field field;
+    // The field covers what the camera shows, more of it from farther away.
+    field.half_extent = std::clamp( s.cam.distance * 0.9f, 12.0f, 40.0f );
+    field.height = 4.0f;
+    field.fall_speed = air.snow ? 0.6f : 4.5f;
+    // Snow is carried by the wind more than rain is.
+    field.wind = air.wind * ( air.snow ? 0.5f : 0.35f );
+    const float area = field.half_extent * field.half_extent / ( 20.0f * 20.0f );
+    const int count = std::min( static_cast<int>( static_cast<float>( air.particles ) * area ), 3000 );
+    const float seconds = static_cast<float>( SDL_GetTicks() % 3600000u ) / 1000.0f;
+    // Particles stay put in the world when the view moves: wrap them in world coordinates.
+    const vec3 field_world{ static_cast<float>( origin.x() ) + s.pan.x,
+                            -static_cast<float>( origin.y() ) + s.pan.y, 0.0f };
+    const float size = air.snow ? 0.35f : 0.7f;
+    for( int i = 0; i < count; ++i ) {
+        const vec3 p = particle_position( static_cast<uint32_t>( i ), seconds, field, field_world );
+        // Scene-frame tile space: x east, y south, origin at the viewed tile.
+        const float tx = p.x + s.pan.x;
+        const float ty = -( p.y + s.pan.y );
+        const tripoint_bub_ms tile( center.x() + static_cast<int>( std::floor( tx ) ),
+                                    center.y() + static_cast<int>( std::floor( ty ) ), center.z() );
+        if( !here.inbounds( tile ) || !here.is_outside( tile ) ) {
+            continue;
+        }
+        const uint32_t light = sampler.color_at( tile );
+        if( light == pack_light( 0, 0, 0 ) || light == remembered_light() ) {
+            continue; // only where the player sees the sky now
+        }
+        const auto channel = [&]( int shift, float tint ) {
+            return static_cast<uint8_t>( std::min( 255.0f, static_cast<float>( ( light >> shift ) & 255u ) * tint ) );
+        };
+        const uint32_t color = air.snow ? light : pack_light( channel( 0, 0.8f ), channel( 8, 0.85f ),
+                               channel( 16, 1.0f ) );
+        view.particles.push_back( { tx, ty, floor_height + p.z, size, sprite, color } );
+    }
+    static bool logged = false;
+    if( !logged && std::getenv( "CATA_R3D_DEBUG_LAYERS" ) ) {
+        logged = true;
+        DebugLog( D_INFO, DC_ALL ) << "r3d weather " << air.particle_id << " tileset=" <<
+                                   from_tileset.sprite.valid << "/" << from_tileset.backdrop.valid << " count=" << count <<
+                                   " shown=" << view.particles.size() << " opaque=" << sprite->opaque_x0 << "," <<
+                                   sprite->opaque_y0 << "," << sprite->opaque_x1 << "," << sprite->opaque_y1 << " size=" <<
+                                   sprite->size_x << "x" << sprite->size_y;
+    }
+}
+
 void maybe_take_screenshot( state &s )
 {
     // CATA_R3D_SCREENSHOT=<path> saves the finished previous frame once things have settled;
@@ -723,6 +810,11 @@ void compare_capture()
     g->invalidate_main_ui_adaptor();
 }
 
+const std::vector<hud_text> &hud_texts()
+{
+    return st().texts;
+}
+
 bool active()
 {
     return st().drawn && get_option<bool>( "RENDERER_3D" );
@@ -860,6 +952,8 @@ void shutdown()
     release_dynamic( s );
     s.cache.set_wall_sides( nullptr );
     s.walls_on = false;
+    s.sky = sky_sprites();
+    s.sky_failed = false;
     s.tileset_loads = 0;
     s.device.shutdown();
     s.epoch_valid = false;
@@ -925,6 +1019,11 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
 
     ++s.frame;
     maybe_take_screenshot( s );
+    // The sky sheet is uploaded on its own command buffer, so before the frame starts.
+    if( !s.sky.loaded() && !s.sky_failed ) {
+        s.sky = make_sky_sprites( s.device );
+        s.sky_failed = !s.sky.loaded();
+    }
     if( !s.env_camera_applied ) {
         apply_env_camera( s.cam );
         s.env_camera_applied = true;
@@ -1043,13 +1142,15 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     entity_view entities_view{ *tilecontext, s.cache, s.cam, center, z_lo, z_hi,
                                      [&sampler]( const tripoint_bub_ms & p ) {
         return sampler.color_at( p );
-    }, {}, std::move( upright_list ), [&s, &here]( const tripoint_bub_ms & p )
+    }, {}, std::move( upright_list ), {}, [&s, &here]( const tripoint_bub_ms & p )
     {
         return surface_height( s, here, p );
     } };
     // The game queues its cursors and highlights for cata_tiles::draw, which is skipped here.
+    bool queued_sct = false;
     {
         const cata_tiles::frame_markers queued = tilecontext->get_frame_markers();
+        queued_sct = queued.sct;
         const auto add_markers = [&]( const std::vector<tripoint_bub_ms> &where, const std::string & id,
         bool box ) {
             const tile_info &sprite = s.cache.named( TILE_CATEGORY::NONE, id, *tilecontext );
@@ -1063,6 +1164,40 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         }
         add_markers( queued.highlights, "highlight", false );
         add_markers( queued.cursors, "cursor", true );
+        if( get_option<bool>( "R3D_HUD" ) ) {
+            // Heard sounds, as the flat view marks them (draw_footsteps_frame), and the zone
+            // being placed (draw_zones_frame).
+            const tile_info &step = s.cache.named( TILE_CATEGORY::NONE, "footstep", *tilecontext );
+            const tile_info &step_above = s.cache.named( TILE_CATEGORY::NONE, "footstep_above", *tilecontext );
+            const tile_info &step_below = s.cache.named( TILE_CATEGORY::NONE, "footstep_below", *tilecontext );
+            for( const tripoint_bub_ms &p : sounds::get_footstep_markers() ) {
+                const tile_info *sprite = &step;
+                if( p.z() > center.z() && step_above.main().valid ) {
+                    sprite = &step_above;
+                } else if( p.z() < center.z() && step_below.main().valid ) {
+                    sprite = &step_below;
+                }
+                entities_view.markers.push_back( { p, column_height( s, here, p ), sprite, false } );
+            }
+            if( queued.zones ) {
+                const tile_info &zone = s.cache.named( TILE_CATEGORY::NONE, "highlight", *tilecontext );
+                const int zone_z = get_avatar().pos_bub().z();
+                for( int zy = queued.zone_start.y(); zy <= queued.zone_end.y(); ++zy ) {
+                    for( int zx = queued.zone_start.x(); zx <= queued.zone_end.x(); ++zx ) {
+                        const tripoint_bub_ms p = tripoint_bub_ms( zx, zy, zone_z ) + queued.zone_offset.xy();
+                        entities_view.markers.push_back( { p, column_height( s, here, p ), &zone, false } );
+                    }
+                }
+            }
+        }
+    }
+    const bool weather_on = get_option<bool>( "R3D_WEATHER" );
+    const atmosphere air = current_atmosphere( view_z, weather_on );
+    if( weather_on ) {
+        report_weather_changes();
+    }
+    if( weather_on ) {
+        add_weather_particles( s, entities_view, air, here, center, origin, sampler );
     }
     const chunk_mesh entities = build_entity_mesh( entities_view );
     const bool draw_entities = !entities.empty() &&
@@ -1075,8 +1210,21 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
                                upload_dynamic( s, s.dyn_indices, s.dyn_index_bytes, SDL_GPU_BUFFERUSAGE_INDEX,
                                        entities.indices.data(),
                                        static_cast<uint32_t>( entities.indices.size() * sizeof( uint32_t ) ) );
+    const chunk_mesh particles = build_particle_mesh( entities_view );
+    const bool draw_particles = !particles.empty() &&
+                                upload_dynamic( s, s.fx_positions, s.fx_position_bytes, SDL_GPU_BUFFERUSAGE_VERTEX,
+                                        particles.vertices.data(),
+                                        static_cast<uint32_t>( particles.vertices.size() * sizeof( vertex ) ) ) &&
+                                upload_dynamic( s, s.fx_lights, s.fx_light_bytes, SDL_GPU_BUFFERUSAGE_VERTEX,
+                                        particles.light.data(),
+                                        static_cast<uint32_t>( particles.light.size() * sizeof( uint32_t ) ) ) &&
+                                upload_dynamic( s, s.fx_indices, s.fx_index_bytes, SDL_GPU_BUFFERUSAGE_INDEX,
+                                        particles.indices.data(),
+                                        static_cast<uint32_t>( particles.indices.size() * sizeof( uint32_t ) ) );
 
-    if( !s.device.begin_pass( 0.05f, 0.05f, 0.07f ) ) {
+    // Without the weather option the background keeps the near-black it always had.
+    const rgb clear = weather_on ? air.sky : rgb{ 0.05f, 0.05f, 0.07f };
+    if( !s.device.begin_pass( clear.r, clear.g, clear.b ) ) {
         s.device.abort_frame();
         // This frame's uploads may not have happened, so no chunk's buffers can be trusted.
         release_all_chunks( s );
@@ -1086,6 +1234,14 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     block_uniforms uniforms;
     uniforms.view_proj = view_proj;
     set_cutaway( uniforms, view_proj, aspect, s.cam, center );
+    if( weather_on && air.fog_density > 0.0f ) {
+        uniforms.fog[0] = air.fog_color.r;
+        uniforms.fog[1] = air.fog_color.g;
+        uniforms.fog[2] = air.fog_color.b;
+        uniforms.fog[3] = air.fog_density;
+        uniforms.fog2[0] = s.cam.target.x;
+        uniforms.fog2[1] = s.cam.target.y;
+    }
     for( const visible_chunk &vc : visible ) {
         uniforms.offset[0] = vc.offset[0];
         uniforms.offset[1] = vc.offset[1];
@@ -1113,12 +1269,35 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
                                  b.sheet, uniforms );
         }
     }
+    if( draw_particles ) {
+        uniforms.cut[3] = 0.0f;
+        uniforms.offset[0] = 0.0f;
+        uniforms.offset[1] = 0.0f;
+        uniforms.offset[2] = 0.0f;
+        uniforms.pull[3] = 0.0f;
+        uniforms.fog2[2] = 1.0f;
+        for( const mesh_batch &b : particles.batches ) {
+            s.device.draw_block( s.fx_positions, s.fx_lights, s.fx_indices, b.first_index, b.index_count,
+                                 b.sheet, uniforms );
+        }
+    }
     SDL_Texture *const result = s.device.end_frame();
     if( !result ) {
         return false;
     }
     const SDL_FRect dst{ x, y, w, h };
     SDL_RenderTexture( renderer, result, nullptr, &dst );
+    s.texts.clear();
+    hud_frame frame;
+    frame.x = x;
+    frame.y = y;
+    frame.w = w;
+    frame.h = h;
+    frame.cam = s.cam;
+    frame.view_proj = view_proj;
+    frame.center = center;
+    frame.sct = queued_sct;
+    draw_hud( renderer, frame, air, s.texts );
 
     // Drop chunks that have not been needed for a while (the player moved on).
     for( auto it = s.chunks.begin(); it != s.chunks.end(); ) {

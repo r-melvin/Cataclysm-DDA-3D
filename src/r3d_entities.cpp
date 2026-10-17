@@ -288,6 +288,45 @@ chunk_mesh build_entity_mesh( const entity_view &view )
     return sink.finish();
 }
 
+chunk_mesh build_particle_mesh( const entity_view &view )
+{
+    quad_sink sink;
+    const vec3 right = view.cam.ground_right();
+    const vec3 toward = normalize( view.cam.eye() - view.cam.stretched_target() );
+    const vec3 up = cross( right, vec3{ 0.0f, 0.0f, 0.0f } - toward );
+    // Weather particles: plain quads facing the camera, centred on their point.
+    for( const entity_view::particle &pt : view.particles ) {
+        if( !pt.sprite || !pt.sprite->valid ) {
+            continue;
+        }
+        const sprite_ref &s = *pt.sprite;
+        // Only the opaque part of the sprite (a raindrop is a few pixels of a whole tile), at
+        // its own proportions, pt.size tall.
+        const float u0 = s.u0 + ( s.u1 - s.u0 ) * s.opaque_x0;
+        const float u1 = s.u0 + ( s.u1 - s.u0 ) * s.opaque_x1;
+        const float v0 = s.v0 + ( s.v1 - s.v0 ) * s.opaque_y0;
+        const float v1 = s.v0 + ( s.v1 - s.v0 ) * s.opaque_y1;
+        const float opaque_h = std::max( ( s.opaque_y1 - s.opaque_y0 ) * s.size_y, 0.01f );
+        const float aspect = std::clamp( ( s.opaque_x1 - s.opaque_x0 ) * s.size_x / opaque_h, 0.1f,
+                                         4.0f );
+        const float half_h = pt.size * 0.5f;
+        const float half_w = half_h * aspect;
+        const float rx = right.x * half_w;
+        const float ry = -right.y * half_w;
+        const float ux = up.x * half_h;
+        const float uy = -up.y * half_h;
+        const float uz = up.z * half_h / view.cam.z_scale;
+        const uvs_t uv = {{ { u0, v0 }, { u1, v0 }, { u1, v1 }, { u0, v1 } }};
+        const corners_t c = {{
+                { pt.x - rx + ux, pt.y - ry + uy, pt.z + uz }, { pt.x + rx + ux, pt.y + ry + uy, pt.z + uz },
+                { pt.x + rx - ux, pt.y + ry - uy, pt.z - uz }, { pt.x - rx - ux, pt.y - ry - uy, pt.z - uz }
+            }
+        };
+        sink.add_colored( s, c, uv, light_ref{}, no_pull( pt.color ) );
+    }
+    return sink.finish();
+}
+
 } // namespace r3d
 
 #endif // defined(TILES)

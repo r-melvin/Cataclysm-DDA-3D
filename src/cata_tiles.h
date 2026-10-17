@@ -849,6 +849,13 @@ class cata_tiles
             std::vector<tripoint_bub_ms> line; // targeting line or path, without its end point
             std::optional<tripoint_bub_ms> line_end;
             std::string line_end_id;           // sprite of line_end
+            // Zone rectangle highlighted on the player's level (draw_zones_frame), when zones.
+            bool zones = false;
+            tripoint_bub_ms zone_start;
+            tripoint_bub_ms zone_end;
+            tripoint_rel_ms zone_offset;
+            // Scrolling combat text is queued for this frame (see draw_sct_frame).
+            bool sct = false;
         };
         /** The cursors, highlights and line queued for this frame, as draw() would show them. */
         frame_markers get_frame_markers() const;

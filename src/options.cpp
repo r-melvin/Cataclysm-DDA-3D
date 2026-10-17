@@ -2641,6 +2641,20 @@ void options_manager::add_options_graphics()
 
         get_option( "R3D_CUTAWAY" ).setPrerequisite( "RENDERER_3D" );
 
+        add( "R3D_WEATHER", page_id, to_translation( "3D weather and sky" ),
+             to_translation( "Show the weather and the time of day in the 3D view: rain and snow drifting with the wind, fog that thickens with distance, the colour of the sky, the sun and the moon in its phase.  The status report action describes the same in words." ),
+             true, COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_WEATHER" ).setPrerequisite( "RENDERER_3D" );
+
+        add( "R3D_HUD", page_id, to_translation( "3D overlays" ),
+             to_translation( "Draw marks over the 3D view: combat text, heard sounds, the zone being placed, pointers to threats off screen, the compass, abnormal states and where a hit came from." ),
+             true, COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_HUD" ).setPrerequisite( "RENDERER_3D" );
+
         std::vector<options_manager::id_and_option> om_tilesets = build_tilesets_list();
         // filter out iso tilesets from overmap tilesets
         om_tilesets.erase( std::remove_if( om_tilesets.begin(), om_tilesets.end(), []( const auto & it ) {

@@ -7,6 +7,8 @@
 
 #if defined(TILES)
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "coordinates.h"
 
@@ -17,6 +19,19 @@ namespace r3d
 {
 
 #if defined(TILES)
+
+/** A line of text the 3D view wants drawn over its last frame, in the map font. */
+struct hud_text {
+    float x = 0.0f; // logical pixels, in the space of the rectangle given to draw()
+    float y = 0.0f; // top of the text
+    std::string text;
+    int color = 7;  // curses colour index (0-15), as for overlay strings
+    int align = 0;  // -1: starts at x, 0: centred on x, 1: ends at x
+    bool boxed = false; // drawn on a dark box, for text over a busy picture
+};
+
+/** Texts to draw over the 3D frame the last draw() returned true for. */
+const std::vector<hud_text> &hud_texts();
 
 /**
  * Draws the map around center into the pixel rectangle (x, y, w, h) of the renderer's current

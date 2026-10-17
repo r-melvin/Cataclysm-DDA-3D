@@ -4195,6 +4195,33 @@ void cata_cursesport::curses_drawwindow( const catacurses::window &w )
             x_offset = width;
         }
 
+        // Texts of the 3D view's overlays (combat text, labels, the status row), placed by it.
+        if( drawn_3d && map_font ) {
+            for( const r3d::hud_text &t : r3d::hud_texts() ) {
+                const int cells = utf8_width( t.text );
+                const float width = static_cast<float>( cells * map_font->width );
+                const float left = t.align < 0 ? t.x : t.align > 0 ? t.x - width : t.x - width * 0.5f;
+                if( t.boxed ) {
+                    SDL_BlendMode blend_mode;
+                    GetRenderDrawBlendMode( renderer, blend_mode );
+                    SetRenderDrawBlendMode( renderer, SDL_BLENDMODE_BLEND );
+                    SDL_SetRenderDrawColor( renderer.get(), 0, 0, 0, 170 );
+                    const SDL_FRect box{ left - 3.0f, t.y - 1.0f, width + 6.0f,
+                                         static_cast<float>( map_font->height ) + 2.0f };
+                    SDL_RenderFillRect( renderer.get(), &box );
+                    SetRenderDrawBlendMode( renderer, blend_mode );
+                }
+                curses_text_batch.begin_pass( renderer, !text_atlas_enabled( renderer ) );
+                int column = 0;
+                for( const char32_t ch : utf8_view( t.text ) ) {
+                    const point p( static_cast<int>( left ) + column * map_font->width, static_cast<int>( t.y ) );
+                    map_font->queue_char( curses_text_batch, renderer, utf32_to_utf8( ch ), p, t.color );
+                    column += mk_wcwidth( ch );
+                }
+                curses_text_batch.flush( renderer );
+            }
+        }
+
         update = true;
     } else if( g && w == g->w_terrain && map_font ) {
         // When the terrain updates, predraw a black space around its edge

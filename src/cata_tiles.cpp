@@ -5317,6 +5317,13 @@ cata_tiles::frame_markers cata_tiles::get_frame_markers() const
         out.line_end = line_trajectory.back();
         out.line_end_id = line_endpoint_id;
     }
+    if( do_draw_zones ) {
+        out.zones = true;
+        out.zone_start = zone_start;
+        out.zone_end = zone_end;
+        out.zone_offset = zone_offset;
+    }
+    out.sct = do_draw_sct;
     return out;
 }
 

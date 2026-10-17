@@ -80,6 +80,7 @@
 #include "pathfinding.h"
 #include "point.h"
 #include "popup.h"
+#include "r3d.h"
 #include "ranged.h"
 #include "rng.h"
 #include "safemode_ui.h"
@@ -3144,6 +3145,38 @@ bool game::do_regular_action( action_id &act, avatar &player_character,
         case ACTION_ZOOM_OUT:
             zoom_out();
             mark_main_ui_adaptor_resize();
+            break;
+
+        case ACTION_R3D_TOGGLE:
+            r3d::toggle();
+            break;
+
+        case ACTION_R3D_ROTATE_LEFT:
+            r3d::rotate( -1 );
+            break;
+
+        case ACTION_R3D_ROTATE_RIGHT:
+            r3d::rotate( 1 );
+            break;
+
+        case ACTION_R3D_PITCH_UP:
+            r3d::pitch( 1 );
+            break;
+
+        case ACTION_R3D_PITCH_DOWN:
+            r3d::pitch( -1 );
+            break;
+
+        case ACTION_R3D_ZOOM_IN:
+            r3d::zoom( 1 );
+            break;
+
+        case ACTION_R3D_ZOOM_OUT:
+            r3d::zoom( -1 );
+            break;
+
+        case ACTION_R3D_RESET:
+            r3d::reset();
             break;
 
         case ACTION_ITEMACTION:

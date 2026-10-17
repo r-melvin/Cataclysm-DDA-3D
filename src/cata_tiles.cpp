@@ -2804,6 +2804,52 @@ std::optional<texture_draw_data> cata_tiles::get_texture_draw_data( const std::s
     return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1 };
 }
 
+std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::string &id,
+        TILE_CATEGORY category, const tripoint_bub_ms &p )
+{
+    std::optional<tile_lookup_res> lookup_res = find_tile_looks_like( id, category, "" );
+    if( !lookup_res ) {
+        return std::nullopt;
+    }
+
+    const tile_type &ttype = lookup_res->tile();
+    const unsigned int seed = get_variant_seed( ttype, category, p, lookup_res->id() );
+    const std::vector<int> *indices = ttype.fg.pick( seed );
+    if( !indices && ttype.multitile ) {
+        // The base entry of a multitile tile can be empty; its sprites live in "<id>_<subtile>".
+        for( const std::string &key : multitile_keys ) {
+            const tile_type *sub = tileset_ptr->find_tile_type( lookup_res->id() + "_" + key );
+            if( sub ) {
+                indices = sub->fg.pick( seed );
+                if( indices ) {
+                    break;
+                }
+            }
+        }
+    }
+    if( !indices ) {
+        indices = ttype.bg.pick( seed );
+    }
+    if( !indices || indices->empty() ) {
+        return std::nullopt;
+    }
+    const texture *tile = tileset_ptr->get_tile( indices->front() );
+    if( !tile ) {
+        return std::nullopt;
+    }
+
+    std::shared_ptr<SDL_Texture> texture_ptr = tile->get_texture_ptr();
+    const SDL_Rect rect = tile->get_srcrect();
+    float buf_w = 0.0f;
+    float buf_h = 0.0f;
+    if( !SDL_GetTextureSize( texture_ptr.get(), &buf_w, &buf_h ) || buf_w <= 0.0f || buf_h <= 0.0f ) {
+        return std::nullopt;
+    }
+    const std::pair<float, float> uv0{ rect.x / buf_w, rect.y / buf_h };
+    const std::pair<float, float> uv1{ ( rect.x + rect.w ) / buf_w, ( rect.y + rect.h ) / buf_h };
+    return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1 };
+}
+
 std::unordered_set<std::string> cata_tiles::get_all_portrait_tile_ids( bool male ) const
 {
     return tileset_ptr->get_all_portrait_tile_ids( male );

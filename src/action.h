@@ -315,6 +315,22 @@ enum action_id : int {
     ACTION_ZOOM_OUT,
     /** Zoom view out */
     ACTION_ZOOM_IN,
+    /** 3D view: Toggle 3D view */
+    ACTION_R3D_TOGGLE,
+    /** 3D view: 3D view: rotate camera left */
+    ACTION_R3D_ROTATE_LEFT,
+    /** 3D view: 3D view: rotate camera right */
+    ACTION_R3D_ROTATE_RIGHT,
+    /** 3D view: 3D view: tilt camera up */
+    ACTION_R3D_PITCH_UP,
+    /** 3D view: 3D view: tilt camera down */
+    ACTION_R3D_PITCH_DOWN,
+    /** 3D view: 3D view: move camera closer */
+    ACTION_R3D_ZOOM_IN,
+    /** 3D view: 3D view: move camera away */
+    ACTION_R3D_ZOOM_OUT,
+    /** 3D view: 3D view: reset camera */
+    ACTION_R3D_RESET,
     /** Open the the action menu */
     ACTION_ACTIONMENU,
     /** Open the item uses menu */

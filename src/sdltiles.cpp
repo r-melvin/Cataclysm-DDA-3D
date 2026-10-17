@@ -67,6 +67,7 @@
 #include "overmap_ui.h"
 #include "overmapbuffer.h"
 #include "path_info.h"
+#include "r3d.h"
 #include "sdl_geometry.h"
 #include "sdl_renderer_recovery.h"
 #include "sdl_wrappers.h"
@@ -838,6 +839,7 @@ static void WinDestroy()
     shared_lightmap.reset();
     shared_variant_pass.reset();
     display_buffer.reset();
+    r3d::shutdown();
     renderer.reset();
     ::window.reset();
 }
@@ -2098,6 +2100,8 @@ void renderer_resource_coordinator::record_display_buffer_dims()
 
 void renderer_resource_coordinator::release_live_atlases() const
 {
+    // The 3D renderer holds GPU objects of the renderer that is about to go away.
+    r3d::shutdown();
     ts_cache.release_live_atlases();
 }
 
@@ -4111,13 +4115,21 @@ void cata_cursesport::curses_drawwindow( const catacurses::window &w )
 
         // game::w_terrain can be drawn by the tilecontext.
         // skip the normal drawing code for it.
-        tilecontext->draw(
-            point( win->pos.x * fontwidth, win->pos.y * fontheight ),
-            g->ter_view_p,
-            TERRAIN_WINDOW_TERM_WIDTH * font->width,
-            TERRAIN_WINDOW_TERM_HEIGHT * font->height,
-            overlay_strings,
-            color_blocks );
+        const bool drawn_3d = r3d::draw( renderer.get(),
+                                         static_cast<float>( win->pos.x * fontwidth ),
+                                         static_cast<float>( win->pos.y * fontheight ),
+                                         static_cast<float>( TERRAIN_WINDOW_TERM_WIDTH * font->width ),
+                                         static_cast<float>( TERRAIN_WINDOW_TERM_HEIGHT * font->height ),
+                                         g->ter_view_p, curses_render_epoch );
+        if( !drawn_3d ) {
+            tilecontext->draw(
+                point( win->pos.x * fontwidth, win->pos.y * fontheight ),
+                g->ter_view_p,
+                TERRAIN_WINDOW_TERM_WIDTH * font->width,
+                TERRAIN_WINDOW_TERM_HEIGHT * font->height,
+                overlay_strings,
+                color_blocks );
+        }
 
         // color blocks overlay
         if( !color_blocks.second.empty() ) {

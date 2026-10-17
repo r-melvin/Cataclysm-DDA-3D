@@ -2,6 +2,7 @@
 #ifndef CATA_SRC_SUBMAP_H
 #define CATA_SRC_SUBMAP_H
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -59,6 +60,15 @@ struct spawn_point {
 
 // Suppression due to bug in clang-tidy 12
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+/**
+ * Source of unique, monotonically increasing stamps used by submap::render_stamp().
+ */
+inline uint64_t next_submap_render_stamp()
+{
+    static std::atomic<uint64_t> counter{ 0 };
+    return counter.fetch_add( 1, std::memory_order_relaxed ) + 1;
+}
+
 struct maptile_soa {
     cata::mdarray<ter_id, point_sm_ms>             ter; // Terrain on each square
     cata::mdarray<furn_id, point_sm_ms>            frn; // Furniture on each square
@@ -121,11 +131,13 @@ class submap
 
         void set_furn( const point_sm_ms &p, furn_id furn ) {
             ensure_nonuniform();
+            touch_render_stamp();
             m->frn[p.x()][p.y()] = furn;
         }
 
         void set_all_furn( const furn_id &furn ) {
             ensure_nonuniform();
+            touch_render_stamp();
             std::uninitialized_fill_n( &m->frn[0][0], elements, furn );
         }
         int get_map_damage( const point_sm_ms &p ) const {
@@ -149,10 +161,12 @@ class submap
 
         void set_ter( const point_sm_ms &p, ter_id terr ) {
             ensure_nonuniform();
+            touch_render_stamp();
             m->ter[p.x()][p.y()] = terr;
         }
 
         void set_all_ter( const ter_id &terr, bool uniform_ok = false ) {
+            touch_render_stamp();
             if( !uniform_ok ) {
                 ensure_nonuniform();
             }
@@ -332,11 +346,24 @@ class submap
         std::map<point_sm_ms, computer> computers;
         std::unique_ptr<maptile_soa> m;
         ter_id uniform_ter = t_null;
+        uint64_t render_stamp_ = next_submap_render_stamp();
         int temperature_mod = 0; // delta in F
         // Tracks original terrain for tiles transformed by phase logic
         std::map<point_sm_ms, ter_id> original_terrain;
 
+        void touch_render_stamp() {
+            render_stamp_ = next_submap_render_stamp();
+        }
+
     public:
+        /**
+         * Changes to a new value whenever terrain or furniture here may have changed (and is
+         * unique per submap object), so the 3D renderer can tell when a cached mesh is stale.
+         */
+        uint64_t render_stamp() const {
+            return render_stamp_;
+        }
+
         bool has_original_ter( const point_sm_ms &p ) const;
         ter_id get_original_ter( const point_sm_ms &p ) const;
         void set_original_ter( const point_sm_ms &p, const ter_id &t );

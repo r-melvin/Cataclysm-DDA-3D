@@ -2598,6 +2598,21 @@ void options_manager::add_options_graphics()
 
         get_option( "USE_OVERMAP_TILES" ).setPrerequisite( "USE_TILES" );
 
+        add( "RENDERER_3D", page_id, to_translation( "3D renderer (experimental)" ),
+             to_translation( "If true, draws the map as a textured 3D scene instead of flat tiles.  "
+                             "Needs a GPU renderer; falls back to flat tiles otherwise." ),
+             false, COPT_CURSES_HIDE
+           );
+
+        get_option( "RENDERER_3D" ).setPrerequisite( "USE_TILES" );
+
+        add( "R3D_VIEW_DEPTH", page_id, to_translation( "3D view depth" ),
+             to_translation( "How many z-levels below the viewed one the 3D renderer draws." ),
+             1, 8, 3, COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_VIEW_DEPTH" ).setPrerequisite( "RENDERER_3D" );
+
         std::vector<options_manager::id_and_option> om_tilesets = build_tilesets_list();
         // filter out iso tilesets from overmap tilesets
         om_tilesets.erase( std::remove_if( om_tilesets.begin(), om_tilesets.end(), []( const auto & it ) {

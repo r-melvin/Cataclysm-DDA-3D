@@ -347,6 +347,22 @@ std::string action_ident( action_id act )
             return "zoom_out";
         case ACTION_ZOOM_IN:
             return "zoom_in";
+        case ACTION_R3D_TOGGLE:
+            return "r3d_toggle";
+        case ACTION_R3D_ROTATE_LEFT:
+            return "r3d_rotate_left";
+        case ACTION_R3D_ROTATE_RIGHT:
+            return "r3d_rotate_right";
+        case ACTION_R3D_PITCH_UP:
+            return "r3d_pitch_up";
+        case ACTION_R3D_PITCH_DOWN:
+            return "r3d_pitch_down";
+        case ACTION_R3D_ZOOM_IN:
+            return "r3d_zoom_in";
+        case ACTION_R3D_ZOOM_OUT:
+            return "r3d_zoom_out";
+        case ACTION_R3D_RESET:
+            return "r3d_reset";
         case ACTION_TOGGLE_FULLSCREEN:
             return "toggle_fullscreen";
         case ACTION_TOGGLE_PIXEL_MINIMAP:
@@ -461,6 +477,14 @@ bool can_action_change_worldstate( const action_id act )
         case ACTION_DISPLAY_TRANSPARENCY:
         case ACTION_ZOOM_OUT:
         case ACTION_ZOOM_IN:
+        case ACTION_R3D_TOGGLE:
+        case ACTION_R3D_ROTATE_LEFT:
+        case ACTION_R3D_ROTATE_RIGHT:
+        case ACTION_R3D_PITCH_UP:
+        case ACTION_R3D_PITCH_DOWN:
+        case ACTION_R3D_ZOOM_IN:
+        case ACTION_R3D_ZOOM_OUT:
+        case ACTION_R3D_RESET:
         case ACTION_TOGGLE_PIXEL_MINIMAP:
         case ACTION_TOGGLE_PANEL_ADM:
         case ACTION_PANEL_MGMT:
@@ -1049,6 +1073,14 @@ action_id handle_action_menu( map &here )
             if( use_tiles ) {
                 REGISTER_ACTION( ACTION_ZOOM_OUT );
                 REGISTER_ACTION( ACTION_ZOOM_IN );
+                REGISTER_ACTION( ACTION_R3D_TOGGLE );
+                REGISTER_ACTION( ACTION_R3D_ROTATE_LEFT );
+                REGISTER_ACTION( ACTION_R3D_ROTATE_RIGHT );
+                REGISTER_ACTION( ACTION_R3D_PITCH_UP );
+                REGISTER_ACTION( ACTION_R3D_PITCH_DOWN );
+                REGISTER_ACTION( ACTION_R3D_ZOOM_IN );
+                REGISTER_ACTION( ACTION_R3D_ZOOM_OUT );
+                REGISTER_ACTION( ACTION_R3D_RESET );
             }
 #endif
         }

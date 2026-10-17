@@ -3419,6 +3419,54 @@
   },
   {
     "type": "keybinding",
+    "name": "Toggle 3D view",
+    "id": "r3d_toggle",
+    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "b" } ]
+  },
+  {
+    "type": "keybinding",
+    "name": "3D view: rotate camera left",
+    "id": "r3d_rotate_left",
+    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "LEFT" } ]
+  },
+  {
+    "type": "keybinding",
+    "name": "3D view: rotate camera right",
+    "id": "r3d_rotate_right",
+    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "RIGHT" } ]
+  },
+  {
+    "type": "keybinding",
+    "name": "3D view: tilt camera up",
+    "id": "r3d_pitch_up",
+    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "UP" } ]
+  },
+  {
+    "type": "keybinding",
+    "name": "3D view: tilt camera down",
+    "id": "r3d_pitch_down",
+    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "DOWN" } ]
+  },
+  {
+    "type": "keybinding",
+    "name": "3D view: move camera closer",
+    "id": "r3d_zoom_in",
+    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "PAGE_UP" } ]
+  },
+  {
+    "type": "keybinding",
+    "name": "3D view: move camera away",
+    "id": "r3d_zoom_out",
+    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "PAGE_DOWN" } ]
+  },
+  {
+    "type": "keybinding",
+    "name": "3D view: reset camera",
+    "id": "r3d_reset",
+    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "HOME" } ]
+  },
+  {
+    "type": "keybinding",
     "name": "Toggle debug mode",
     "category": "DEFAULTMODE",
     "id": "debug_mode"

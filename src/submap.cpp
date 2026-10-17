@@ -203,6 +203,7 @@ bool submap::is_open_air( const point_sm_ms &p ) const
 
 void submap::rotate( int turns )
 {
+    touch_render_stamp();
     if( is_uniform() ) {
         return;
     }
@@ -280,6 +281,7 @@ void submap::rotate( int turns )
 
 void submap::mirror( bool horizontally )
 {
+    touch_render_stamp();
     if( is_uniform() ) {
         return;
     }
@@ -324,6 +326,7 @@ void submap::mirror( bool horizontally )
 
 void submap::revert_submap( submap &sr )
 {
+    touch_render_stamp();
     reverted = true;
     if( sr.is_uniform() ) {
         m.reset();

@@ -768,6 +768,14 @@ class cata_tiles
         std::optional<texture_draw_data> get_texture_draw_data( const std::string &id,
                 TILE_CATEGORY category, const tripoint_bub_ms &p );
 
+        /**
+         * Like get_texture_draw_data, but for the 3D renderer: also resolves multitile tiles
+         * (walls, fences) through one of their subtile sprites, and falls back to the background
+         * sprite when a tile has no foreground. Returns nullopt if the id has no usable sprite.
+         */
+        std::optional<texture_draw_data> get_sprite_draw_data( const std::string &id,
+                TILE_CATEGORY category, const tripoint_bub_ms &p );
+
         std::unordered_set<std::string> get_all_portrait_tile_ids( bool male ) const;
 
     protected:

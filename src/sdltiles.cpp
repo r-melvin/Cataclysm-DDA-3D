@@ -7589,7 +7589,8 @@ bool save_screenshot( const std::string &file_path )
     }
 
     // Save screenshot as PNG file
-    if( printErrorIf( IMG_SavePNG( surface.get(), file_path.c_str() ) != 0,
+    // SDL3_image returns true on success (SDL2's returned 0).
+    if( printErrorIf( !IMG_SavePNG( surface.get(), file_path.c_str() ),
                       std::string( "save_screenshot: cannot save screenshot file: " + file_path ).c_str() ) ) {
         return false;
     }

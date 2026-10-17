@@ -55,10 +55,16 @@ def fill(px, rng, base, amount):
 
 
 def plaster(px, rng):
-    fill(px, rng, (196, 186, 160), 0.025)
+    fill(px, rng, (196, 186, 160), 0.035)
     for _ in range(14):  # faint blotches
         x, y = rng.randrange(CELL), rng.randrange(CELL)
         px[x, y] = shade(px[x, y], 0.93)
+    for x in range(CELL):  # skirting board and a cornice line, so a plain wall reads as one
+        px[x, CELL - 1] = shade(px[x, CELL - 1], 0.55)
+        px[x, CELL - 2] = shade(px[x, CELL - 2], 0.65)
+        px[x, CELL - 3] = shade(px[x, CELL - 3], 0.8)
+        px[x, 1] = shade(px[x, 1], 1.12)
+        px[x, 2] = shade(px[x, 2], 0.85)
 
 
 def concrete(px, rng):

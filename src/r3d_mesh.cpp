@@ -133,7 +133,12 @@ shape combine( const shape &terrain, const shape &furniture )
 
 // Light from above and the south-west, with clearly different faces as isometric art shades
 // them: that contrast is what makes boxes read as solid. top N S W E
-constexpr std::array<uint8_t, 5> face_shade = { 255, 150, 212, 128, 178 };
+struct point_f {
+    float x;
+    float y;
+};
+
+constexpr std::array<uint8_t, 5> face_shade = { 255, 165, 212, 150, 185 };
 
 // All faces use the full sprite horizontally. Vertically the sprite spans one tile height starting
 // at z_base, so a shorter box shows only the lower part of it.
@@ -348,8 +353,14 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
     const float sv0 = s.v0 + dv * b.side_top;
     const float sv1 = s.v0 + dv * b.side_bottom;
     const uvs_t side_uv = {{ { u0, sv0 }, { u1, sv0 }, { u1, sv1 }, { u0, sv1 } }};
-    const float edge_u0 = u1 - ( u1 - u0 ) * 0.08f;
-    const uvs_t plain_uv = {{ { edge_u0, sv0 }, { u1, sv0 }, { u1, sv1 }, { edge_u0, sv1 } }};
+    // A patch from the middle of the lid: the thing's own colour without doors or handles.
+    const float lid_v0 = s.v0 + dv * b.lid_top;
+    const float lid_v1 = s.v0 + dv * b.lid_bottom;
+    const float pu0 = u0 + ( u1 - u0 ) * 0.3f;
+    const float pu1 = u0 + ( u1 - u0 ) * 0.7f;
+    const float pv0 = lid_v0 + ( lid_v1 - lid_v0 ) * 0.35f;
+    const float pv1 = lid_v0 + ( lid_v1 - lid_v0 ) * 0.65f;
+    const uvs_t plain_uv = {{ { pu0, pv0 }, { pu1, pv0 }, { pu1, pv1 }, { pu0, pv1 } }};
     // south, west, north, east: where the front ends up after each clockwise quarter turn
     static constexpr std::array<face_bit, 4> front_after = {{ face_south, face_west, face_north, face_east }};
     const face_bit front = front_after[static_cast<size_t>( facing & 3 )];
@@ -386,28 +397,21 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
     };
     sink.add( s, under, side_uv, refs[3] );
 
-    // Legs at the free corners: a corner between two sides that join a neighbouring piece (a
-    // long connected bench) has none, so only the ends of a row stand on legs.
-    constexpr float leg = 0.1f;
-    constexpr float inset = 0.06f;
-    const bool open_n = ( faces & face_north ) != 0 || fy0 > edge;
-    const bool open_s = ( faces & face_south ) != 0 || fy1 < 1.0f - edge;
-    const bool open_w = ( faces & face_west ) != 0 || fx0 > edge;
-    const bool open_e = ( faces & face_east ) != 0 || fx1 < 1.0f - edge;
-    const struct {
-        bool show;
-        float x;
-        float y;
-    } legs[] = {
-        { open_n && open_w, fx0 + inset, fy0 + inset },
-        { open_n && open_e, fx1 - inset - leg, fy0 + inset },
-        { open_s && open_w, fx0 + inset, fy1 - inset - leg },
-        { open_s && open_e, fx1 - inset - leg, fy1 - inset - leg },
-    };
-    for( const auto &l : legs ) {
-        if( !l.show ) {
-            continue;
+    // Legs: every tile of a bench or table stands on a pair of legs at the sides across its
+    // row (the row runs along x before the turn), set in from the slab's ends.
+    constexpr float leg = 0.09f;
+    constexpr float inset = 0.05f;
+    const bool across_y = ( facing & 1 ) == 0;
+    const float a0 = ( across_y ? fx0 : fy0 ) + 0.22f;
+    const float a1 = ( across_y ? fx1 : fy1 ) - 0.22f - leg;
+    const float s0 = ( across_y ? fy0 : fx0 ) + inset;
+    const float s1 = ( across_y ? fy1 : fx1 ) - inset - leg;
+    const std::array<std::array<float, 2>, 4> legs = {{
+            { a0, s0 }, { a0, s1 }, { a1, s0 }, { a1, s1 }
         }
+    };
+    for( const auto &pos : legs ) {
+        const point_f l{ across_y ? pos[0] : pos[1], across_y ? pos[1] : pos[0] };
         const float lx0 = ox + l.x;
         const float ly0 = oy + l.y;
         const float lx1 = lx0 + leg;
@@ -985,10 +989,16 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             // A connected sprite's rotation says how it joins its neighbours, not where it faces.
             int facing = furn_subtile >= 0 ? 0 : spr.facing;
             if( fs.slab > 0.0f ) {
-                // A bench or table runs along its row, its seat across the middle of the tile.
-                const float depth = layout.y1 - layout.y0;
-                layout.y0 = ( 1.0f - depth ) * 0.5f;
-                layout.y1 = layout.y0 + depth;
+                // A bench or table runs along its row (x before the turn): a seat about 0.6 tile
+                // wide across the middle of the tile, the length of the tile when it continues
+                // next door, a little shorter when it stands alone.
+                constexpr float seat = 0.62f;
+                constexpr float lone = 0.7f;
+                const bool continues = ( joined & ( face_west | face_east | face_north | face_south ) ) != 0;
+                layout.y0 = ( 1.0f - seat ) * 0.5f;
+                layout.y1 = layout.y0 + seat;
+                layout.x0 = continues ? 0.0f : ( 1.0f - lone ) * 0.5f;
+                layout.x1 = continues ? 1.0f : layout.x0 + lone;
                 if( row_x || row_y ) {
                     facing = row_y ? 1 : 0;
                 }

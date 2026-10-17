@@ -257,6 +257,91 @@ void gpu::shutdown()
     depth_format_ = SDL_GPU_TEXTUREFORMAT_INVALID;
 }
 
+std::shared_ptr<SDL_Texture> gpu::create_sheet( SDL_Surface *rgba )
+{
+    if( !device_ || !rgba || rgba->w <= 0 || rgba->h <= 0 ) {
+        return nullptr;
+    }
+    SDL_Surface *const pixels = SDL_ConvertSurface( rgba, SDL_PIXELFORMAT_RGBA32 );
+    if( !pixels ) {
+        return nullptr;
+    }
+    const Uint32 w = static_cast<Uint32>( pixels->w );
+    const Uint32 h = static_cast<Uint32>( pixels->h );
+    SDL_GPUTextureCreateInfo tci{};
+    tci.type = SDL_GPU_TEXTURETYPE_2D;
+    tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    tci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    tci.width = w;
+    tci.height = h;
+    tci.layer_count_or_depth = 1;
+    tci.num_levels = 1;
+    SDL_GPUTexture *const texture = SDL_CreateGPUTexture( device_, &tci );
+
+    SDL_GPUTransferBufferCreateInfo tbi{};
+    tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tbi.size = w * h * 4;
+    SDL_GPUTransferBuffer *const staging = texture ? SDL_CreateGPUTransferBuffer( device_,
+                                           &tbi ) : nullptr;
+    void *const mapped = staging ? SDL_MapGPUTransferBuffer( device_, staging, false ) : nullptr;
+    SDL_GPUCommandBuffer *upload_cmd = nullptr;
+    bool ok = mapped != nullptr;
+    if( ok ) {
+        for( Uint32 row = 0; row < h; ++row ) {
+            std::memcpy( static_cast<uint8_t *>( mapped ) + row * w * 4,
+                         static_cast<const uint8_t *>( pixels->pixels ) + row * pixels->pitch, w * 4 );
+        }
+        SDL_UnmapGPUTransferBuffer( device_, staging );
+        upload_cmd = SDL_AcquireGPUCommandBuffer( device_ );
+        ok = upload_cmd != nullptr;
+    }
+    if( ok ) {
+        SDL_GPUCopyPass *const copy = SDL_BeginGPUCopyPass( upload_cmd );
+        SDL_GPUTextureTransferInfo src{};
+        src.transfer_buffer = staging;
+        src.pixels_per_row = w;
+        src.rows_per_layer = h;
+        SDL_GPUTextureRegion dst{};
+        dst.texture = texture;
+        dst.w = w;
+        dst.h = h;
+        dst.d = 1;
+        SDL_UploadToGPUTexture( copy, &src, &dst, false );
+        SDL_EndGPUCopyPass( copy );
+        // Submitted now, so it runs before any later frame of ours samples the sheet.
+        ok = SDL_SubmitGPUCommandBuffer( upload_cmd );
+    }
+    if( staging ) {
+        SDL_ReleaseGPUTransferBuffer( device_, staging );
+    }
+    SDL_DestroySurface( pixels );
+
+    SDL_Texture *wrapped = nullptr;
+    if( ok ) {
+        const SDL_PropertiesID props = SDL_CreateProperties();
+        SDL_SetPointerProperty( props, SDL_PROP_TEXTURE_CREATE_GPU_TEXTURE_POINTER, texture );
+        SDL_SetNumberProperty( props, SDL_PROP_TEXTURE_CREATE_FORMAT_NUMBER, SDL_PIXELFORMAT_RGBA32 );
+        SDL_SetNumberProperty( props, SDL_PROP_TEXTURE_CREATE_ACCESS_NUMBER, SDL_TEXTUREACCESS_STATIC );
+        SDL_SetNumberProperty( props, SDL_PROP_TEXTURE_CREATE_WIDTH_NUMBER, w );
+        SDL_SetNumberProperty( props, SDL_PROP_TEXTURE_CREATE_HEIGHT_NUMBER, h );
+        wrapped = SDL_CreateTextureWithProperties( renderer_, props );
+        SDL_DestroyProperties( props );
+    }
+    if( !wrapped ) {
+        DebugLog( D_ERROR, DC_ALL ) << "r3d: creating a sprite sheet failed: " << SDL_GetError();
+        if( texture ) {
+            SDL_ReleaseGPUTexture( device_, texture );
+        }
+        return nullptr;
+    }
+    SDL_GPUDevice *const device = device_;
+    return std::shared_ptr<SDL_Texture>( wrapped, [device, texture]( SDL_Texture * t ) {
+        // The wrapper does not own the GPU texture.
+        SDL_DestroyTexture( t );
+        SDL_ReleaseGPUTexture( device, texture );
+    } );
+}
+
 bool gpu::ensure_target( int width, int height )
 {
     if( !device_ || width <= 0 || height <= 0 ) {

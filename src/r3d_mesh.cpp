@@ -113,7 +113,9 @@ shape combine( const shape &terrain, const shape &furniture )
     return terrain;
 }
 
-constexpr std::array<uint8_t, 5> face_shade = { 255, 178, 204, 153, 191 }; // top N S W E
+// Light from above and the south-west, with clearly different faces as isometric art shades
+// them: that contrast is what makes boxes read as solid. top N S W E
+constexpr std::array<uint8_t, 5> face_shade = { 255, 150, 212, 128, 178 };
 
 // All faces use the full sprite horizontally. Vertically the sprite spans one tile height starting
 // at z_base, so a shorter box shows only the lower part of it.
@@ -320,8 +322,8 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
 
     // Legs at the free corners: a corner between two sides that join a neighbouring piece (a
     // long connected bench) has none, so only the ends of a row stand on legs.
-    constexpr float leg = 0.07f;
-    constexpr float inset = 0.05f;
+    constexpr float leg = 0.1f;
+    constexpr float inset = 0.06f;
     const bool open_n = ( faces & face_north ) != 0 || fy0 > edge;
     const bool open_s = ( faces & face_south ) != 0 || fy1 < 1.0f - edge;
     const bool open_w = ( faces & face_west ) != 0 || fx0 > edge;

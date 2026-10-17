@@ -214,7 +214,7 @@ bool rebuild_chunk( state &s, chunk_gpu &c, const tripoint_abs_sm &pos, uint64_t
 
 // Loads data/raw/r3d/wall_sides.{json,png} (see make_wall_textures.py) onto the renderer.
 // Nothing (the tileset sprites stay on wall sides) if either is missing or broken.
-std::shared_ptr<const wall_sides> load_wall_sides( SDL_Renderer *renderer )
+std::shared_ptr<const wall_sides> load_wall_sides( gpu &device )
 {
     try {
         const cata_path dir = PATH_INFO::datadir_path() / "raw" / "r3d";
@@ -238,13 +238,12 @@ std::shared_ptr<const wall_sides> load_wall_sides( SDL_Renderer *renderer )
         sides->rules.fallback = jo.get_string( "fallback", "" );
 
         const SDL_Surface_Ptr surface = load_image( ( dir / "wall_sides.png" ).generic_u8string().c_str() );
-        SDL_Texture *const texture = SDL_CreateTextureFromSurface( renderer, surface.get() );
-        if( !texture ) {
-            DebugLog( D_WARNING, DC_ALL ) << "r3d: wall side textures: " << SDL_GetError();
+        // Uploaded by the 3D renderer itself: a texture made through the SDL_Renderer would
+        // only receive its pixels at the renderer's next present.
+        sides->atlas = device.create_sheet( surface.get() );
+        if( !sides->atlas ) {
             return nullptr;
         }
-        SDL_SetTextureScaleMode( texture, SDL_SCALEMODE_NEAREST );
-        sides->atlas.reset( texture, SDL_DestroyTexture );
         sides->width = surface->w;
         sides->height = surface->h;
         return sides;
@@ -732,7 +731,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     const bool want_walls = get_option<bool>( "R3D_WALL_TEXTURES" );
     if( want_walls != s.walls_on ) {
         release_all_chunks( s );
-        s.cache.set_wall_sides( want_walls ? load_wall_sides( renderer ) : nullptr );
+        s.cache.set_wall_sides( want_walls ? load_wall_sides( s.device ) : nullptr );
         s.walls_on = want_walls;
     }
 

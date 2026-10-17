@@ -5,6 +5,7 @@
 #if defined(TILES)
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include <SDL3/SDL.h>
@@ -67,6 +68,13 @@ class gpu
             return target_h_;
         }
 
+        /**
+         * A sprite sheet the 3D pass can sample, from an RGBA32 surface, uploaded on its own
+         * command buffer (the renderer only submits its uploads when it presents). Wrapped as
+         * an SDL_Texture of the renderer like the tileset sheets; empty on failure. The GPU
+         * texture is released with it, so it must go before shutdown().
+         */
+        std::shared_ptr<SDL_Texture> create_sheet( SDL_Surface *rgba );
         SDL_GPUBuffer *create_buffer( SDL_GPUBufferUsageFlags usage, uint32_t size );
         void release_buffer( SDL_GPUBuffer *buffer );
 

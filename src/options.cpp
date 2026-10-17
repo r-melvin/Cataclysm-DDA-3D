@@ -2713,6 +2713,13 @@ void options_manager::add_options_graphics()
 
         get_option( "R3D_FP_MINIMAP_ROTATE" ).setPrerequisite( "RENDERER_3D" );
 
+        add( "R3D_FP_OCCLUDE_UNSEEN", page_id, to_translation( "3D first-person: unexplored places are solid" ),
+             to_translation( "In first person, places you have never seen are drawn solid black, so an unexplored wall hides the rooms behind it as it would in reality.  Off leaves them out, so you can see known rooms through unknown walls." ),
+             true, COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_FP_OCCLUDE_UNSEEN" ).setPrerequisite( "RENDERER_3D" );
+
         std::vector<options_manager::id_and_option> om_tilesets = build_tilesets_list();
         // filter out iso tilesets from overmap tilesets
         om_tilesets.erase( std::remove_if( om_tilesets.begin(), om_tilesets.end(), []( const auto & it ) {

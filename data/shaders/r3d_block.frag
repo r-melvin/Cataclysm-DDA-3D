@@ -11,6 +11,7 @@ layout(location = 2) noperspective in vec3 v_ndc;
 layout(location = 3) in float v_height;
 layout(location = 4) flat in vec4 v_cut;
 layout(location = 5) flat in vec2 v_cut2;
+layout(location = 6) flat in float v_occlude;
 layout(location = 0) out vec4 out_color;
 
 void main()
@@ -36,9 +37,14 @@ void main()
     if (texel.a < 0.75) {
         discard;
     }
-    // Places never seen are lit black: leave them out so they do not hide what is seen behind
-    // them, as the flat view simply draws nothing there.
+    // Places never seen are lit black. From above they are left out so they do not hide what is
+    // seen behind them, as the flat view simply draws nothing there. In first person they are
+    // solid black instead: an unexplored wall still hides the room behind it.
     if (max(v_light.r, max(v_light.g, v_light.b)) < 0.5 / 255.0) {
+        if (v_occlude > 0.5) {
+            out_color = vec4(0.0, 0.0, 0.0, 1.0);
+            return;
+        }
         discard;
     }
     out_color = vec4(texel.rgb * v_light.rgb * rim, 1.0);

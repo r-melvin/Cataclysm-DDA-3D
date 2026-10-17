@@ -1467,6 +1467,8 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     block_uniforms uniforms;
     uniforms.view_proj = view_proj;
     set_cutaway( uniforms, view_proj, aspect, s.cam, center );
+    // First person: never-seen places hide what lies behind them (R3D_FP_OCCLUDE_UNSEEN).
+    uniforms.flags[0] = fp && get_option<bool>( "R3D_FP_OCCLUDE_UNSEEN" ) ? 1.0f : 0.0f;
     for( const visible_chunk &vc : visible ) {
         uniforms.offset[0] = vc.offset[0];
         uniforms.offset[1] = vc.offset[1];
@@ -1479,6 +1481,9 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     if( draw_entities ) {
         s.device.bind_entity_pipeline();
         uniforms.cut[3] = 0.0f; // creatures in front of the player stay
+        // Unseen creatures and items are not drawn at all; unseen trees are left out.
+        uniforms.flags[0] = 0.0f;
+        uniforms.flags[1] = fp ? 1.0f : 0.0f; // sound markers on top (see r3d_entities.cpp)
         uniforms.offset[0] = 0.0f;
         uniforms.offset[1] = 0.0f;
         uniforms.offset[2] = 0.0f;

@@ -23,6 +23,12 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
   written whenever the first-person heading changes and read back on load, so you load facing
   the way you saved. Loading in orbit mode keeps the orbit camera; switching to first person
   then starts from the orbit camera's direction, as before.
+* FP6 unseen tiles occlude: done in part (not yet seen in the game). Option
+  `R3D_FP_OCCLUDE_UNSEEN` (default on): in first person never-seen places are drawn solid black
+  and write depth (uniform `flags.x`, `block_uniforms` is now 144 bytes), so an unexplored wall
+  hides the explored room behind it. Creatures, items and trees keep being left out when unseen.
+  Not done from FP6: the linear-min sampler for distant floors, front-to-back chunk order, the
+  item frustum pre-filter.
 
 What to test locally (FP0): toggle with ctrl+F in a house; the picture is a perspective view from
 eye height; left/right arrows (with `R3D_WASD` on, the default) or ctrl+left/right turn by 45

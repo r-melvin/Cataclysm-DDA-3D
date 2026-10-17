@@ -118,6 +118,7 @@ struct state {
     uint32_t dyn_light_bytes = 0;
     uint32_t dyn_index_bytes = 0;
     shown_view shown;
+    bool map_drawn = false; // the game's map view has been on screen (a game is running)
     vec3 pan; // free camera: offset of the camera target from the viewed tile, world space
     bool walls_on = false; // whether the cache was given the wall side textures
 };
@@ -481,35 +482,51 @@ bool capture( const std::string &path )
 
 void compare_capture()
 {
-    // CATA_R3D_COMPARE=<prefix> saves <prefix>_3d.png (the 3D view as configured, e.g. with
-    // CATA_R3D_CAMERA="-45,30,20,1") and <prefix>_2d.png (the flat view of the same turn and
-    // place with the isometric tileset CATA_R3D_COMPARE_TILESET, default Ultica_iso), once, as
-    // soon as the 3D view has settled. No input is handled in between, so no turn passes.
-    // Afterwards the previous tileset and view come back, or with CATA_R3D_QUIT_AFTER_SHOT
-    // the game exits (status 0 when both shots were saved).
+    // CATA_R3D_COMPARE=<prefix> saves, once, as soon as a game is on screen:
+    //  - <prefix>_3d.png: the 3D view with tileset CATA_R3D_COMPARE_3D_TILESET (default
+    //    UltimateCataclysm) through the CATA_R3D_CAMERA camera (e.g. "-45,30,20,1");
+    //  - <prefix>_2d.png: the flat view of the same turn and place with the isometric tileset
+    //    CATA_R3D_COMPARE_TILESET (default Ultica_iso).
+    // No input is handled in between, so no turn passes. Afterwards the previous tileset and
+    // view come back (the options file is never written), or with CATA_R3D_QUIT_AFTER_SHOT the
+    // game exits (status 0 when both shots were saved).
     static const char *const prefix = std::getenv( "CATA_R3D_COMPARE" );
     static bool done = false;
-    constexpr uint64_t settle_frames = 10;
-    if( !prefix || done || !g || !closetilecontext || !active() || st().frame < settle_frames ) {
+    if( !prefix || done || !g || !closetilecontext || !st().map_drawn ) {
         return;
     }
     done = true;
     const std::string base = prefix;
-    const bool ok_3d = capture( base + "_3d.png" );
-
     options_manager::cOpt &tiles = get_options().get_option( "TILES" );
     options_manager::cOpt &view_3d = get_options().get_option( "RENDERER_3D" );
     const std::string old_tiles = tiles.getValue();
     const std::string old_view_3d = view_3d.getValue();
-    const char *const iso = std::getenv( "CATA_R3D_COMPARE_TILESET" );
-    tiles.setValue( iso ? iso : "Ultica_iso" );
+    const auto env_or = []( const char *name, const char *fallback ) {
+        const char *const value = std::getenv( name );
+        return std::string( value ? value : fallback );
+    };
+
+    tiles.setValue( env_or( "CATA_R3D_COMPARE_3D_TILESET", "UltimateCataclysm" ) );
+    view_3d.setValue( "true" );
+    bool ok_3d = reload_map_tileset();
+    if( ok_3d ) {
+        // The game is waiting for input and draws nothing by itself; draw until the chunks
+        // around the view are built (a few per frame).
+        constexpr int settle_frames = 40;
+        for( int i = 0; i < settle_frames; ++i ) {
+            g->invalidate_main_ui_adaptor();
+            ui_manager::redraw();
+        }
+        ok_3d = active() && capture( base + "_3d.png" );
+    }
+
+    tiles.setValue( env_or( "CATA_R3D_COMPARE_TILESET", "Ultica_iso" ) );
     view_3d.setValue( "false" );
     const bool ok_2d = reload_map_tileset() && capture( base + "_2d.png" );
 
     if( std::getenv( "CATA_R3D_QUIT_AFTER_SHOT" ) ) {
         std::_Exit( ok_3d && ok_2d ? 0 : 1 );
     }
-    // Back to how it was; the options file was never written.
     tiles.setValue( old_tiles );
     view_3d.setValue( old_view_3d );
     reload_map_tileset();
@@ -665,6 +682,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
 {
     state &s = st();
     s.drawn = false;
+    s.map_drawn = true;
     if( !get_option<bool>( "RENDERER_3D" ) ) {
         if( s.device.ready() ) {
             shutdown();

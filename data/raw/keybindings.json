@@ -3467,6 +3467,12 @@
   },
   {
     "type": "keybinding",
+    "name": "3D view: toggle first person",
+    "id": "r3d_first_person",
+    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "f" } ]
+  },
+  {
+    "type": "keybinding",
     "name": "Toggle debug mode",
     "category": "DEFAULTMODE",
     "id": "debug_mode"

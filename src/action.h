@@ -331,6 +331,8 @@ enum action_id : int {
     ACTION_R3D_ZOOM_OUT,
     /** 3D view: 3D view: reset camera */
     ACTION_R3D_RESET,
+    /** 3D view: toggle between the orbit and the first-person camera */
+    ACTION_R3D_FIRST_PERSON,
     /** Open the the action menu */
     ACTION_ACTIONMENU,
     /** Open the item uses menu */

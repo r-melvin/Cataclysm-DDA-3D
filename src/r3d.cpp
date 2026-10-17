@@ -475,7 +475,8 @@ void set_cutaway( block_uniforms &u, const mat4 &view_proj, float aspect, const 
 {
     const avatar &you = get_avatar();
     const tripoint_bub_ms p = you.pos_bub();
-    if( !get_option<bool>( "R3D_CUTAWAY" ) || p.z() != center.z() ) {
+    // In first person the player is the camera: nothing can stand between.
+    if( cam.first_person() || !get_option<bool>( "R3D_CUTAWAY" ) || p.z() != center.z() ) {
         return;
     }
     // Radius in tiles around the player's middle, and the height (above their floor) below which
@@ -496,11 +497,35 @@ void set_cutaway( block_uniforms &u, const mat4 &view_proj, float aspect, const 
     u.cut2[1] = base + keep_below;
 }
 
+// Follows the R3D_CAMERA_MODE option. Switching keeps the direction the view looks in, so the
+// picture does not jump and the movement keys keep their meaning.
+void sync_camera_mode( camera &cam )
+{
+    constexpr float eighth = 0.78539816f;
+    const bool want_first_person = get_option<std::string>( "R3D_CAMERA_MODE" ) == "first_person";
+    if( want_first_person == cam.first_person() ) {
+        return;
+    }
+    if( want_first_person ) {
+        cam.heading = cam.forward_eighths();
+        cam.mode = camera_mode::first_person;
+        cam.look_pitch = 0.0f;
+        cam.glance_yaw = 0.0f;
+        cam.glance_pitch = 0.0f;
+    } else {
+        cam.mode = camera_mode::orbit;
+        // The orbit yaw turns the other way round (see camera::forward_eighths).
+        cam.yaw = -static_cast<float>( cam.heading ) * eighth;
+    }
+}
+
 void apply_env_camera( camera &cam )
 {
-    // CATA_R3D_CAMERA="yaw_deg,pitch_deg,distance[,ortho]" gives repeatable views for
-    // screenshots; ortho 1 switches to an orthographic projection. "-45,30,20,1" matches the
-    // flat isometric view: looking north-east at 30 degrees, which draws tiles as 2:1 diamonds.
+    // CATA_R3D_CAMERA="yaw_deg,pitch_deg,distance[,ortho[,fp_heading[,fp_pitch_deg]]]" gives
+    // repeatable views for screenshots; ortho 1 switches to an orthographic projection.
+    // "-45,30,20,1" matches the flat isometric view: looking north-east at 30 degrees, which
+    // draws tiles as 2:1 diamonds. The last two fields set the first-person facing (in eighths
+    // of a turn) and look angle; they only matter when R3D_CAMERA_MODE is first_person.
     const char *spec = std::getenv( "CATA_R3D_CAMERA" );
     if( !spec ) {
         return;
@@ -509,7 +534,10 @@ void apply_env_camera( camera &cam )
     float pitch = 0.0f;
     float dist = 0.0f;
     int ortho = 0;
-    const int n = std::sscanf( spec, "%f,%f,%f,%d", &yaw, &pitch, &dist, &ortho );
+    int fp_heading = 0;
+    float fp_pitch = 0.0f;
+    const int n = std::sscanf( spec, "%f,%f,%f,%d,%d,%f", &yaw, &pitch, &dist, &ortho, &fp_heading,
+                               &fp_pitch );
     if( n >= 3 ) {
         constexpr float deg = 0.017453293f;
         cam.yaw = yaw * deg;
@@ -517,6 +545,13 @@ void apply_env_camera( camera &cam )
         cam.distance = std::clamp( dist, camera::min_distance, camera::max_distance );
         if( n >= 4 ) {
             cam.orthographic = ortho != 0;
+        }
+        if( n >= 5 ) {
+            cam.heading = ( fp_heading % 8 + 8 ) % 8;
+        }
+        if( n >= 6 ) {
+            cam.look_pitch = std::clamp( fp_pitch * deg, -camera::max_look_pitch,
+                                         camera::max_look_pitch );
         }
     }
 }
@@ -730,8 +765,19 @@ bool active()
 
 int view_eighths()
 {
-    const shown_view &v = st().shown;
-    return active() && v.valid ? v.cam.forward_eighths() : 0;
+    const state &s = st();
+    if( !active() || !s.shown.valid ) {
+        return 0;
+    }
+    // The first-person heading changes before the next frame is drawn; the orbit camera is read
+    // as last shown.
+    return s.shown.cam.first_person() ? s.cam.heading : s.shown.cam.forward_eighths();
+}
+
+bool first_person()
+{
+    const state &s = st();
+    return active() && s.shown.valid && s.shown.cam.first_person();
 }
 
 bool wasd_controls()
@@ -745,9 +791,26 @@ void toggle()
     get_options().save();
 }
 
+void toggle_first_person()
+{
+    get_options().get_option( "R3D_CAMERA_MODE" ).setNext();
+    get_options().save();
+}
+
+void end_glance()
+{
+    camera &cam = st().cam;
+    cam.glance_yaw = 0.0f;
+    cam.glance_pitch = 0.0f;
+}
+
 void rotate( int dir )
 {
-    st().cam.rotate_steps( dir );
+    camera &cam = st().cam;
+    cam.rotate_steps( dir );
+    if( cam.first_person() ) {
+        end_glance();
+    }
 }
 
 void pitch( int dir )
@@ -763,7 +826,12 @@ void zoom( int dir )
 void reset()
 {
     state &s = st();
+    // First person keeps its mode and heading: resetting only straightens the view.
+    const camera_mode mode = s.cam.mode;
+    const int heading = s.cam.heading;
     s.cam = camera();
+    s.cam.mode = mode;
+    s.cam.heading = heading;
     s.pan = vec3{};
     s.env_camera_applied = false;
 }
@@ -780,6 +848,17 @@ void drag_orbit( float dx, float dy )
     constexpr float yaw_per_pixel = 0.008f;
     constexpr float pitch_per_pixel = 0.006f;
     constexpr float two_pi = 6.2831853f;
+    if( cam.first_person() ) {
+        // A glance: looks around for as long as the button is held, then snaps back to the
+        // heading. The mouse follows the view (right looks right, down looks down).
+        constexpr float max_glance_yaw = 2.4f;
+        cam.glance_yaw = std::clamp( cam.glance_yaw + dx * yaw_per_pixel, -max_glance_yaw,
+                                     max_glance_yaw );
+        cam.glance_pitch = std::clamp( cam.glance_pitch - dy * pitch_per_pixel,
+                                       -camera::max_look_pitch - cam.look_pitch,
+                                       camera::max_look_pitch - cam.look_pitch );
+        return;
+    }
     cam.yaw = std::fmod( cam.yaw - dx * yaw_per_pixel, two_pi );
     cam.pitch = std::clamp( cam.pitch + dy * pitch_per_pixel, camera::min_pitch, camera::max_pitch );
 }
@@ -787,6 +866,9 @@ void drag_orbit( float dx, float dy )
 void drag_pan( float dx, float dy )
 {
     state &s = st();
+    if( s.cam.first_person() ) {
+        return; // the eye stays on the player
+    }
     // The ground under the cursor follows the mouse: farther cameras move faster.
     const float units_per_pixel = s.cam.distance * 0.0016f;
     const vec3 right = s.cam.ground_right();
@@ -819,7 +901,8 @@ std::optional<tripoint_bub_ms> pick( float x, float y )
         }
         const float h = column_height( s, here, p );
         const Creature *critter = creatures.creature_at( p );
-        if( critter && ( critter->is_avatar() || you.sees( here, *critter ) ) ) {
+        // In first person the viewer's own column would block every ray from their eye.
+        if( critter && ( critter->is_avatar() ? !v.cam.first_person() : you.sees( here, *critter ) ) ) {
             return 1.0f;
         }
         return h;
@@ -925,6 +1008,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
 
     ++s.frame;
     maybe_take_screenshot( s );
+    sync_camera_mode( s.cam );
     if( !s.env_camera_applied ) {
         apply_env_camera( s.cam );
         s.env_camera_applied = true;
@@ -954,9 +1038,15 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     const tripoint_bub_ms overhead = center + tripoint_rel_ms( 0, 0, 1 );
     const bool open_sky = !multi_z || !here.inbounds( overhead ) ||
                           s.cache.terrain( here.ter( overhead ), *tilecontext ).sh.kind == shape_kind::empty;
-    const int z_hi = multi_z && open_sky ? std::min( view_z + max_levels_above, OVERMAP_HEIGHT ) :
-                     view_z;
-    const int z_lo = std::max( view_z - depth, -OVERMAP_DEPTH );
+    const bool fp = s.cam.first_person();
+    const tripoint_bub_ms player_pos = get_avatar().pos_bub();
+    // In first person the eye stays on the player even when look mode moves the viewed tile, so
+    // the levels cover both, and the storeys above are always drawn (they are the ceilings).
+    const int low_z = fp ? std::min( view_z, player_pos.z() ) : view_z;
+    const int high_z = fp ? std::max( view_z, player_pos.z() ) : view_z;
+    const int z_hi = multi_z && ( open_sky || fp ) ?
+                     std::min( high_z + max_levels_above, OVERMAP_HEIGHT ) : high_z;
+    const int z_lo = std::max( low_z - depth, -OVERMAP_DEPTH );
     const tripoint_abs_sm base = here.get_abs_sub();
 
     // Only submaps inside the reality bubble: looking anything else up could load it from disk.
@@ -982,8 +1072,19 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     const uint64_t frame_light_key = light_key( here, origin, z_lo, z_hi );
 
     // The scene is drawn in a frame whose origin is the viewed tile, which keeps floats small.
-    s.cam.target = tile_to_world( { 0.5f, 0.5f, 0.5f } ) + s.pan;
     s.cam.z_scale = static_cast<float>( get_option<int>( "R3D_LEVEL_HEIGHT" ) ) / 100.0f;
+    if( fp ) {
+        // The camera stands on the player's tile, at the height of what they stand on.
+        s.cam.target = tile_to_world( {
+            static_cast<float>( player_pos.x() - center.x() ) + 0.5f,
+            static_cast<float>( player_pos.y() - center.y() ) + 0.5f,
+            static_cast<float>( player_pos.z() - center.z() ) + surface_height( s, here, player_pos )
+        } );
+        s.cam.fovx = static_cast<float>( get_option<int>( "R3D_FP_FOV" ) ) * 0.017453293f;
+        s.cam.eye_height = static_cast<float>( get_option<int>( "R3D_FP_EYE_HEIGHT" ) ) / 100.0f;
+    } else {
+        s.cam.target = tile_to_world( { 0.5f, 0.5f, 0.5f } ) + s.pan;
+    }
     const float aspect = static_cast<float>( target_w ) / static_cast<float>( target_h );
     const mat4 view_proj = s.cam.view_projection( aspect );
     const frustum fr = s.cam.view_frustum( aspect );
@@ -1107,7 +1208,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         uniforms.pull[0] = toward.x;
         uniforms.pull[1] = toward.y;
         uniforms.pull[2] = toward.z / s.cam.z_scale;
-        uniforms.pull[3] = max_billboard_pull;
+        uniforms.pull[3] = fp ? 0.0f : max_billboard_pull; // upright sprites need no pull
         for( const mesh_batch &b : entities.batches ) {
             s.device.draw_block( s.dyn_positions, s.dyn_lights, s.dyn_indices, b.first_index, b.index_count,
                                  b.sheet, uniforms );

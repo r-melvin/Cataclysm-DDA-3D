@@ -58,6 +58,12 @@ void compare_capture();
 
 /** Flips the RENDERER_3D option. */
 void toggle();
+/** Switches between the orbit and the first-person camera (the R3D_CAMERA_MODE option). */
+void toggle_first_person();
+/** True when the first-person camera is what the last drawn 3D frame showed. */
+bool first_person();
+/** Ends a mouse glance: the first-person view snaps back to the heading. */
+void end_glance();
 /** Orbit the camera by one step; dir < 0 is left, dir > 0 right. */
 void rotate( int dir );
 /** Tilt the camera by one step; dir > 0 raises the view towards top-down. */
@@ -87,6 +93,12 @@ inline bool wasd_controls()
     return false;
 }
 inline void toggle() {}
+inline void toggle_first_person() {}
+inline bool first_person()
+{
+    return false;
+}
+inline void end_glance() {}
 inline void rotate( int ) {}
 inline void pitch( int ) {}
 inline void zoom( int ) {}

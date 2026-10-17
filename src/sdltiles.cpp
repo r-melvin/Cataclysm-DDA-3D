@@ -6466,6 +6466,14 @@ static void CheckMessages()
                 case CATA_MOUSEBUTTONUP:
                     if( ev.button.button == SDL_BUTTON_MIDDLE ) {
                         r3d_dragging = false; // even when ImGui now has the mouse
+                        if( r3d::first_person() ) {
+                            r3d::end_glance();
+                            if( g ) {
+                                g->invalidate_main_ui_adaptor();
+                            }
+                            ui_manager::redraw_invalidated();
+                            needupdate = true;
+                        }
                     }
                     if( ! mouse.enabled ) {
                         break;

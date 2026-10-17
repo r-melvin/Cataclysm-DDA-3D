@@ -3179,6 +3179,10 @@ bool game::do_regular_action( action_id &act, avatar &player_character,
             r3d::reset();
             break;
 
+        case ACTION_R3D_FIRST_PERSON:
+            r3d::toggle_first_person();
+            break;
+
         case ACTION_ITEMACTION:
             item_action_menu();
             break;

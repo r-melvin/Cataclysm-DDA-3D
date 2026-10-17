@@ -13,6 +13,7 @@ constexpr float pitch_step = 0.0873f;  // 5 degrees
 constexpr float zoom_factor = 1.1f;
 constexpr float near_plane = 0.5f;
 constexpr float far_plane = 400.0f;
+constexpr float eighth_turn = 0.78539816f; // 45 degrees
 } // namespace
 
 bool frustum::intersects( const aabb &box ) const
@@ -35,8 +36,29 @@ vec3 camera::stretched_target() const
     return { target.x, target.y, target.z * z_scale };
 }
 
+float camera::fp_yaw() const
+{
+    return static_cast<float>( heading ) * eighth_turn + glance_yaw;
+}
+
+vec3 camera::fp_forward() const
+{
+    const float yaw_w = fp_yaw();
+    const float p = std::clamp( look_pitch + glance_pitch, -max_look_pitch, max_look_pitch );
+    const float cp = std::cos( p );
+    return { std::sin( yaw_w ) * cp, std::cos( yaw_w ) * cp, std::sin( p ) };
+}
+
+float camera::fp_fovy( float aspect ) const
+{
+    return 2.0f * std::atan( std::tan( fovx * 0.5f ) / std::max( aspect, 0.01f ) );
+}
+
 vec3 camera::eye() const
 {
+    if( first_person() ) {
+        return stretched_target() + vec3{ 0.0f, 0.0f, eye_height };
+    }
     const float cp = std::cos( pitch );
     return stretched_target() + vec3{ std::sin( yaw ) * cp, -std::cos( yaw ) * cp, std::sin( pitch ) } *
            distance;
@@ -46,11 +68,20 @@ mat4 camera::view() const
 {
     mat4 stretch;
     stretch.at( 2, 2 ) = z_scale;
+    if( first_person() ) {
+        const vec3 at = eye();
+        return look_at( at, at + fp_forward(), { 0.0f, 0.0f, 1.0f } ) * stretch;
+    }
     return look_at( eye(), stretched_target(), { 0.0f, 0.0f, 1.0f } ) * stretch;
 }
 
 mat4 camera::projection( float aspect ) const
 {
+    if( first_person() ) {
+        // Never orthographic; the near plane is close because the eye is half a tile from the
+        // walls of its own tile.
+        return perspective( fp_fovy( aspect ), aspect, fp_near_plane, fp_far_plane );
+    }
     if( orthographic ) {
         return r3d::orthographic( distance * std::tan( fovy * 0.5f ), aspect, near_plane, far_plane );
     }
@@ -82,6 +113,9 @@ ray camera::screen_ray( float ndc_x, float ndc_y, float aspect ) const
 
 int camera::forward_eighths() const
 {
+    if( first_person() ) {
+        return ( heading % 8 + 8 ) % 8;
+    }
     // Forward in tile space (y south) is away from the eye, flattened.
     const vec3 eye_offset = eye() - stretched_target();
     const float fx = -eye_offset.x;
@@ -96,11 +130,19 @@ int camera::forward_eighths() const
 
 vec3 camera::ground_right() const
 {
+    if( first_person() ) {
+        const float yaw_w = fp_yaw();
+        return { std::cos( yaw_w ), -std::sin( yaw_w ), 0.0f };
+    }
     return { std::cos( yaw ), std::sin( yaw ), 0.0f };
 }
 
 void camera::rotate_steps( int steps )
 {
+    if( first_person() ) {
+        heading = ( ( heading + steps ) % 8 + 8 ) % 8;
+        return;
+    }
     yaw += rotate_step * static_cast<float>( steps );
     constexpr float two_pi = 6.2831853f;
     yaw = std::fmod( yaw, two_pi );
@@ -108,11 +150,19 @@ void camera::rotate_steps( int steps )
 
 void camera::pitch_steps( int steps )
 {
+    if( first_person() ) {
+        look_pitch = std::clamp( look_pitch + look_pitch_step * static_cast<float>( steps ),
+                                 -max_look_pitch, max_look_pitch );
+        return;
+    }
     pitch = std::clamp( pitch + pitch_step * static_cast<float>( steps ), min_pitch, max_pitch );
 }
 
 void camera::zoom_steps( int steps )
 {
+    if( first_person() ) {
+        return;
+    }
     // Positive steps move the camera closer.
     distance = std::clamp( distance * std::pow( 1.0f / zoom_factor, static_cast<float>( steps ) ),
                            min_distance, max_distance );

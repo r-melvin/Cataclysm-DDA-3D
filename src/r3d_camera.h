@@ -3,6 +3,7 @@
 #define CATA_SRC_R3D_CAMERA_H
 
 #include <array>
+#include <cstdint>
 
 #include "r3d_math.h"
 
@@ -43,9 +44,18 @@ struct frustum {
     bool intersects( const aabb &box ) const;
 };
 
+enum class camera_mode : uint8_t {
+    orbit,
+    first_person
+};
+
 /**
  * Orbit camera around a target point. yaw 0 puts the camera south of the target looking north;
  * increasing yaw swings it clockwise seen from above. pitch is the elevation above the horizon.
+ *
+ * In first-person mode the same struct is an eye standing on the target (the point on the floor
+ * under the viewer, in world space), facing one of the eight map directions given by heading.
+ * yaw, pitch, distance and fovy are then unused; the fields below take their place.
  */
 struct camera {
     static constexpr float min_pitch = 0.17f;  // ~10 degrees
@@ -64,6 +74,29 @@ struct camera {
     float distance = 24.0f;
     float fovy = 0.785f;       // 45 degrees
     bool orthographic = false;
+
+    camera_mode mode = camera_mode::orbit;
+    // First person only.
+    static constexpr float fp_near_plane = 0.05f;
+    static constexpr float fp_far_plane = 200.0f;
+    static constexpr float max_look_pitch = 1.2f; // ~70 degrees
+    static constexpr float look_pitch_step = 0.2618f; // 15 degrees
+    int heading = 0;           // 1/8 turns clockwise from north, 0..7 (map convention, y south)
+    float look_pitch = 0.0f;   // radians, positive looks up
+    float eye_height = 0.8f;   // above the target, in stretched space (see z_scale)
+    float glance_yaw = 0.0f;   // mouse glance, display only; snaps back to 0
+    float glance_pitch = 0.0f;
+    float fovx = 1.5708f;      // horizontal field of view, 90 degrees
+
+    bool first_person() const {
+        return mode == camera_mode::first_person;
+    }
+    /** First person: yaw of the view in world space (0 looks north, positive swings east). */
+    float fp_yaw() const;
+    /** First person: unit view direction in stretched space. */
+    vec3 fp_forward() const;
+    /** Vertical field of view that gives fovx at the aspect ratio (width / height). */
+    float fp_fovy( float aspect ) const;
 
     /** Camera position in stretched space (see z_scale). */
     vec3 eye() const;
@@ -87,7 +120,11 @@ struct camera {
      */
     int forward_eighths() const;
 
-    /** Orbit by steps of 15 degrees / tilt by steps of 5 degrees / scale distance by 10%. */
+    /**
+     * Orbit by steps of 15 degrees / tilt by steps of 5 degrees / scale distance by 10%. In first
+     * person a rotate step is one eighth turn clockwise (no tween here, no game time), a pitch
+     * step looks up or down by 15 degrees, and zoom does nothing.
+     */
     void rotate_steps( int steps );
     void pitch_steps( int steps );
     void zoom_steps( int steps );

@@ -1,5 +1,22 @@
 # First-person mode for the 3D renderer (r3d)
 
+## Status
+
+Branch `feature/r3d-first-person`. Switch it on with the option `R3D_CAMERA_MODE` = `first_person`
+(graphics options, after "3D cutaway") or with **ctrl+F** (action `r3d_first_person`); `RENDERER_3D`
+must be on. Orbit mode is unchanged when the option is `orbit`.
+
+* FP0 camera: done (not yet seen in the game).
+* FP1 billboards, items, markers: not started.
+* FP2 controls: not started.
+* FP3 ceilings and sky: not started.
+
+What to test locally (FP0): toggle with ctrl+F in a house; the picture is a perspective view from
+eye height; left/right arrows (with `R3D_WASD` on, the default) or ctrl+left/right turn by 45
+degrees without spending game time; W/numpad 8 walk the way you face; middle-mouse drag glances
+around and snaps back on release; ctrl+Home straightens the view (the heading is kept).
+Options `R3D_FP_FOV` (60-110) and `R3D_FP_EYE_HEIGHT` (50-95).
+
 Design for a first-person, **turn-based** view on top of the existing `r3d` renderer
 (`src/r3d*.{h,cpp}`, SDL3 GPU). Target branch: `feature/r3d-first-person`. Companion to
 `doc/R3D_STATUS.md`, which describes what the orbit renderer already does.

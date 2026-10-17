@@ -2641,6 +2641,31 @@ void options_manager::add_options_graphics()
 
         get_option( "R3D_CUTAWAY" ).setPrerequisite( "RENDERER_3D" );
 
+        add( "R3D_CAMERA_MODE", page_id, to_translation( "3D camera" ),
+             to_translation( "Orbit: the free camera above the map.  First person: the view from the character's eyes, facing one of the eight directions; the arrow keys turn by 45 degrees and movement follows the facing.  The game itself is unchanged: you still see all around you, even though the picture shows only what is ahead." ),
+        {
+            { "orbit", to_translation( "Orbit" ) },
+            { "first_person", to_translation( "First person" ) }
+        },
+        "orbit", COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_CAMERA_MODE" ).setPrerequisite( "RENDERER_3D" );
+
+        add( "R3D_FP_FOV", page_id, to_translation( "3D first-person field of view" ),
+             to_translation( "Horizontal field of view of the first-person camera, in degrees." ),
+             60, 110, 90, COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_FP_FOV" ).setPrerequisite( "RENDERER_3D" );
+
+        add( "R3D_FP_EYE_HEIGHT", page_id, to_translation( "3D first-person eye height" ),
+             to_translation( "Height of the first-person camera above the floor, in percent of a tile's width." ),
+             50, 95, 80, COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_FP_EYE_HEIGHT" ).setPrerequisite( "RENDERER_3D" );
+
         std::vector<options_manager::id_and_option> om_tilesets = build_tilesets_list();
         // filter out iso tilesets from overmap tilesets
         om_tilesets.erase( std::remove_if( om_tilesets.begin(), om_tilesets.end(), []( const auto & it ) {

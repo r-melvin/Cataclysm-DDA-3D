@@ -515,3 +515,148 @@ TEST_CASE( "r3d_wall_atlas_cells", "[r3d]" )
     CHECK_FALSE( r3d::atlas_cell( 12, 32, 128, 96 ).valid );
     CHECK_FALSE( r3d::atlas_cell( -1, 32, 128, 96 ).valid );
 }
+
+namespace
+{
+
+// A first-person camera standing on the middle of tile (0, 0) at level 0 with a storey 1.8 high.
+r3d::camera first_person_camera( int heading )
+{
+    r3d::camera cam;
+    cam.mode = r3d::camera_mode::first_person;
+    cam.z_scale = 1.8f;
+    cam.heading = heading;
+    cam.target = r3d::tile_to_world( { 0.5f, 0.5f, 0.1f } );
+    return cam;
+}
+
+} // namespace
+
+TEST_CASE( "r3d_first_person_eye_stands_on_the_target", "[r3d]" )
+{
+    const r3d::camera cam = first_person_camera( 0 );
+    const r3d::vec3 eye = cam.eye();
+    CHECK( approx( eye.x, 0.5f ) );
+    CHECK( approx( eye.y, -0.5f ) );
+    // The target is the floor, in world levels; the eye is 0.8 above it in stretched space.
+    CHECK( approx( eye.z, 0.1f * 1.8f + 0.8f ) );
+}
+
+TEST_CASE( "r3d_first_person_forward_eighths_is_the_heading", "[r3d]" )
+{
+    for( int h = 0; h < 8; ++h ) {
+        CHECK( first_person_camera( h ).forward_eighths() == h );
+    }
+    r3d::camera cam = first_person_camera( 7 );
+    cam.rotate_steps( 1 );
+    CHECK( cam.heading == 0 );
+    cam.rotate_steps( -1 );
+    CHECK( cam.heading == 7 );
+    cam.rotate_steps( -9 );
+    CHECK( cam.heading == 6 );
+    // Turning never touches the orbit angles.
+    CHECK( approx( cam.yaw, 0.0f ) );
+}
+
+TEST_CASE( "r3d_first_person_centre_ray_points_along_the_heading", "[r3d]" )
+{
+    for( int h = 0; h < 8; ++h ) {
+        const r3d::camera cam = first_person_camera( h );
+        const r3d::ray ray = cam.screen_ray( 0.0f, 0.0f, 16.0f / 9.0f );
+        // World space: heading 0 is +y (north), 2 is +x (east).
+        const float angle = static_cast<float>( h ) * 0.78539816f;
+        CHECK( approx( ray.dir.x, std::sin( angle ), 1e-3f ) );
+        CHECK( approx( ray.dir.y, std::cos( angle ), 1e-3f ) );
+        CHECK( approx( ray.dir.z, 0.0f, 1e-3f ) );
+        // The ray starts at the eye (the near plane is a few centimetres in front of it). Rays are
+        // in unstretched world space, eye() in stretched space.
+        const r3d::vec3 eye = cam.eye();
+        CHECK( r3d::length( ray.origin - r3d::vec3{ eye.x, eye.y, eye.z / cam.z_scale } ) < 0.1f );
+    }
+}
+
+TEST_CASE( "r3d_first_person_right_is_clockwise_of_forward", "[r3d]" )
+{
+    for( int h = 0; h < 8; ++h ) {
+        const r3d::camera cam = first_person_camera( h );
+        const r3d::vec3 right = cam.ground_right();
+        const r3d::vec3 fwd = cam.fp_forward();
+        // forward is counter-clockwise of right seen from above (z up), so the cross product points up.
+        CHECK( approx( right.x * fwd.y - right.y * fwd.x, 1.0f, 1e-3f ) );
+        // A point to the right projects to the right half of the screen.
+        const r3d::vec3 point = cam.eye() + cam.fp_forward() * 5.0f + right * 2.0f;
+        const r3d::vec3 ndc = r3d::transform_point( cam.view_projection( 1.5f ), point );
+        CHECK( ndc.x > 0.0f );
+    }
+}
+
+TEST_CASE( "r3d_first_person_frustum_sees_ahead_not_behind", "[r3d]" )
+{
+    const r3d::camera cam = first_person_camera( 2 ); // facing east
+    const r3d::frustum f = cam.view_frustum( 1.5f );
+    const r3d::vec3 stretched_eye = cam.eye();
+    const r3d::vec3 eye{ stretched_eye.x, stretched_eye.y, stretched_eye.z / cam.z_scale };
+    const auto box_at = [&]( float dx, float dy ) {
+        return r3d::aabb{ { eye.x + dx - 0.4f, eye.y + dy - 0.4f, eye.z - 0.4f },
+            { eye.x + dx + 0.4f, eye.y + dy + 0.4f, eye.z + 0.4f } };
+    };
+    CHECK( f.intersects( box_at( 3.0f, 0.0f ) ) );
+    CHECK_FALSE( f.intersects( box_at( -3.0f, 0.0f ) ) );
+    // North and south of an east-facing viewer are outside a 90 degree field of view.
+    CHECK_FALSE( f.intersects( box_at( 0.0f, 10.0f ) ) );
+    CHECK_FALSE( f.intersects( box_at( 0.0f, -10.0f ) ) );
+    // The wall of the neighbouring tile, half a tile away, is not cut off by the near plane.
+    CHECK( f.intersects( box_at( 0.9f, 0.0f ) ) );
+}
+
+TEST_CASE( "r3d_first_person_projection_keeps_the_horizontal_field_of_view", "[r3d]" )
+{
+    r3d::camera cam = first_person_camera( 0 );
+    cam.fovx = 1.5708f;
+    for( float aspect : { 0.8f, 1.0f, 2.4f } ) {
+        // A point 5 ahead and 5 to the right sits at the right edge of a 90 degree view.
+        const r3d::vec3 point = cam.eye() + r3d::vec3{ 5.0f, 5.0f, 0.0f };
+        const r3d::vec3 ndc = r3d::transform_point( cam.view_projection( aspect ), point );
+        CHECK( approx( ndc.x, 1.0f, 1e-2f ) );
+    }
+    // The orbit camera is untouched by first-person fields.
+    r3d::camera orbit;
+    CHECK( orbit.mode == r3d::camera_mode::orbit );
+    CHECK( orbit.forward_eighths() == 0 );
+}
+
+TEST_CASE( "r3d_first_person_look_pitch_is_clamped", "[r3d]" )
+{
+    r3d::camera cam = first_person_camera( 0 );
+    cam.pitch_steps( 50 );
+    CHECK( approx( cam.look_pitch, r3d::camera::max_look_pitch ) );
+    CHECK( cam.fp_forward().z > 0.9f );
+    cam.pitch_steps( -100 );
+    CHECK( approx( cam.look_pitch, -r3d::camera::max_look_pitch ) );
+    const float distance = cam.distance;
+    cam.zoom_steps( 5 );
+    CHECK( approx( cam.distance, distance ) );
+}
+
+TEST_CASE( "r3d_first_person_pick_finds_the_tile_ahead", "[r3d]" )
+{
+    // Open floor of height 0.1 around tile (0, 0); the centre ray looking along the heading
+    // lands on a floor tile ahead of the viewer.
+    const r3d::column_height_fn floor_world = []( int, int, int z ) {
+        return z == 0 ? r3d::floor_height : 0.0f;
+    };
+    // Looking down 45 degrees from an eye about 1 above the floor lands about 1 tile ahead.
+    for( int h = 0; h < 8; ++h ) {
+        r3d::camera cam = first_person_camera( h );
+        cam.look_pitch = -0.7854f;
+        const r3d::voxel_hit hit = r3d::pick_cell( cam, 0.0f, 0.0f, 1.5f, 400.0f, floor_world,
+                                   r3d::floor_height );
+        REQUIRE( hit.hit );
+        const float angle = static_cast<float>( h ) * 0.78539816f;
+        // Tile space: x east, y south.
+        const int dx = static_cast<int>( std::lround( std::sin( angle ) ) );
+        const int dy = static_cast<int>( std::lround( -std::cos( angle ) ) );
+        CHECK( hit.x == dx );
+        CHECK( hit.y == dy );
+    }
+}

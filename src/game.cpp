@@ -2700,7 +2700,8 @@ input_context get_default_mode_input_context()
         ctxt.register_action( "zoom_out" );
         ctxt.register_action( "zoom_in" );
         for( const char *r3d_action : { "r3d_toggle", "r3d_rotate_left", "r3d_rotate_right",
-                                        "r3d_pitch_up", "r3d_pitch_down", "r3d_zoom_in", "r3d_zoom_out", "r3d_reset"
+                                        "r3d_pitch_up", "r3d_pitch_down", "r3d_zoom_in", "r3d_zoom_out", "r3d_reset",
+                                        "r3d_first_person"
                                       } ) {
             ctxt.register_action( r3d_action );
         }

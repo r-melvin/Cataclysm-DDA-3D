@@ -42,6 +42,14 @@ bool active();
  */
 std::optional<tripoint_bub_ms> pick( float x, float y );
 
+/**
+ * 1/8 turns clockwise to apply to map directions so that "north" walks away from the 3D camera
+ * (see camera::forward_eighths); 0 when the 3D view is not shown.
+ */
+int view_eighths();
+/** True when the main game takes WASD for walking and the arrow keys for the 3D camera. */
+bool wasd_controls();
+
 /** Flips the RENDERER_3D option. */
 void toggle();
 /** Orbit the camera by one step; dir < 0 is left, dir > 0 right. */
@@ -61,6 +69,14 @@ void drag_pan( float dx, float dy );
 #else
 
 inline bool active()
+{
+    return false;
+}
+inline int view_eighths()
+{
+    return 0;
+}
+inline bool wasd_controls()
 {
     return false;
 }

@@ -80,6 +80,20 @@ ray camera::screen_ray( float ndc_x, float ndc_y, float aspect ) const
     return { near_pt, normalize( far_pt - near_pt ) };
 }
 
+int camera::forward_eighths() const
+{
+    // Forward in tile space (y south) is away from the eye, flattened.
+    const vec3 eye_offset = eye() - stretched_target();
+    const float fx = -eye_offset.x;
+    const float fy = eye_offset.y;
+    if( fx == 0.0f && fy == 0.0f ) {
+        return 0;
+    }
+    constexpr float eighth = 0.78539816f;
+    const int turns = static_cast<int>( std::lround( std::atan2( fx, -fy ) / eighth ) );
+    return ( turns % 8 + 8 ) % 8;
+}
+
 vec3 camera::ground_right() const
 {
     return { std::cos( yaw ), std::sin( yaw ), 0.0f };

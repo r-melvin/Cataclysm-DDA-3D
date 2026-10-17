@@ -105,6 +105,27 @@ TEST_CASE( "r3d_camera_orientation_matches_tile_space", "[r3d]" )
     CHECK( north2.x > c2.x );
 }
 
+TEST_CASE( "r3d_camera_forward_eighths", "[r3d]" )
+{
+    // yaw 0 puts the camera south looking north; yaw grows clockwise seen from above, which
+    // swings the camera east of the target, looking west.
+    r3d::camera cam;
+    cam.yaw = 0.0f;
+    CHECK( cam.forward_eighths() == 0 );
+    cam.yaw = 1.5707963f;
+    CHECK( cam.forward_eighths() == 6 );
+    cam.yaw = 3.1415927f;
+    CHECK( cam.forward_eighths() == 4 );
+    cam.yaw = -1.5707963f;
+    CHECK( cam.forward_eighths() == 2 );
+    cam.yaw = 0.7853982f;
+    CHECK( cam.forward_eighths() == 7 );
+    // Taller storeys or pitch do not change the heading.
+    cam.z_scale = 1.6f;
+    cam.pitch = 1.4f;
+    CHECK( cam.forward_eighths() == 7 );
+}
+
 TEST_CASE( "r3d_camera_steps_clamp", "[r3d]" )
 {
     r3d::camera cam;

@@ -395,6 +395,17 @@ bool active()
     return st().drawn && get_option<bool>( "RENDERER_3D" );
 }
 
+int view_eighths()
+{
+    const shown_view &v = st().shown;
+    return active() && v.valid ? v.cam.forward_eighths() : 0;
+}
+
+bool wasd_controls()
+{
+    return active() && get_option<bool>( "R3D_WASD" );
+}
+
 void toggle()
 {
     get_options().get_option( "RENDERER_3D" ).setNext();

@@ -2620,6 +2620,13 @@ void options_manager::add_options_graphics()
 
         get_option( "R3D_LEVEL_HEIGHT" ).setPrerequisite( "RENDERER_3D" );
 
+        add( "R3D_WASD", page_id, to_translation( "3D WASD controls" ),
+             to_translation( "In the 3D view, walk with W A S D and turn the camera with the arrow keys.  While on, w a s d no longer wield, apply, smash or drop (use the action menu or rebind them).  Movement always follows the camera's facing." ),
+             true, COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_WASD" ).setPrerequisite( "RENDERER_3D" );
+
         std::vector<options_manager::id_and_option> om_tilesets = build_tilesets_list();
         // filter out iso tilesets from overmap tilesets
         om_tilesets.erase( std::remove_if( om_tilesets.begin(), om_tilesets.end(), []( const auto & it ) {

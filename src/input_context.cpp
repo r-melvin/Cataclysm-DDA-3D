@@ -14,6 +14,10 @@
 #include <type_traits>
 #include <utility>
 
+#if defined(TILES)
+#include <SDL3/SDL_keycode.h>
+#endif
+
 #include "action.h"
 #include "cata_imgui.h"
 #include "cata_utility.h"
@@ -30,6 +34,7 @@
 #include "options.h"
 #include "output.h"
 #include "point.h"
+#include "r3d.h"
 #include "popup.h"
 #include "sdltiles.h" // IWYU pragma: keep
 #include "cursesport.h" // IWYU pragma: keep
@@ -468,6 +473,70 @@ std::string input_context::describe_key_and_name( const std::string &action_desc
     return get_desc( action_descriptor, get_action_name( action_descriptor ), evt_filter );
 }
 
+// With the 3D view's WASD controls on, the main game walks with W A S D (turned with the camera
+// by get_direction) and turns the camera with the arrow keys. Other contexts are left alone.
+static const std::string *r3d_key_action( const input_event &ev, const std::string &category )
+{
+    if( category != "DEFAULTMODE" || !ev.modifiers.empty() || ev.sequence.size() != 1 ||
+        !r3d::wasd_controls() ) {
+        return nullptr;
+    }
+    static const std::string up = "UP";
+    static const std::string down = "DOWN";
+    static const std::string left = "LEFT";
+    static const std::string right = "RIGHT";
+    static const std::string rotate_left = "r3d_rotate_left";
+    static const std::string rotate_right = "r3d_rotate_right";
+    static const std::string pitch_up = "r3d_pitch_up";
+    static const std::string pitch_down = "r3d_pitch_down";
+    const int key = ev.sequence.front();
+    if( ev.type == input_event_t::keyboard_char || ev.type == input_event_t::keyboard_code ) {
+        switch( key ) {
+            case 'w':
+                return &up;
+            case 's':
+                return &down;
+            case 'a':
+                return &left;
+            case 'd':
+                return &right;
+            default:
+                break;
+        }
+    }
+    if( ev.type == input_event_t::keyboard_char ) {
+        switch( key ) {
+            case KEY_LEFT:
+                return &rotate_left;
+            case KEY_RIGHT:
+                return &rotate_right;
+            case KEY_UP:
+                return &pitch_up;
+            case KEY_DOWN:
+                return &pitch_down;
+            default:
+                break;
+        }
+    }
+#if defined(TILES)
+    if( ev.type == input_event_t::keyboard_code ) {
+        switch( key ) {
+            case SDLK_LEFT:
+                return &rotate_left;
+            case SDLK_RIGHT:
+                return &rotate_right;
+            case SDLK_UP:
+                return &pitch_up;
+            case SDLK_DOWN:
+                return &pitch_down;
+            default:
+                break;
+        }
+    }
+#endif
+    return nullptr;
+}
+
 const std::string &input_context::handle_input()
 {
     return handle_input( timeout );
@@ -489,7 +558,8 @@ const std::string &input_context::handle_input( const int timeout )
             break;
         }
 
-        const std::string &action = input_to_action( next_action );
+        const std::string *const remapped = r3d_key_action( next_action, category );
+        const std::string &action = remapped ? *remapped : input_to_action( next_action );
 
         //Special global key to toggle language to english and back
         if( action == "toggle_language_to_en" ) {
@@ -606,6 +676,19 @@ static std::optional<coords::coord_point<Point, coords::origin::relative, Scale>
         rotate_direction_cw( p.x(), p.y() );
         return p;
     } );
+    // In the 3D view map directions turn with the camera, so "up" is away from it.
+    const int view_turns = iso_mode ? r3d::view_eighths() : 0;
+    if( view_turns != 0 ) {
+        const std::optional<CoordPoint> flat = get_direction<Point, Scale>( action, false );
+        if( !flat ) {
+            return std::nullopt;
+        }
+        CoordPoint turned = *flat;
+        for( int i = 0; i < view_turns; ++i ) {
+            turned = rotate( turned );
+        }
+        return turned;
+    }
     const auto transform = iso_mode && g->is_tileset_isometric() ? rotate : noop;
 
     if( action == "UP" ) {

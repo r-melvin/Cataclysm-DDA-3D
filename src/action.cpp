@@ -1,6 +1,7 @@
 #include "action.h"
 
 #include <algorithm>
+#include <array>
 #include <climits>
 #include <istream>
 #include <iterator>
@@ -34,6 +35,7 @@
 #include "output.h"
 #include "path_info.h"
 #include "point.h"
+#include "r3d.h"
 #include "popup.h"
 #include "ret_val.h"
 #include "translations.h"
@@ -595,9 +597,35 @@ action_id get_movement_action_from_delta( const tripoint_rel_ms &d, const iso_ro
     return ACTION_NULL;
 }
 
+// The direction 1/8 turns clockwise from d on the map, turns times.
+static point_rel_ms rotate_eighths( const point_rel_ms &d, int turns )
+{
+    static const std::array<point_rel_ms, 8> ring = {{
+            point_rel_ms::north, point_rel_ms::north_east, point_rel_ms::east, point_rel_ms::south_east,
+            point_rel_ms::south, point_rel_ms::south_west, point_rel_ms::west, point_rel_ms::north_west
+        }
+    };
+    for( size_t i = 0; i < ring.size(); ++i ) {
+        if( ring[i] == d ) {
+            return ring[( i + static_cast<size_t>( turns ) ) % ring.size()];
+        }
+    }
+    return d;
+}
+
+static point_rel_ms movement_delta( const action_id act, const bool iso_mode );
+
 point_rel_ms get_delta_from_movement_action( const action_id act, const iso_rotate rot )
 {
     const bool iso_mode = rot == iso_rotate::yes && g->is_tileset_isometric();
+    const point_rel_ms delta = movement_delta( act, iso_mode );
+    // In the 3D view "forward" walks away from the camera.
+    const int turns = rot == iso_rotate::yes ? r3d::view_eighths() : 0;
+    return turns != 0 ? rotate_eighths( delta, turns ) : delta;
+}
+
+static point_rel_ms movement_delta( const action_id act, const bool iso_mode )
+{
     switch( act ) {
         case ACTION_MOVE_FORTH:
             return iso_mode ? point_rel_ms::north_east : point_rel_ms::north;

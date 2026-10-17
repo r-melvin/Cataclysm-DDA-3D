@@ -80,6 +80,13 @@ struct camera {
     /** Unit vector pointing right on screen, flattened onto the ground plane. */
     vec3 ground_right() const;
 
+    /**
+     * How many 1/8 turns clockwise (on the map, y south) the camera's forward direction is from
+     * north, rounded: 0 when looking north, 2 east, 6 west. Turning a map direction by this
+     * makes "up" walk away from the camera.
+     */
+    int forward_eighths() const;
+
     /** Orbit by steps of 15 degrees / tilt by steps of 5 degrees / scale distance by 10%. */
     void rotate_steps( int steps );
     void pitch_steps( int steps );

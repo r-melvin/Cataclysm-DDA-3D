@@ -27,7 +27,11 @@ static_assert( sizeof( vertex ) == 20, "vertex layout is mirrored by the pipelin
 struct block_uniforms {
     mat4 view_proj;
     float offset[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    // xyz: world direction towards the camera; w: depth pull, in those units, of a vertex whose
+    // light alpha is 1 (billboards; 0 for everything else). See r3d_block.vert.
+    float pull[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 };
+static_assert( sizeof( block_uniforms ) == 96, "block_uniforms is mirrored by r3d_block.vert" );
 
 /**
  * Owns the GPU objects of the 3D renderer: pipelines, sampler, and the offscreen colour+depth

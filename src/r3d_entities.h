@@ -17,6 +17,9 @@ class cata_tiles;
 namespace r3d
 {
 
+/** Largest depth pull of a billboard top, in stretched units; the draw passes it as pull.w. */
+constexpr float max_billboard_pull = 8.0f;
+
 struct entity_view {
     cata_tiles &tiles;
     tile_info_cache &cache;

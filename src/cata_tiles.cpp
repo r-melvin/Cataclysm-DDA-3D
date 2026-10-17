@@ -2938,10 +2938,37 @@ std::optional<texture_draw_data> cata_tiles::get_texture_draw_data( const std::s
     return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1, texture_ptr, 1.0f, 1.0f, 0, false, tile->get_opaque_rect() };
 }
 
+// Which of the four neighbours (south, east, west, north, as map::get_known_connections orders
+// them) are in connect_group, by the true map. The flat view only connects to neighbours the
+// player knows of; a 3D chunk is meshed once and kept, so it connects by what is there (tiles
+// that are not seen are drawn black anyway).
+static uint8_t true_connections( const map &here, const tripoint_bub_ms &p,
+                                 const std::bitset<NUM_TERCONN> &connect_group, bool furniture )
+{
+    static const std::array<point_rel_ms, 4> order = {{
+            point_rel_ms::south, point_rel_ms::east, point_rel_ms::west, point_rel_ms::north
+        }
+    };
+    uint8_t val = 0;
+    for( size_t i = 0; i < order.size(); ++i ) {
+        const tripoint_bub_ms q = p + order[i];
+        if( !here.inbounds( q ) ) {
+            continue;
+        }
+        const bool connects = furniture ? here.furn( q ).obj().in_connect_groups( connect_group ) :
+                              here.ter( q ).obj().in_connect_groups( connect_group );
+        if( connects ) {
+            val += 1 << i;
+        }
+    }
+    return val;
+}
+
 void cata_tiles::get_orientation( const tripoint_bub_ms &p, bool furniture, int &subtile,
                                   int &rota )
 {
-    // as draw_terrain / draw_furniture do for tiles without overrides
+    // as draw_terrain / draw_furniture do for tiles without overrides, but connecting by the
+    // true map (see true_connections)
     map &here = get_map();
     subtile = 0;
     rota = 0;
@@ -2953,7 +2980,8 @@ void cata_tiles::get_orientation( const tripoint_bub_ms &p, bool furniture, int 
         const std::bitset<NUM_TERCONN> &connect_group = f.obj().connect_to_groups;
         const std::bitset<NUM_TERCONN> &rotate_group = f.obj().rotate_to_groups;
         if( connect_group.any() ) {
-            get_furn_connect_values( p, subtile, rota, connect_group, rotate_group, {} );
+            get_rotation_and_subtile( true_connections( here, p, connect_group, true ),
+                                      here.get_known_rotates_to_f( p, rotate_group, {}, {} ), rota, subtile );
         } else {
             const std::array<int, 4> neighborhood = {
                 static_cast<int>( here.furn( p + point::south ) ),
@@ -2972,7 +3000,8 @@ void cata_tiles::get_orientation( const tripoint_bub_ms &p, bool furniture, int 
     const std::bitset<NUM_TERCONN> &connect_group = t.obj().connect_to_groups;
     const std::bitset<NUM_TERCONN> &rotate_group = t.obj().rotate_to_groups;
     if( connect_group.any() ) {
-        get_connect_values( p, subtile, rota, connect_group, rotate_group, {} );
+        get_rotation_and_subtile( true_connections( here, p, connect_group, false ),
+                                  here.get_known_rotates_to( p, rotate_group, {} ), rota, subtile );
     } else {
         get_terrain_orientation( p, rota, subtile, {}, {}, rotate_group );
     }
@@ -5290,6 +5319,9 @@ cata_tiles::frame_markers cata_tiles::get_frame_markers() const
 
 void cata_tiles::drop_frame_layers()
 {
+    void_item_override();
+    void_vpart_override();
+    void_monster_override();
     void_hit();
     void_line();
     void_cursor();

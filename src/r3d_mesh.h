@@ -55,6 +55,7 @@ struct tile_info {
     sprite_ref sprite;   // foreground layer (alpha tested, may be sparse)
     bool tree = false;   // the level above holds its treetop, which this sprite already shows
     sprite_ref side;     // texture for the sides of a wall (see wall_sides), else invalid
+    bool see_through = false; // transparent terrain (fences, bars): the floor shows through it
 
     /** The layer that represents the tile when only one can be drawn (upright sprites). */
     const sprite_ref &main() const {
@@ -157,6 +158,9 @@ class quad_sink
         /** Quad with an explicit light colour (used by the dynamic entity geometry). */
         void add_colored( const sprite_ref &sprite, const corners_t &corners, const uvs_t &uvs,
                           const light_ref &ref, uint32_t color );
+        /** Same with a colour per corner (the alpha carries the billboards' depth pull). */
+        void add_colored( const sprite_ref &sprite, const corners_t &corners, const uvs_t &uvs,
+                          const light_ref &ref, const std::array<uint32_t, 4> &colors );
         chunk_mesh finish();
 
     private:
@@ -164,7 +168,7 @@ class quad_sink
             SDL_Texture *sheet = nullptr;
             std::array<vertex, 4> v;
             std::array<light_ref, 4> r;
-            uint32_t color = 0;
+            std::array<uint32_t, 4> colors{};
         };
         std::vector<quad> quads_;
 };

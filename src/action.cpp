@@ -564,9 +564,30 @@ std::optional<std::string> press_x_if_bound( action_id act )
     return press_x( act );
 }
 
-action_id get_movement_action_from_delta( const tripoint_rel_ms &d, const iso_rotate rot )
+// The direction 1/8 turns clockwise from d on the map, turns times.
+static point_rel_ms rotate_eighths( const point_rel_ms &d, int turns )
+{
+    static const std::array<point_rel_ms, 8> ring = {{
+            point_rel_ms::north, point_rel_ms::north_east, point_rel_ms::east, point_rel_ms::south_east,
+            point_rel_ms::south, point_rel_ms::south_west, point_rel_ms::west, point_rel_ms::north_west
+        }
+    };
+    for( size_t i = 0; i < ring.size(); ++i ) {
+        if( ring[i] == d ) {
+            return ring[( i + static_cast<size_t>( turns ) ) % ring.size()];
+        }
+    }
+    return d;
+}
+
+action_id get_movement_action_from_delta( const tripoint_rel_ms &delta, const iso_rotate rot )
 {
     const bool iso_mode = rot == iso_rotate::yes && g->is_tileset_isometric();
+    // Inverse of the 3D camera turn in get_delta_from_movement_action, so a route step turned
+    // into an action and back (auto-move, travel) stays on the route.
+    const int turns = rot == iso_rotate::yes ? r3d::view_eighths() : 0;
+    const tripoint_rel_ms d = turns != 0 ?
+                              tripoint_rel_ms( rotate_eighths( delta.xy(), 8 - turns ), delta.z() ) : delta;
     if( d.xy() == point_rel_ms::north ) {
         return iso_mode ? ACTION_MOVE_FORTH_LEFT : ACTION_MOVE_FORTH;
     } else if( d.xy() == point_rel_ms::north_east ) {
@@ -595,22 +616,6 @@ action_id get_movement_action_from_delta( const tripoint_rel_ms &d, const iso_ro
     }
 
     return ACTION_NULL;
-}
-
-// The direction 1/8 turns clockwise from d on the map, turns times.
-static point_rel_ms rotate_eighths( const point_rel_ms &d, int turns )
-{
-    static const std::array<point_rel_ms, 8> ring = {{
-            point_rel_ms::north, point_rel_ms::north_east, point_rel_ms::east, point_rel_ms::south_east,
-            point_rel_ms::south, point_rel_ms::south_west, point_rel_ms::west, point_rel_ms::north_west
-        }
-    };
-    for( size_t i = 0; i < ring.size(); ++i ) {
-        if( ring[i] == d ) {
-            return ring[( i + static_cast<size_t>( turns ) ) % ring.size()];
-        }
-    }
-    return d;
 }
 
 static point_rel_ms movement_delta( const action_id act, const bool iso_mode );

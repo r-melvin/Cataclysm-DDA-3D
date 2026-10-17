@@ -33,6 +33,13 @@ constexpr int item_radius = 20;     // and for items (every tile costs a map loo
 constexpr float marker_box_height = 1.0f;
 constexpr float item_size = 0.6f;
 
+// Light colour with a zero alpha: no depth pull (see r3d_block.vert), for everything in the
+// entity mesh that is not the top of a billboard.
+uint32_t no_pull( uint32_t color )
+{
+    return color & 0x00ffffffu;
+}
+
 // Camera-facing upright quads standing on the tile centre, sized like the first layer's sprite
 // is in the flat view (big trees are several tiles tall). Later layers (clothing over a body) sit
 // slightly closer to the camera. Corners are in scene-frame tile space.
@@ -62,7 +69,15 @@ void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &laye
                                            toward_world.y * toward_world.y );
     constexpr float half_tile = 0.45f;
     const float pull = std::clamp( ( lean - half_tile ) / std::max( toward_ground, 0.05f ), 0.0f,
-                                   8.0f );
+                                   max_billboard_pull );
+    // The pull only moves depth (see r3d_block.vert): the top's light alpha carries it, the base
+    // keeps 0 so feet stay where they stand.
+    const uint32_t top_alpha = static_cast<uint32_t>( pull / max_billboard_pull * 255.0f + 0.5f ) << 24;
+    const std::array<uint32_t, 4> colors = {{
+            ( color & 0x00ffffffu ) | top_alpha, ( color & 0x00ffffffu ) | top_alpha,
+            color & 0x00ffffffu, color & 0x00ffffffu
+        }
+    };
     // The quad faces the camera squarely (leaning back with its up vector), so sprites keep the
     // full size and detail they have in the flat view instead of being squashed by the pitch.
     const float ux = up_world.x * height;
@@ -73,7 +88,7 @@ void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &laye
         if( !s.valid ) {
             return;
         }
-        const float lift = pull + 0.01f * static_cast<float>( depth++ );
+        const float lift = 0.01f * static_cast<float>( depth++ );
         const float ox = cx + tx * lift;
         const float oy = cy + ty * lift;
         const float oz = z_base + tz * lift;
@@ -84,7 +99,7 @@ void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &laye
                 { ox + rx, oy + ry, oz }, { ox - rx, oy - ry, oz }
             }
         };
-        sink.add_colored( s, c, uv, light_ref{}, color );
+        sink.add_colored( s, c, uv, light_ref{}, colors );
     };
     for( const tile_info *t : layers ) {
         if( t ) {
@@ -108,7 +123,7 @@ void emit_flat( quad_sink &sink, const tile_info &sprite, float cx, float cy, fl
             continue;
         }
         const uvs_t uv = {{ { s->u0, s->v0 }, { s->u1, s->v0 }, { s->u1, s->v1 }, { s->u0, s->v1 } }};
-        sink.add_colored( *s, c, uv, light_ref{}, color );
+        sink.add_colored( *s, c, uv, light_ref{}, no_pull( color ) );
     }
 }
 
@@ -128,7 +143,7 @@ void emit_marker_box( quad_sink &sink, const sprite_ref &s, float x0, float y0, 
                 { e[0], e[1], z0 }
             }
         };
-        sink.add_colored( s, c, uv, light_ref{}, color );
+        sink.add_colored( s, c, uv, light_ref{}, no_pull( color ) );
     }
 }
 

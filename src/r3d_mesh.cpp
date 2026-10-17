@@ -435,12 +435,18 @@ void quad_sink::add( const sprite_ref &sprite, const corners_t &corners, const u
 void quad_sink::add_colored( const sprite_ref &sprite, const corners_t &corners, const uvs_t &uvs,
                              const light_ref &ref, uint32_t color )
 {
+    add_colored( sprite, corners, uvs, ref, std::array<uint32_t, 4> {{ color, color, color, color }} );
+}
+
+void quad_sink::add_colored( const sprite_ref &sprite, const corners_t &corners, const uvs_t &uvs,
+                             const light_ref &ref, const std::array<uint32_t, 4> &colors )
+{
     if( !sprite.valid ) {
         return;
     }
     quad q;
     q.sheet = sprite.sheet;
-    q.color = color;
+    q.colors = colors;
     for( size_t i = 0; i < 4; ++i ) {
         // Tile space (x east, y south, z up) is flipped into the right-handed world frame.
         q.v[i] = vertex{ corners[i][0], -corners[i][1], corners[i][2], uvs[i][0], uvs[i][1] };
@@ -470,7 +476,7 @@ chunk_mesh quad_sink::finish()
         for( size_t i = 0; i < 4; ++i ) {
             mesh.vertices.push_back( q.v[i] );
             mesh.light_refs.push_back( q.r[i] );
-            mesh.light.push_back( q.color );
+            mesh.light.push_back( q.colors[i] );
         }
         for( uint32_t idx : { 0u, 1u, 2u, 0u, 2u, 3u } ) {
             mesh.indices.push_back( base + idx );
@@ -516,6 +522,7 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int sub
     const tile_traits traits = traits_of( t );
     info.sh = classify_terrain( traits );
     info.tree = traits.tree;
+    info.see_through = traits.transparent;
     if( info.sh.kind != shape_kind::empty ) {
         resolve_layers( tiles, t.id.str(), TILE_CATEGORY::TERRAIN, info, subtile, rota );
     }
@@ -698,6 +705,24 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
     const tripoint_abs_ms chunk_origin = project_to<coords::ms>( pos );
     quad_sink sink;
     std::vector<upright_sprite> mesh_uprights;
+    // Floor for a tile that stands in a wall line (pane, see-through block): a neighbour's floor
+    // on an open side (inside or out), else the ground.
+    auto emit_floor_under = [&]( int lx, int ly, bool wall_along_y ) {
+        const tile_info *under = nullptr;
+        const std::array<point, 4> order = wall_along_y ?
+                                           std::array<point, 4> { point( -1, 0 ), point( 1, 0 ), point( 0, -1 ), point( 0, 1 ) } :
+                                           std::array<point, 4> { point( 0, -1 ), point( 0, 1 ), point( -1, 0 ), point( 1, 0 ) };
+        for( const point &d : order ) {
+            const tile_info *n = terrain_at( lx + d.x, ly + d.y );
+            if( n && n->sh.kind == shape_kind::floor && !is_tall( n->sprite ) ) {
+                under = n;
+                break;
+            }
+        }
+        emit_top_layers( sink, under ? *under : cache.ground( tiles ), lx, ly, floor_height,
+                         make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+    };
+
     for( int ly = 0; ly < side; ++ly ) {
         for( int lx = 0; lx < side; ++lx ) {
             const point_sm_ms p( lx, ly );
@@ -744,6 +769,12 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                     }
                     break;
                 case shape_kind::block:
+                    // A see-through block (fence, bars, a sparse wall sprite) needs a floor, or
+                    // the alpha-tested holes show the level below.
+                    if( terrain.see_through || !terrain.backdrop.valid ) {
+                        emit_floor_under( lx, ly, nb.north.kind == shape_kind::block ||
+                                          nb.south.kind == shape_kind::block );
+                    }
                     if( ( faces & face_top ) != 0 ) {
                         emit_top_layers( sink, terrain, lx, ly, ts.height,
                                         make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
@@ -773,23 +804,10 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                                                floor_height, &terrain } );
                     break;
                 case shape_kind::pane: {
-                    // The frame stands along the wall line; the floor under it is a neighbour's
-                    // floor on the open side (inside or out), else the ground.
+                    // The frame stands along the wall line over the floor of its open sides.
                     const bool wall_along_y = nb.north.kind == shape_kind::block ||
                                               nb.south.kind == shape_kind::block;
-                    const tile_info *under = nullptr;
-                    const std::array<point, 2> sides_open = wall_along_y ?
-                            std::array<point, 2> { point( -1, 0 ), point( 1, 0 ) } :
-                            std::array<point, 2> { point( 0, -1 ), point( 0, 1 ) };
-                    for( const point &d : sides_open ) {
-                        const tile_info *n = terrain_at( lx + d.x, ly + d.y );
-                        if( n && n->sh.kind == shape_kind::floor && !is_tall( n->sprite ) ) {
-                            under = n;
-                            break;
-                        }
-                    }
-                    emit_top_layers( sink, under ? *under : cache.ground( tiles ), lx, ly,
-                                     floor_height, make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                    emit_floor_under( lx, ly, wall_along_y );
                     if( terrain.backdrop.valid ) {
                         emit_pane( sink, terrain.backdrop, lx, ly, !wall_along_y, floor_height,
                                    ts.height - floor_height, make_ref( lx, ly, 0, 0, 0, 230 ) );

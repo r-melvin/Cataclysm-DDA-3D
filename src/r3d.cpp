@@ -199,7 +199,6 @@ bool rebuild_chunk( state &s, chunk_gpu &c, const tripoint_abs_sm &pos, uint64_t
     c.indices = s.device.create_buffer( SDL_GPU_BUFFERUSAGE_INDEX, index_bytes );
     if( !c.positions || !c.lights || !c.indices ||
         !s.device.upload( c.positions, mesh.vertices.data(), vertex_bytes ) ||
-        !s.device.upload( c.lights, mesh.light.data(), light_bytes ) ||
         !s.device.upload( c.indices, mesh.indices.data(), index_bytes ) ) {
         release_chunk( s, c );
         return false;
@@ -812,6 +811,13 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         uniforms.offset[0] = 0.0f;
         uniforms.offset[1] = 0.0f;
         uniforms.offset[2] = 0.0f;
+        // Billboard tops get their depth pulled towards the camera (world direction: the
+        // stretched view direction with its height shrunk back).
+        const vec3 toward = normalize( s.cam.eye() - s.cam.stretched_target() );
+        uniforms.pull[0] = toward.x;
+        uniforms.pull[1] = toward.y;
+        uniforms.pull[2] = toward.z / s.cam.z_scale;
+        uniforms.pull[3] = max_billboard_pull;
         for( const mesh_batch &b : entities.batches ) {
             s.device.draw_block( s.dyn_positions, s.dyn_lights, s.dyn_indices, b.first_index, b.index_count,
                                  b.sheet, uniforms );

@@ -395,7 +395,13 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
                 { ox + sd.rx, oy + sd.ry, zs }, { ox + sd.lx, oy + sd.ly, zs }
             }
         };
-        sink.add( s, c, sd.face == front || slab > 0.0f ? side_uv : plain_uv, refs[sd.ref] );
+        // A slab's sides are its own wood, darker than the seat so the thickness shows even
+        // where the sprite's edge rows are the same colour as its top.
+        light_ref side_ref = refs[sd.ref];
+        if( slab > 0.0f ) {
+            side_ref.shade = static_cast<uint8_t>( side_ref.shade * 3 / 4 );
+        }
+        sink.add( s, c, slab > 0.0f ? plain_uv : sd.face == front ? side_uv : plain_uv, side_ref );
     }
     if( zs <= z0 ) {
         return;
@@ -408,17 +414,16 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
     };
     sink.add( s, under, side_uv, refs[3] );
 
-    // Legs: every tile of a bench or table stands on a pair of legs at the sides across its
-    // row (the row runs along x before the turn), set in from the slab's ends.
+    // Legs: every tile of a bench or table stands on one pair of legs, one at each side
+    // across its row (the row runs along x before the turn), in the middle of the tile.
     constexpr float leg = 0.12f;
     constexpr float inset = 0.05f;
     const bool across_y = ( facing & 1 ) == 0;
-    const float a0 = ( across_y ? fx0 : fy0 ) + 0.22f;
-    const float a1 = ( across_y ? fx1 : fy1 ) - 0.22f - leg;
+    const float a0 = ( ( across_y ? fx0 : fy0 ) + ( across_y ? fx1 : fy1 ) - leg ) * 0.5f;
     const float s0 = ( across_y ? fy0 : fx0 ) + inset;
     const float s1 = ( across_y ? fy1 : fx1 ) - inset - leg;
-    const std::array<std::array<float, 2>, 4> legs = {{
-            { a0, s0 }, { a0, s1 }, { a1, s0 }, { a1, s1 }
+    const std::array<std::array<float, 2>, 2> legs = {{
+            { a0, s0 }, { a0, s1 }
         }
     };
     for( const auto &pos : legs ) {
@@ -897,16 +902,15 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             switch( ts.kind ) {
                 case shape_kind::floor:
                     if( ( faces & face_top ) != 0 ) {
+                        light_ref floor_ref = make_ref( lx, ly, 0, 0, 0, face_shade[0] );
+                        floor_ref.floor = true;
                         // Tall sprites (long grass) are often transparent around what stands on
                         // the tile, so the ground goes underneath unless they bring a backdrop.
                         if( is_tall( terrain.sprite ) && !terrain.backdrop.valid ) {
-                            emit_top_layers( sink, cache.ground( tiles ), lx, ly, ts.height,
-                                             make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
-                            emit_top( sink, terrain.sprite, lx, ly, ts.height + layer_lift,
-                                      make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                            emit_top_layers( sink, cache.ground( tiles ), lx, ly, ts.height, floor_ref );
+                            emit_top( sink, terrain.sprite, lx, ly, ts.height + layer_lift, floor_ref );
                         } else {
-                            emit_top_layers( sink, terrain, lx, ly, ts.height,
-                                             make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                            emit_top_layers( sink, terrain, lx, ly, ts.height, floor_ref );
                         }
                     }
                     break;

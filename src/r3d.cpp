@@ -418,6 +418,11 @@ void update_chunk_light( state &s, chunk_gpu &c, const tripoint_abs_sm &pos,
         if( tile == pack_light( 0, 0, 0 ) && ( r.dx != 0 || r.dy != 0 ) ) {
             tile = grid[0][static_cast<size_t>( ( r.ly + 1 ) * border + ( r.lx + 1 ) )];
         }
+        // A never-seen floor is drawn as dark floor (the shader leaves black out), so an
+        // unexplored room reads as a dark room, not a hole; nothing standing on it shows.
+        if( tile == pack_light( 0, 0, 0 ) && r.floor ) {
+            tile = pack_light( 22, 22, 26 );
+        }
         const uint32_t shade = r.shade;
         c.light[i] = pack_light(
                          static_cast<uint8_t>( ( ( tile >> 0 ) & 255u ) * shade / 255u * r.tint_r / 255u ),

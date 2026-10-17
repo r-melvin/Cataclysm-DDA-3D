@@ -133,6 +133,9 @@ struct light_ref {
     uint8_t tint_r = 255;
     uint8_t tint_g = 255;
     uint8_t tint_b = 255;
+    // a floor top: shown as dark floor rather than left out where its tile was never seen,
+    // so unexplored rooms are a dark floor between their seen walls, not a hole
+    bool floor = false;
 };
 
 struct mesh_batch {

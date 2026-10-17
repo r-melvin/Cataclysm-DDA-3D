@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "avatar.h"
+#include "debug.h"
 #include "cata_tiles.h"
 #include "character.h"
 #include "creature.h"
@@ -45,17 +46,15 @@ uint32_t no_pull( uint32_t color )
 // slightly closer to the camera. Corners are in scene-frame tile space.
 void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &layers,
                      const vec3 &right_world, const vec3 &up_world, const vec3 &toward_world, float z_scale,
-                     float cx, float cy, float z_base, uint32_t color, bool mirrored = false )
+                     float cx, float cy, float z_base, uint32_t color, bool mirrored = false,
+                     float scale = 1.0f )
 {
     if( layers.empty() || !layers.front() ) {
         return;
     }
     const sprite_ref &main = layers.front()->main();
-    const float width = std::clamp( main.size_x, 0.25f, 4.0f );
-    const float height = std::clamp( main.size_y, 0.25f, 6.0f );
+    const float height = std::clamp( main.size_y, 0.25f, 6.0f ) * scale;
     // The camera vectors are in the right-handed world frame; tile space has y flipped.
-    const float rx = right_world.x * width * 0.5f;
-    const float ry = -right_world.y * width * 0.5f;
     const float tx = toward_world.x;
     const float ty = -toward_world.y;
     // The camera vectors are in stretched space, where sprites keep their flat-view proportions;
@@ -80,14 +79,20 @@ void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &laye
     };
     // The quad faces the camera squarely (leaning back with its up vector), so sprites keep the
     // full size and detail they have in the flat view instead of being squashed by the pitch.
-    const float ux = up_world.x * height;
-    const float uy = -up_world.y * height;
-    const float uz = up_world.z * height / z_scale;
+    // Each layer keeps its own sprite's size, standing on the same feet: a 48-row body under
+    // 36-row clothing, as the flat view draws them.
     int depth = 0;
     auto layer = [&]( const sprite_ref & s ) {
         if( !s.valid ) {
             return;
         }
+        const float lw = std::clamp( s.size_x, 0.25f, 4.0f ) * scale;
+        const float lh = std::clamp( s.size_y, 0.25f, 6.0f ) * scale;
+        const float rx = right_world.x * lw * 0.5f;
+        const float ry = -right_world.y * lw * 0.5f;
+        const float ux = up_world.x * lh;
+        const float uy = -up_world.y * lh;
+        const float uz = up_world.z * lh / z_scale;
         const float lift = 0.01f * static_cast<float>( depth++ );
         const float ox = cx + tx * lift;
         const float oy = cy + ty * lift;
@@ -175,7 +180,7 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         return static_cast<float>( p.z() - view.center.z() );
     };
 
-    // Items first: top item of every visible tile near the view, drawn flat on the floor.
+    // Items first: top item of every visible tile near the view, standing on the floor.
     for( int z = view.z_lo; z <= view.z_hi; ++z ) {
         for( int dy = -item_radius; dy <= item_radius; ++dy ) {
             for( int dx = -item_radius; dx <= item_radius; ++dx ) {
@@ -193,8 +198,10 @@ chunk_mesh build_entity_mesh( const entity_view &view )
                 }
                 const std::string id = stack.begin()->typeId().str();
                 const tile_info &sprite = view.cache.named( TILE_CATEGORY::ITEM, id, view.tiles );
-                emit_flat( sink, sprite, frame_x( p ), frame_y( p ), frame_z( p ) + view.surface( p ) + 0.02f,
-                           light );
+                // A small sprite standing on the surface: lying flat it is unreadable from
+                // the camera's height.
+                emit_billboard( sink, { &sprite }, right, up, toward, view.cam.z_scale, frame_x( p ), frame_y( p ),
+                                frame_z( p ) + view.surface( p ) + 0.01f, light, false, item_size );
             }
         }
     }
@@ -232,6 +239,19 @@ chunk_mesh build_entity_mesh( const entity_view &view )
             continue;
         }
         const uint32_t color = critter.is_avatar() ? white : view.light( p );
+        // Debug aid: CATA_R3D_DEBUG_LAYERS=1 logs the sprite layers of the player once per run.
+        static const bool debug_layers = std::getenv( "CATA_R3D_DEBUG_LAYERS" ) != nullptr;
+        static bool logged = false;
+        if( debug_layers && critter.is_avatar() && !logged ) {
+            logged = true;
+            const cata_tiles::character_layers looks = view.tiles.get_character_layers( *critter.as_character() );
+            for( size_t i = 0; i < looks.ids.size() && i < layers.size(); ++i ) {
+                const sprite_ref &m = layers[i]->main();
+                DebugLog( D_INFO, DC_ALL ) << "r3d layer " << i << " " << looks.ids[i].first << " valid=" << m.valid
+                                           << " size=" << m.size_x << "x" << m.size_y << " uv=" << m.u0 << "," << m.v0
+                                           << " backdrop=" << layers[i]->backdrop.valid;
+            }
+        }
         emit_billboard( sink, layers, right, up, toward, view.cam.z_scale, frame_x( p ), frame_y( p ),
                         frame_z( p ) + view.surface( p ), color == pack_light( 0, 0, 0 ) ? white : color,
                         mirrored );

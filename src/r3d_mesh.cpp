@@ -600,8 +600,16 @@ light_ref wall_ref( int lx, int ly, int dx, int dy, int dz, uint8_t shade )
     return r;
 }
 
+// Ceilings face down, away from the light the view assumes comes from above (face_shade), so
+// they are darker than any floor or wall cap: about as dark as the walls' darker sides. Lit by
+// their own tile like floors are, so a room's ceiling goes dark or sepia with its floor.
+constexpr uint8_t ceiling_shade = 170;
+// The floor sprite stands in for plaster without wall textures; it is brighter, so darker still.
+constexpr uint8_t floor_ceiling_shade = 150;
+
 // The underside of the storey above, one storey up from the cell's floor (before the stretch).
-// What it is made of: plaster when the wall textures are on, else the floor sprite, darker.
+// What it is made of: plaster when the wall textures are on (tinted like plaster walls and their
+// caps), else the cell's own floor sprite, darker.
 void emit_ceiling( quad_sink &sink, tile_info_cache &cache, const tile_info &floor_info,
                    int x, int y )
 {
@@ -617,7 +625,7 @@ void emit_ceiling( quad_sink &sink, tile_info_cache &cache, const tile_info &flo
     // Wound the other way round from a top face, so it faces down.
     const corners_t c = {{ { x0, y0, z }, { x0, y0 + 1, z }, { x0 + 1, y0 + 1, z }, { x0 + 1, y0, z } }};
     const uvs_t uv = {{ { s.u0, s.v0 }, { s.u0, s.v1 }, { s.u1, s.v1 }, { s.u1, s.v0 } }};
-    light_ref ref = make_ref( x, y, 0, 0, 0, plaster.valid ? 170 : 150 );
+    light_ref ref = make_ref( x, y, 0, 0, 0, plaster.valid ? ceiling_shade : floor_ceiling_shade );
     if( plaster.valid ) {
         ref = tinted( ref, tint );
     }
@@ -1015,9 +1023,22 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
     }
     for( int ly = 0; ly < side; ++ly ) {
         for( int lx = 0; lx < side; ++lx ) {
-            // Terrain alone: furniture up there stands on a floor, which is what closes the room.
-            up[static_cast<size_t>( ly * side + lx )] = above ?
-                    cache.terrain( above->get_ter( point_sm_ms( lx, ly ) ), tiles ).sh : shape();
+            // The terrain decides: furniture up there (a table, a window pane) stands on a floor
+            // or frame, which is what closes the room. Only solid furniture without terrain
+            // under it (a box on open air) closes the column by itself.
+            shape &u = up[static_cast<size_t>( ly * side + lx )];
+            u = {};
+            if( !above ) {
+                continue;
+            }
+            const point_sm_ms p( lx, ly );
+            u = cache.terrain( above->get_ter( p ), tiles ).sh;
+            if( u.kind == shape_kind::empty ) {
+                const shape f = cache.furniture( above->get_furn( p ), tiles ).sh;
+                if( f.kind == shape_kind::prism && f.slab <= 0.0f ) {
+                    u = f;
+                }
+            }
         }
     }
     auto level_at = [&]( int lx, int ly ) -> const shape & {
@@ -1081,7 +1102,9 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             const uint8_t faces = visible_faces( ts, nb ) |
                                   ( ts.kind == shape_kind::block ? all_sides : 0 );
             if( options.ceilings && ( faces & face_ceiling ) != 0 ) {
-                emit_ceiling( sink, cache, terrain, lx, ly );
+                // Over a window or door the fallback sprite is the ground, not the frame.
+                emit_ceiling( sink, cache, ts.kind == shape_kind::pane ? cache.ground( tiles ) : terrain,
+                              lx, ly );
             }
             switch( ts.kind ) {
                 case shape_kind::floor:

@@ -110,11 +110,11 @@ bool hides_side( const shape &self, const shape &other )
     return solid && other.height >= self.height;
 }
 
-// A cell whose level above has a floor, or a wall, has a ceiling; open air above means sky.
+// A cell has a ceiling unless the level above is open air: a floor, a wall, a window or door
+// frame, a shrub on a roof or solid furniture all stand on (or are) something that closes it.
 uint8_t ceiling_under( const shape &up )
 {
-    return up.kind == shape_kind::floor || up.kind == shape_kind::block ||
-           up.kind == shape_kind::prism ? face_ceiling : 0;
+    return up.kind != shape_kind::empty ? face_ceiling : 0;
 }
 
 } // namespace
@@ -125,8 +125,12 @@ uint8_t visible_faces( const shape &self, const neighbourhood &n )
     switch( self.kind ) {
         case shape_kind::empty:
         case shape_kind::upright:
-        case shape_kind::pane:
+            // Trees reach into the level above (their top is drawn there), so no ceiling.
             return 0;
+        case shape_kind::pane:
+            // A window or door in a wall line: the frame is drawn by the mesher, but the room's
+            // ceiling runs on over it rather than leaving a hole above every door.
+            return ceiling_under( n.up );
         case shape_kind::floor:
             // Tops are kept even under a block: the levels above may be cut away.
             return static_cast<uint8_t>( face_top | ceiling_under( n.up ) );

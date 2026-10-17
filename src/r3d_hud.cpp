@@ -58,7 +58,9 @@ bool on_compass( float rel, float span )
 edge_side edge_alert_side( float rel, float fovx )
 {
     const float a = std::abs( rel );
-    if( a <= fovx * 0.5f ) {
+    // Exactly on the picture's edge (a diagonal neighbour at a 90 degree view) half the sprite is
+    // in the picture: that counts as seen, whatever the rounding of the bearing.
+    if( a <= fovx * 0.5f + 1e-3f ) {
         return edge_side::none;
     }
     if( a >= behind_from ) {

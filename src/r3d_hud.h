@@ -48,7 +48,8 @@ enum class edge_side : int {
 
 /**
  * Which edge of the picture an alert for something at the relative bearing rel lights, for a
- * picture whose horizontal field of view is fovx: none while it is inside the picture, the
+ * picture whose horizontal field of view is fovx: none while it is inside the picture (its edge
+ * included, so a diagonal neighbour at a 90 degree view raises no alert), the
  * bottom edge for what is behind (more than 135 degrees off the view), else the side to turn to.
  * The rear diagonals (exactly 135 degrees) light their side, which says which way to turn.
  */

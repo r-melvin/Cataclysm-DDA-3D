@@ -735,3 +735,146 @@ TEST_CASE( "r3d_minimap_turns_the_heading_up", "[r3d]" )
     CHECK( approx( px, cx ) );
     CHECK( approx( py, cy ) );
 }
+
+TEST_CASE( "r3d_map_bearing_is_clockwise_from_north_with_y_south", "[r3d]" )
+{
+    const float pi = 3.14159265f;
+    // The map's y axis points south, so north is dy < 0.
+    CHECK( approx( r3d::map_bearing( 0.0f, -1.0f ), 0.0f ) );
+    CHECK( approx( r3d::map_bearing( 1.0f, -1.0f ), pi * 0.25f ) );
+    CHECK( approx( r3d::map_bearing( 1.0f, 0.0f ), pi * 0.5f ) );
+    CHECK( approx( r3d::map_bearing( 1.0f, 1.0f ), pi * 0.75f ) );
+    CHECK( approx( std::fabs( r3d::map_bearing( 0.0f, 1.0f ) ), pi ) );
+    CHECK( approx( r3d::map_bearing( -1.0f, 1.0f ), -pi * 0.75f ) );
+    CHECK( approx( r3d::map_bearing( -1.0f, 0.0f ), -pi * 0.5f ) );
+    CHECK( approx( r3d::map_bearing( -1.0f, -1.0f ), -pi * 0.25f ) );
+    // The bearing of each heading matches the bearing of the step that heading walks, and the
+    // first-person camera's view yaw for it (what the compass strip measures against).
+    const int steps[8][2] = { { 0, -1 }, { 1, -1 }, { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 } };
+    for( int h = 0; h < 8; ++h ) {
+        const float step = r3d::map_bearing( static_cast<float>( steps[h][0] ),
+                                             static_cast<float>( steps[h][1] ) );
+        CHECK( approx( r3d::wrap_angle( r3d::heading_bearing( h ) - step ), 0.0f ) );
+        CHECK( r3d::eighths_towards( steps[h][0], steps[h][1] ) == h );
+        r3d::camera cam;
+        cam.mode = r3d::camera_mode::first_person;
+        cam.heading = h;
+        CHECK( approx( r3d::wrap_angle( cam.fp_yaw() - r3d::heading_bearing( h ) ), 0.0f ) );
+        CHECK( cam.forward_eighths() == h );
+    }
+}
+
+TEST_CASE( "r3d_relative_bearing_puts_left_negative_and_wraps", "[r3d]" )
+{
+    const float pi = 3.14159265f;
+    for( int h = 0; h < 8; ++h ) {
+        const float yaw = r3d::heading_bearing( h );
+        // Straight ahead of each heading, in map space (y south).
+        const float dx = std::sin( yaw );
+        const float dy = -std::cos( yaw );
+        CHECK( approx( r3d::relative_bearing( dx, dy, yaw ), 0.0f ) );
+        // The offset turned a quarter clockwise on the map is at the right hand, and the other
+        // way round at the left hand.
+        CHECK( approx( r3d::relative_bearing( -dy, dx, yaw ), pi * 0.5f ) );
+        CHECK( approx( r3d::relative_bearing( dy, -dx, yaw ), -pi * 0.5f ) );
+        // Behind is +-pi, never outside that range.
+        CHECK( approx( std::fabs( r3d::relative_bearing( -dx, -dy, yaw ) ), pi ) );
+    }
+    // Facing east (heading 2): something north is on the left, south on the right.
+    const float east = r3d::heading_bearing( 2 );
+    CHECK( r3d::relative_bearing( 0.0f, -3.0f, east ) < 0.0f );
+    CHECK( r3d::relative_bearing( 0.0f, 3.0f, east ) > 0.0f );
+    // Facing north-west (heading 7): something due west is half a quadrant to the left.
+    CHECK( approx( r3d::relative_bearing( -2.0f, 0.0f, r3d::heading_bearing( 7 ) ), -pi * 0.25f ) );
+    for( float a = -10.0f; a < 10.0f; a += 0.37f ) {
+        const float w = r3d::wrap_angle( a );
+        CHECK( w > -pi - 1e-4f );
+        CHECK( w <= pi + 1e-4f );
+        CHECK( approx( std::cos( w ), std::cos( a ) ) );
+        CHECK( approx( std::sin( w ), std::sin( a ) ) );
+    }
+}
+
+TEST_CASE( "r3d_compass_strip_places_bearings", "[r3d]" )
+{
+    const float pi = 3.14159265f;
+    // A 200 pixel strip showing half a turn: ahead in the middle, the hands at the ends.
+    CHECK( approx( r3d::compass_offset( 0.0f, 200.0f, pi ), 0.0f ) );
+    CHECK( approx( r3d::compass_offset( pi * 0.5f, 200.0f, pi ), 100.0f ) );
+    CHECK( approx( r3d::compass_offset( -pi * 0.5f, 200.0f, pi ), -100.0f ) );
+    CHECK( approx( r3d::compass_offset( pi * 0.25f, 200.0f, pi ), 50.0f ) );
+    // Behind: pinned to the nearer end.
+    CHECK( approx( r3d::compass_offset( pi * 0.9f, 200.0f, pi ), 100.0f ) );
+    CHECK( approx( r3d::compass_offset( -pi * 0.9f, 200.0f, pi ), -100.0f ) );
+    CHECK( r3d::on_compass( pi * 0.5f, pi ) );
+    CHECK_FALSE( r3d::on_compass( pi * 0.6f, pi ) );
+    // The compass letters: facing east, N is at the left end and S at the right end.
+    const float east = r3d::heading_bearing( 2 );
+    CHECK( approx( r3d::compass_offset( r3d::wrap_angle( r3d::heading_bearing( 0 ) - east ), 200.0f,
+                                        pi ), -100.0f ) );
+    CHECK( approx( r3d::compass_offset( r3d::wrap_angle( r3d::heading_bearing( 4 ) - east ), 200.0f,
+                                        pi ), 100.0f ) );
+    CHECK_FALSE( r3d::on_compass( r3d::wrap_angle( r3d::heading_bearing( 6 ) - east ), pi ) );
+}
+
+TEST_CASE( "r3d_edge_alert_sectors", "[r3d]" )
+{
+    const float pi = 3.14159265f;
+    const float fovx = pi * 0.5f; // 90 degrees
+    using r3d::edge_side;
+    // The eight neighbours of the player, indexed like the headings.
+    const int steps[8][2] = { { 0, -1 }, { 1, -1 }, { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 } };
+    // By how many eighths clockwise the neighbour is from the heading -> the edge that lights.
+    // The diagonals ahead are exactly on the picture's edge at 90 degrees, so they count as in it.
+    const edge_side expected[8] = {
+        edge_side::none, edge_side::none, edge_side::right, edge_side::right,
+        edge_side::behind, edge_side::left, edge_side::left, edge_side::none
+    };
+    for( int h = 0; h < 8; ++h ) {
+        const float yaw = r3d::heading_bearing( h );
+        for( int n = 0; n < 8; ++n ) {
+            const float rel = r3d::relative_bearing( static_cast<float>( steps[n][0] ),
+                              static_cast<float>( steps[n][1] ), yaw );
+            const int off = ( ( n - h ) % 8 + 8 ) % 8;
+            INFO( "heading " << h << " neighbour " << n );
+            CHECK( r3d::edge_alert_side( rel, fovx ) == expected[off] );
+        }
+    }
+    // A wider view takes the side neighbours (90 degrees off) into the picture.
+    CHECK( r3d::edge_alert_side( pi * 0.5f, pi * 0.9f ) == edge_side::right );
+    CHECK( r3d::edge_alert_side( -pi * 0.5f, pi * 1.1f ) == edge_side::none );
+}
+
+TEST_CASE( "r3d_ceilings_close_everything_but_open_air", "[r3d]" )
+{
+    r3d::shape floor;
+    floor.kind = r3d::shape_kind::floor;
+    floor.height = r3d::floor_height;
+    r3d::shape pane;
+    pane.kind = r3d::shape_kind::pane;
+    pane.height = 1.0f;
+    r3d::shape table;
+    table.kind = r3d::shape_kind::prism;
+    table.height = 0.4f;
+    table.slab = 0.08f;
+    r3d::shape upright;
+    upright.kind = r3d::shape_kind::upright;
+    upright.height = 1.4f;
+    r3d::neighbourhood nb;
+    // A window or door in a wall line gets the room's ceiling under a floor above.
+    nb.up = floor;
+    CHECK( ( r3d::visible_faces( pane, nb ) & r3d::face_ceiling ) != 0 );
+    // It has no other faces: the mesher draws the frame itself.
+    CHECK( ( r3d::visible_faces( pane, nb ) & ~r3d::face_ceiling ) == 0 );
+    // A window pane, a table or a shrub upstairs leaves no hole in the ceiling below.
+    for( const r3d::shape &up : { pane, table, upright } ) {
+        nb.up = up;
+        CHECK( ( r3d::visible_faces( floor, nb ) & r3d::face_ceiling ) != 0 );
+    }
+    // Trees reach into the level above: never a ceiling over one.
+    nb.up = floor;
+    CHECK( ( r3d::visible_faces( upright, nb ) & r3d::face_ceiling ) == 0 );
+    // Open air above a window: sky.
+    nb.up = r3d::shape();
+    CHECK( ( r3d::visible_faces( pane, nb ) & r3d::face_ceiling ) == 0 );
+}

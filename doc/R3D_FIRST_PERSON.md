@@ -37,6 +37,19 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
   `flags.y`), like the 2D marker drawn over the map. Sounds outside the horizontal field of
   view are yellow ticks on the compass strip instead (dimmer at the strip's ends when behind).
   The crosshair label now names only tiles you see or remember.
+* Review of bearings and ceilings: done. The compass, the threat and sound ticks and the edge
+  alert go through the pure `src/r3d_hud.{h,cpp}` (bearing = radians clockwise from north with
+  the map's y south, the same convention as `camera::heading`, `fp_yaw()`, `eighths_towards` and
+  `forward_eighths`), tested in `tests/r3d_test.cpp` for all eight headings. Found and fixed: a
+  diagonal neighbour at the default 90 degree view sits exactly on the picture's edge, and
+  float rounding lit the side bar for some headings and not others; the edge now counts as in
+  the picture. Rear diagonals (135 degrees) light their side bar, only straight behind lights the
+  bottom bar. Ceilings: windows and doors in a wall line used to get no ceiling (a hole above
+  every door); the ceiling now runs on over them, and anything but open air above closes the
+  room (a window pane, a shrub on a roof, solid furniture standing on open air). Trees still get
+  none. Ceiling shade stays 170 (150 for the floor-sprite fallback): darker than any floor or
+  wall cap (255), about the walls' darker sides (128-178), with the plaster colour as tint like
+  plaster walls and caps, and lit by its own tile like the floor.
 
 What to test locally (FP0): toggle with ctrl+F in a house; the picture is a perspective view from
 eye height; left/right arrows (with `R3D_WASD` on, the default) or ctrl+left/right turn by 45

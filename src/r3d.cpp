@@ -232,6 +232,9 @@ struct light_sampler {
     // Lowest level whose visibility cache the game keeps up to date for this view (see
     // map::update_visibility_cache); anything below can only show what is remembered.
     int vision_floor = -OVERMAP_DEPTH;
+    // Levels above this have no visibility cache of their own (the game only computes up to
+    // the viewed level); they take the light of the ground below them.
+    int vision_top = OVERMAP_HEIGHT;
 
     uint32_t color_at( const tripoint_bub_ms &p ) const {
         if( !here.inbounds( p ) ) {
@@ -241,6 +244,13 @@ struct light_sampler {
         static const bool fullbright = std::getenv( "CATA_R3D_FULLBRIGHT" ) != nullptr;
         if( fullbright ) {
             return pack_light( 255, 255, 255 );
+        }
+        if( p.z() > vision_top ) {
+            const uint32_t below = color_at( tripoint_bub_ms( p.xy(), vision_top ) );
+            if( below != pack_light( 0, 0, 0 ) ) {
+                return below;
+            }
+            return you.has_memory_at( here.get_abs( p ) ) ? remembered_light() : pack_light( 0, 0, 0 );
         }
         if( p.z() < vision_floor ) {
             return you.has_memory_at( here.get_abs( p ) ) ? remembered_light() : pack_light( 0, 0, 0 );
@@ -567,7 +577,14 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     const int view_z = origin.z();
     const bool multi_z = here.supports_zlevels() != 0;
     const int depth = multi_z ? get_option<int>( "R3D_VIEW_DEPTH" ) : 0;
-    const int z_hi = view_z;
+    // Outdoors the storeys above are drawn too, so buildings stand at full height; under a roof
+    // they are cut away to show the room.
+    constexpr int max_levels_above = 5;
+    const tripoint_bub_ms overhead = center + tripoint_rel_ms( 0, 0, 1 );
+    const bool open_sky = !multi_z || !here.inbounds( overhead ) ||
+                          s.cache.terrain( here.ter( overhead ), *tilecontext ).sh.kind == shape_kind::empty;
+    const int z_hi = multi_z && open_sky ? std::min( view_z + max_levels_above, OVERMAP_HEIGHT ) :
+                     view_z;
     const int z_lo = std::max( view_z - depth, -OVERMAP_DEPTH );
     const tripoint_abs_sm base = here.get_abs_sub();
 
@@ -590,7 +607,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     const int vision_floor = std::max( std::min( view_z, get_avatar().posz() - fov_3d_z_range ),
                                        -OVERMAP_DEPTH );
     const light_sampler sampler{ here, here.get_visibility_variables_cache(), get_avatar(),
-                                 vision_floor };
+                                 vision_floor, view_z };
     const uint64_t frame_light_key = light_key( here, origin, z_lo, z_hi );
 
     // The scene is drawn in a frame whose origin is the viewed tile, which keeps floats small.

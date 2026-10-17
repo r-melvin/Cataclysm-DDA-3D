@@ -534,6 +534,9 @@ void emit_wall_side( quad_sink &sink, const tile_info &t, int x, int y, face_bit
 {
     if( t.side.valid ) {
         emit_side( sink, t.side, x, y, face, z_base, z_top, tinted( ref, t.side_tint ) );
+    } else if( t.elevation_split >= 0.0f ) {
+        // The sprite's rows from the coving down to the skirting, once over the storey.
+        emit_side_layers( sink, t, x, y, face, z_base, z_top, ref, sprite_band{ t.elevation_split, 1.0f } );
     } else {
         emit_side_layers( sink, t, x, y, face, z_base, z_top, ref );
     }
@@ -633,6 +636,14 @@ chunk_mesh quad_sink::finish()
     return mesh;
 }
 
+void tile_info_cache::set_plaster_atlas( bool on )
+{
+    if( on != plaster_atlas_ ) {
+        plaster_atlas_ = on;
+        clear();
+    }
+}
+
 void tile_info_cache::set_wall_sides( std::shared_ptr<const wall_sides> sides )
 {
     wall_sides_ = std::move( sides );
@@ -688,7 +699,14 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int sub
         // tileset's own look: its sprite is repeated up the sides and tops the wall. Painted
         // and plain walls, whose sprites only give a colour, take the atlas texture instead.
         const bool patterned_material = !name.empty() && name != "plaster" && info.sprite.valid;
-        if( !name.empty() && found != wall_sides_->names.end() && !patterned_material ) {
+        // A painted or plain wall's sprite is drawn as a front elevation: a band of framing at
+        // the top, then coving, the paint and a skirting board. Read that way it is the side,
+        // and the framing band tops the wall; the atlas plaster is the alternative.
+        constexpr float framing_rows = 0.17f;
+        if( !patterned_material && !plaster_atlas_ && info.sprite.valid ) {
+            const sprite_ref &art = info.sprite;
+            info.elevation_split = art.opaque_y0 + ( art.opaque_y1 - art.opaque_y0 ) * framing_rows;
+        } else if( !name.empty() && found != wall_sides_->names.end() && !patterned_material ) {
             const uv_rect uv = atlas_cell( static_cast<int>( found - wall_sides_->names.begin() ),
                                            wall_sides_->cell, wall_sides_->width, wall_sides_->height );
             if( uv.valid ) {
@@ -974,6 +992,11 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                         if( terrain.cap.valid ) {
                             emit_top( sink, terrain.cap, lx, ly, ts.height,
                                       tinted( make_ref( lx, ly, 0, 0, 0, face_shade[0] ), terrain.cap_tint ) );
+                        } else if( terrain.elevation_split >= 0.0f ) {
+                            // The framing band at the top of the elevation tops the wall.
+                            emit_top_layers( sink, terrain, lx, ly, ts.height,
+                                             make_ref( lx, ly, 0, 0, 0, face_shade[0] ),
+                                             1.0f - terrain.elevation_split );
                         } else {
                             emit_top_layers( sink, terrain, lx, ly, ts.height,
                                              make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );

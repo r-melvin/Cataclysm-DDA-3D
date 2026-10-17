@@ -123,7 +123,8 @@ struct state {
     shown_view shown;
     bool map_drawn = false; // the game's map view has been on screen (a game is running)
     vec3 pan; // free camera: offset of the camera target from the viewed tile, world space
-    bool walls_on = false; // whether the cache was given the wall side textures
+    bool walls_on = false; // whether the cache was given the wall side rules and atlas
+    bool plaster_atlas = false; // whether painted walls take the atlas plaster (see the option)
 };
 
 state &st()
@@ -869,12 +870,18 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         s.epoch_valid = true;
     }
 
-    // Wall side textures follow their option; switching it rebuilds every chunk.
-    const bool want_walls = get_option<bool>( "R3D_WALL_TEXTURES" );
-    if( want_walls != s.walls_on ) {
+    // The wall-side rules and atlas are always loaded (they name each wall's material); the
+    // option only decides whether painted walls take the atlas plaster or their own sprite.
+    // Switching it rebuilds every chunk.
+    if( !s.walls_on ) {
+        s.cache.set_wall_sides( load_wall_sides( s.device ) );
+        s.walls_on = true;
+    }
+    const bool want_atlas = get_option<bool>( "R3D_WALL_TEXTURES" );
+    if( want_atlas != s.plaster_atlas ) {
         release_all_chunks( s );
-        s.cache.set_wall_sides( want_walls ? load_wall_sides( s.device ) : nullptr );
-        s.walls_on = want_walls;
+        s.cache.set_plaster_atlas( want_atlas );
+        s.plaster_atlas = want_atlas;
     }
 
     // A tileset (re)load swaps the sheet textures and may lay the atlas out differently

@@ -63,6 +63,10 @@ struct tile_info {
     bool tree = false;   // the level above holds its treetop, which this sprite already shows
     sprite_ref side;     // texture for the sides of a wall (see wall_sides), else invalid
     sprite_ref cap;      // the top of such a wall: a plain patch of the same texture
+    // >= 0: the wall's sprite is a front elevation (tilesets draw painted walls as a band of
+    // framing over coving, paint and skirting); rows below this fraction of the sprite are the
+    // side, from coving to skirting, and the rows above it top the wall
+    float elevation_split = -1.0f;
     uint32_t side_tint = 0xffffffu; // 0xRRGGBB colours for the side texture and the cap
     uint32_t cap_tint = 0xffffffu;
     bool see_through = false; // transparent terrain (fences, bars): the floor shows through it
@@ -105,6 +109,9 @@ class tile_info_cache
         void clear();
         /** Side textures for walls from now on (nullptr for the tileset sprite); clears. */
         void set_wall_sides( std::shared_ptr<const wall_sides> sides );
+        /** Whether painted and plain walls take the atlas's plaster texture (true) or their own
+         *  sprite read as a front elevation (false). Clears the cache when it changes. */
+        void set_plaster_atlas( bool on );
         /**
          * With subtile/rota (see cata_tiles::get_orientation) the sprites are those the flat view
          * draws for that connection; the shape never depends on them.
@@ -123,6 +130,7 @@ class tile_info_cache
         tile_info ground_;
         bool ground_loaded_ = false;
         std::shared_ptr<const wall_sides> wall_sides_;
+        bool plaster_atlas_ = false;
 };
 
 /** Where a vertex gets its light from: the tile at (lx + dx, ly + dy) on level (chunk z + dz). */

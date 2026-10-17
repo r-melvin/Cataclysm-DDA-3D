@@ -2935,7 +2935,7 @@ std::optional<texture_draw_data> cata_tiles::get_texture_draw_data( const std::s
     std::pair<float, float> uv0{ rect.x / static_cast<float>( buf_w ), rect.y / static_cast<float>( buf_h ) };
     std::pair<float, float> uv1{ ( rect.x + rect.w ) / static_cast<float>( buf_w ), ( rect.y + rect.h ) / static_cast<float>( buf_h ) };
 
-    return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1, texture_ptr, 1.0f, 1.0f, 0, false, tile->get_opaque_rect(), tile->get_top_color(), tile->get_body_color() };
+    return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1, texture_ptr, 1.0f, 1.0f, 0, false, tile->get_opaque_rect(), tile->get_top_color(), tile->get_body_color(), 0 };
 }
 
 // Which of the four neighbours (south, east, west, north, as map::get_known_connections orders
@@ -3088,7 +3088,7 @@ std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::st
     const float base_h = static_cast<float>( std::max( 1, tileset_ptr->get_tile_height() ) );
     return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1, texture_ptr, rect.w / base_w,
                               rect.h / base_h, quarter_turns, flip, tile->get_opaque_rect(),
-                              tile->get_top_color(), tile->get_body_color() };
+                              tile->get_top_color(), tile->get_body_color(), rota > 0 ? rota % 4 : 0 };
 }
 
 std::unordered_set<std::string> cata_tiles::get_all_portrait_tile_ids( bool male ) const

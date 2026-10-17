@@ -85,6 +85,7 @@ sprite_ref to_sprite_ref( const texture_draw_data &data )
     ref.top_color = data.top_color;
     ref.body_color = data.body_color;
     ref.quarter_turns = data.quarter_turns;
+    ref.facing = data.facing;
     ref.flip = data.flip;
     if( data.opaque.w > 0 && data.opaque.h > 0 && data.dimensions.w > 0 && data.dimensions.h > 0 ) {
         const float w = static_cast<float>( data.dimensions.w );
@@ -264,7 +265,7 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
     float fx1 = s.flip ? 1.0f - b.x0 : b.x1;
     float fy0 = b.y0;
     float fy1 = b.y1;
-    for( int t = 0; t < ( s.quarter_turns & 3 ); ++t ) {
+    for( int t = 0; t < ( s.facing & 3 ); ++t ) {
         const float nx0 = 1.0f - fy1;
         const float nx1 = 1.0f - fy0;
         fy0 = fx0;
@@ -300,10 +301,17 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
     // A slab (bench seat, table top) only has sides as thick as itself, an underside, and legs.
     const float zs = slab > 0.0f ? std::max( z1 - slab, z0 ) : z0;
 
-    // Sides: the side rows, never turned; left/right as seen from outside.
+    // Sides: the side rows, never turned; left/right as seen from outside. Only the front (the
+    // south face of the art, turned with the thing) shows them whole; the other sides repeat a
+    // thin strip from the edge of the front, so locker doors appear on the front only.
     const float sv0 = s.v0 + dv * b.side_top;
     const float sv1 = s.v0 + dv * b.side_bottom;
     const uvs_t side_uv = {{ { u0, sv0 }, { u1, sv0 }, { u1, sv1 }, { u0, sv1 } }};
+    const float edge_u0 = u1 - ( u1 - u0 ) * 0.08f;
+    const uvs_t plain_uv = {{ { edge_u0, sv0 }, { u1, sv0 }, { u1, sv1 }, { edge_u0, sv1 } }};
+    // south, west, north, east: where the front ends up after each clockwise quarter turn
+    static constexpr std::array<face_bit, 4> front_after = {{ face_south, face_west, face_north, face_east }};
+    const face_bit front = front_after[static_cast<size_t>( s.facing & 3 )];
     constexpr float edge = 0.01f;
     const struct {
         face_bit face;
@@ -324,7 +332,7 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
                 { ox + sd.rx, oy + sd.ry, zs }, { ox + sd.lx, oy + sd.ly, zs }
             }
         };
-        sink.add( s, c, side_uv, refs[sd.ref] );
+        sink.add( s, c, sd.face == front || slab > 0.0f ? side_uv : plain_uv, refs[sd.ref] );
     }
     if( zs <= z0 ) {
         return;

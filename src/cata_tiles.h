@@ -747,6 +747,9 @@ struct texture_draw_data {
     // average colours of its top and the rest (see sprite_scan)
     uint32_t top_color = 0;
     uint32_t body_color = 0;
+    // clockwise quarter turns the thing faces (its front away from south), whether the art is
+    // turned (quarter_turns) or the tileset has a sprite drawn for that direction
+    int facing = 0;
 };
 
 /** type used for color blocks overlays.

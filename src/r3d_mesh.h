@@ -40,6 +40,7 @@ struct sprite_ref {
     float size_x = 1.0f; // sprite size in tiles; tall sprites (size_y > size_x) overflow upwards
     float size_y = 1.0f;
     int quarter_turns = 0; // clockwise, applied to top faces like the flat view turns the sprite
+    int facing = 0;        // clockwise quarter turns the front of the thing faces from south
     bool flip = false;     // mirrored horizontally
     uint32_t top_color = 0;  // average colours from the tileset loader (see sprite_scan)
     uint32_t body_color = 0;

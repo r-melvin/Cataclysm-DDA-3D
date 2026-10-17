@@ -9,11 +9,14 @@ namespace
 {
 constexpr float tree_height = 1.4f;
 constexpr float shrub_height = 0.7f;
-constexpr float tiny_height = 0.25f;
-constexpr float low_height = 0.45f;
-constexpr float surface_height = 0.55f;
-constexpr float default_furniture_height = 0.7f;
-constexpr float tall_furniture_height = 0.9f;
+// Furniture heights are in z-levels, which the view draws about 1.6 tiles (2.5 m) tall: a bench
+// seat ~0.45 m, a table or counter ~0.75 m, a locker ~1.8 m.
+constexpr float tiny_height = 0.15f;
+constexpr float low_height = 0.28f;
+constexpr float surface_height = 0.4f;
+constexpr float default_furniture_height = 0.5f;
+constexpr float tall_furniture_height = 0.8f;
+constexpr float slab_thickness = 0.04f;
 // Floor-like furniture (rugs, carpets) sits just above the terrain floor.
 constexpr float decal_height = floor_height + 0.01f;
 } // namespace
@@ -51,7 +54,9 @@ shape classify_furniture( const tile_traits &t )
     // the box's top and the rest its sides. Low or flat-topped pieces (benches, counters, tables)
     // are low boxes, other impassable ones (lockers, fridges) tall ones.
     if( t.low || t.flat_surface ) {
-        return { shape_kind::prism, t.flat_surface ? surface_height : low_height };
+        const float height = t.flat_surface ? surface_height : low_height;
+        // Benches and tables are a top on legs; cabinets and counters holding items are solid.
+        return { shape_kind::prism, height, t.container ? 0.0f : slab_thickness };
     }
     if( t.move_cost <= 0 ) {
         return { shape_kind::prism, tall_furniture_height };

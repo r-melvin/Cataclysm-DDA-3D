@@ -410,9 +410,15 @@ TEST_CASE( "r3d_furniture_shapes", "[r3d]" )
     const r3d::shape bench = r3d::classify_furniture( t );
     CHECK( bench.kind == r3d::shape_kind::prism );
     CHECK( bench.height < locker.height );
+    // Benches and tables are a thin top on legs, cabinets are solid.
+    CHECK( bench.slab > 0.0f );
+    CHECK( bench.slab < bench.height );
+    CHECK( locker.slab == 0.0f );
     t = {};
     t.flat_surface = true;
     CHECK( r3d::classify_furniture( t ).kind == r3d::shape_kind::prism );
+    t.container = true;
+    CHECK( r3d::classify_furniture( t ).slab == 0.0f );
 
     t = {};
     t.flat = true;

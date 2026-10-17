@@ -20,6 +20,7 @@ enum class shape_kind : uint8_t {
 struct shape {
     shape_kind kind = shape_kind::empty;
     float height = 0.0f; // top of the solid part within the cell, in tile units
+    float slab = 0.0f;   // prism only: > 0 is a top this thick on legs (benches, tables)
 
     bool operator==( const shape &o ) const {
         return kind == o.kind && height == o.height;
@@ -39,6 +40,7 @@ struct tile_traits {
     bool tiny = false;
     bool low = false;       // TFLAG_SHORT
     bool flat_surface = false;
+    bool container = false; // furniture that holds items inside (cabinets): solid, not on legs
     bool window = false;
     bool door = false;      // a door in a wall line, open or closed
     int move_cost = 100;    // <= 0: cannot be walked through

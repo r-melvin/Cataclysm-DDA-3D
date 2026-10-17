@@ -37,6 +37,7 @@ tile_traits traits_of( const map_data_common_t &d )
     t.low = d.has_flag( ter_furn_flag::TFLAG_SHORT );
     t.flat_surface = d.has_flag( ter_furn_flag::TFLAG_FLAT_SURF );
     t.window = d.has_flag( ter_furn_flag::TFLAG_WINDOW );
+    t.container = d.has_flag( ter_furn_flag::TFLAG_CONTAINER );
     // Locked and damaged doors lack DOOR but are barricadable as doors.
     t.door = d.has_flag( ter_furn_flag::TFLAG_DOOR ) || d.has_flag( "BARRICADABLE_DOOR" ) ||
              d.has_flag( "BARRICADABLE_DOOR_DAMAGED" ) || d.has_flag( "BARRICADABLE_DOOR_REINFORCED" );
@@ -233,7 +234,8 @@ void emit_pane( quad_sink &sink, const sprite_ref &s, int x, int y, bool along_x
 // the sprite. refs: top, north, south, west, east. faces says which sides neighbours leave open;
 // a side that stops short of its tile edge is always drawn.
 void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, float z1,
-               const box_layout &b, uint8_t faces, const std::array<light_ref, 5> &refs )
+               const box_layout &b, uint8_t faces, const std::array<light_ref, 5> &refs,
+               float slab = 0.0f )
 {
     if( !s.valid ) {
         return;
@@ -276,6 +278,9 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
         sink.add( s, c, uv, refs[0] );
     }
 
+    // A slab (bench seat, table top) only has sides as thick as itself, an underside, and legs.
+    const float zs = slab > 0.0f ? std::max( z1 - slab, z0 ) : z0;
+
     // Sides: the side rows, never turned; left/right as seen from outside.
     const float sv0 = s.v0 + dv * b.side_top;
     const float sv1 = s.v0 + dv * b.side_bottom;
@@ -297,10 +302,59 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
             continue;
         }
         const corners_t c = {{ { ox + sd.lx, oy + sd.ly, z1 }, { ox + sd.rx, oy + sd.ry, z1 },
-                { ox + sd.rx, oy + sd.ry, z0 }, { ox + sd.lx, oy + sd.ly, z0 }
+                { ox + sd.rx, oy + sd.ry, zs }, { ox + sd.lx, oy + sd.ly, zs }
             }
         };
         sink.add( s, c, side_uv, refs[sd.ref] );
+    }
+    if( zs <= z0 ) {
+        return;
+    }
+
+    // Underside of the slab, in the shade of a side.
+    const corners_t under = {{ { ox + fx0, oy + fy1, zs }, { ox + fx1, oy + fy1, zs },
+            { ox + fx1, oy + fy0, zs }, { ox + fx0, oy + fy0, zs }
+        }
+    };
+    sink.add( s, under, side_uv, refs[3] );
+
+    // Legs at the free corners: a corner between two sides that join a neighbouring piece (a
+    // long connected bench) has none, so only the ends of a row stand on legs.
+    constexpr float leg = 0.07f;
+    constexpr float inset = 0.05f;
+    const bool open_n = ( faces & face_north ) != 0 || fy0 > edge;
+    const bool open_s = ( faces & face_south ) != 0 || fy1 < 1.0f - edge;
+    const bool open_w = ( faces & face_west ) != 0 || fx0 > edge;
+    const bool open_e = ( faces & face_east ) != 0 || fx1 < 1.0f - edge;
+    const struct {
+        bool show;
+        float x;
+        float y;
+    } legs[] = {
+        { open_n && open_w, fx0 + inset, fy0 + inset },
+        { open_n && open_e, fx1 - inset - leg, fy0 + inset },
+        { open_s && open_w, fx0 + inset, fy1 - inset - leg },
+        { open_s && open_e, fx1 - inset - leg, fy1 - inset - leg },
+    };
+    for( const auto &l : legs ) {
+        if( !l.show ) {
+            continue;
+        }
+        const float lx0 = ox + l.x;
+        const float ly0 = oy + l.y;
+        const float lx1 = lx0 + leg;
+        const float ly1 = ly0 + leg;
+        const std::array<std::array<float, 4>, 4> post = {{
+                { lx1, ly0, lx0, ly0 }, { lx0, ly1, lx1, ly1 }, { lx0, ly0, lx0, ly1 }, { lx1, ly1, lx1, ly0 }
+            }
+        };
+        for( size_t i = 0; i < post.size(); ++i ) {
+            const corners_t c = {{ { post[i][0], post[i][1], zs }, { post[i][2], post[i][3], zs },
+                    { post[i][2], post[i][3], z0 }, { post[i][0], post[i][1], z0 }
+                }
+            };
+            sink.add( s, c, side_uv, refs[i + 1] );
+        }
     }
 }
 
@@ -735,7 +789,8 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                     make_ref( lx, ly, 1, 0, 0, face_shade[4] )
                 }
             };
-            emit_box( sink, spr, lx, ly, ts.height, fs.height, layout, visible_faces( fs, nb ), refs );
+            emit_box( sink, spr, lx, ly, ts.height, fs.height, layout, visible_faces( fs, nb ), refs,
+                      fs.slab );
         }
     }
     chunk_mesh mesh = sink.finish();

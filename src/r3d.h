@@ -6,6 +6,8 @@
 // every build; without TILES everything is an inline no-op.
 
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "coordinates.h"
 
@@ -29,6 +31,23 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
 
 /** Releases all GPU objects; call before the renderer goes away. */
 void shutdown();
+
+/**
+ * A label of the first-person overlay, for the caller to draw after draw() in the game's own
+ * font so it matches the sidebar. x, y in the pixels given to draw(); y is the top of the text;
+ * color is a curses colour index of the font's palette.
+ */
+struct hud_text {
+    float x = 0.0f;
+    float y = 0.0f;
+    std::string text;
+    unsigned char color = 15;
+    bool centred = false; // x is the middle of the text rather than its left end
+};
+/** The size of a character cell of the font the overlay's labels are drawn in. */
+void set_hud_font( int cell_width, int cell_height );
+/** Labels of the last drawn first-person overlay; empty when draw() drew none. */
+const std::vector<hud_text> &hud_texts();
 
 /** True when the option is on, the GPU renderer is available and the 3D scene is drawn. */
 bool active();

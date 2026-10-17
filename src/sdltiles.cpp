@@ -4090,6 +4090,28 @@ bool renderer_recovery_test_support::draw_test_minimap_window( const catacurses:
     } );
 }
 
+// Labels of the first-person 3D overlay, in the same font as the sidebar, each over a dark
+// shadow so they stay readable on a bright picture.
+static void draw_r3d_hud_texts()
+{
+    for( const r3d::hud_text &t : r3d::hud_texts() ) {
+        const int width = utf8_width( t.text ) * font->width;
+        const point origin( static_cast<int>( t.x ) - ( t.centred ? width / 2 : 0 ),
+                            static_cast<int>( t.y ) );
+        for( const bool shadow : { true, false } ) {
+            curses_text_batch.begin_pass( renderer, !text_atlas_enabled( renderer ) );
+            int column = 0;
+            for( const char32_t ch : utf8_view( t.text ) ) {
+                const point p = origin + point( column * font->width + ( shadow ? 1 : 0 ), shadow ? 1 : 0 );
+                font->queue_char( curses_text_batch, renderer, utf32_to_utf8( ch ), p,
+                                  shadow ? 0 : t.color );
+                column += mk_wcwidth( ch );
+            }
+            curses_text_batch.flush( renderer );
+        }
+    }
+}
+
 void cata_cursesport::curses_drawwindow( const catacurses::window &w )
 {
     display_buffer_draw_scope draw_scope;
@@ -4115,13 +4137,16 @@ void cata_cursesport::curses_drawwindow( const catacurses::window &w )
 
         // game::w_terrain can be drawn by the tilecontext.
         // skip the normal drawing code for it.
+        r3d::set_hud_font( font->width, font->height );
         const bool drawn_3d = r3d::draw( renderer.get(),
                                          static_cast<float>( win->pos.x * fontwidth ),
                                          static_cast<float>( win->pos.y * fontheight ),
                                          static_cast<float>( TERRAIN_WINDOW_TERM_WIDTH * font->width ),
                                          static_cast<float>( TERRAIN_WINDOW_TERM_HEIGHT * font->height ),
                                          g->ter_view_p, curses_render_epoch );
-        if( !drawn_3d ) {
+        if( drawn_3d ) {
+            draw_r3d_hud_texts();
+        } else {
             tilecontext->draw(
                 point( win->pos.x * fontwidth, win->pos.y * fontheight ),
                 g->ter_view_p,

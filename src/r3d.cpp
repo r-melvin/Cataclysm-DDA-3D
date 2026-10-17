@@ -141,6 +141,9 @@ struct state {
     uint32_t fp_ease_ms = 0;
     bool fp_easing = false; // the last frame was drawn mid-ease, so another is needed
     int fp_heading_saved = 0; // the heading last written to the save's UI state
+    std::vector<hud_text> hud; // labels of the first-person overlay, see hud_texts()
+    int hud_cell_w = 8;        // the size of a character of the font they are drawn in
+    int hud_cell_h = 16;
 };
 
 state &st()
@@ -851,6 +854,18 @@ void compare_capture()
     g->invalidate_main_ui_adaptor();
 }
 
+void set_hud_font( int cell_width, int cell_height )
+{
+    state &s = st();
+    s.hud_cell_w = std::max( 1, cell_width );
+    s.hud_cell_h = std::max( 1, cell_height );
+}
+
+const std::vector<hud_text> &hud_texts()
+{
+    return st().hud;
+}
+
 bool active()
 {
     return st().drawn && get_option<bool>( "RENDERER_3D" );
@@ -1085,7 +1100,8 @@ namespace
 // (the game keeps full-circle vision, so this shows what is behind you), an alert on the edge
 // nearest an adjacent hostile that is out of the picture, and a crosshair with its label.
 // Bearings follow r3d_hud.h: radians clockwise from north, relative to the view's yaw.
-void draw_fp_hud( SDL_Renderer *renderer, float x, float y, float w, float h, const camera &cam )
+void draw_fp_hud( state &s, SDL_Renderer *renderer, float x, float y, float w, float h,
+                  const camera &cam )
 {
     constexpr float pi = 3.14159265f;
     // The compass strip shows half a turn: the view in the middle, what is beside you at the ends.
@@ -1106,14 +1122,18 @@ void draw_fp_hud( SDL_Renderer *renderer, float x, float y, float w, float h, co
         const SDL_FRect rect{ rx, ry, rw, rh };
         SDL_RenderFillRect( renderer, &rect );
     };
-    auto text = [&]( float tx, float ty, const std::string & str, uint8_t r, uint8_t g, uint8_t b ) {
-        SDL_SetRenderDrawColor( renderer, r, g, b, 255 );
-        SDL_RenderDebugText( renderer, tx, ty, str.c_str() );
+    // Labels are drawn by the caller in the game's font (see hud_texts), centred on tx.
+    auto text = [&]( float tx, float ty, const std::string & str, unsigned char color ) {
+        s.hud.push_back( { tx, ty, str, color, true } );
     };
+    constexpr unsigned char white = 15;
+    constexpr unsigned char light_gray = 7;
+    const float cell_h = static_cast<float>( s.hud_cell_h );
 
     if( compass != "off" ) {
         const float strip_w = std::max( 120.0f, w * 0.4f );
-        const float strip_h = 22.0f;
+        // Room for one line of text above the ticks' footing.
+        const float strip_h = std::max( 22.0f, cell_h + 8.0f );
         const float left = x + ( w - strip_w ) * 0.5f;
         const float top = y + 6.0f;
         const float mid = left + strip_w * 0.5f;
@@ -1127,11 +1147,9 @@ void draw_fp_hud( SDL_Renderer *renderer, float x, float y, float w, float h, co
             if( !on_compass( rel, compass_span ) ) {
                 continue;
             }
-            const float tx = strip_x( rel );
             const std::string label = names[i];
             const bool cardinal = label.size() == 1;
-            text( tx - 4.0f * static_cast<float>( label.size() ), top + 2.0f, label, cardinal ? 255 : 170,
-                  cardinal ? 255 : 170, cardinal ? 255 : 170 );
+            text( strip_x( rel ), top + 1.0f, label, cardinal ? white : light_gray );
         }
         fill( mid - 1.0f, top + strip_h - 5.0f, 2.0f, 5.0f, 255, 255, 255, 255 );
         // Sounds heard this turn that are not in the picture: a short yellow tick each, dimmer
@@ -1201,7 +1219,7 @@ void draw_fp_hud( SDL_Renderer *renderer, float x, float y, float w, float h, co
             }
         }
         if( !label.empty() ) {
-            text( cx - 4.0f * static_cast<float>( label.size() ), cy + 10.0f, label, 255, 255, 255 );
+            text( cx, cy + 8.0f, label, white );
         }
     }
 }
@@ -1214,6 +1232,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     state &s = st();
     s.drawn = false;
     s.map_drawn = true;
+    s.hud.clear();
     if( !get_option<bool>( "RENDERER_3D" ) ) {
         if( s.device.ready() ) {
             shutdown();
@@ -1541,7 +1560,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     s.shown = { true, x, y, w, h, s.cam, center, z_lo, z_hi };
     s.drawn = true;
     if( fp ) {
-        draw_fp_hud( renderer, x, y, w, h, s.cam );
+        draw_fp_hud( s, renderer, x, y, w, h, s.cam );
     }
     return true;
 }

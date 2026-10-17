@@ -64,7 +64,9 @@ over that time; it is skipped while travelling, during activities and with ANIMA
 redraws at about 60 Hz only while an ease is live (`r3d::animating()`).
 
 FP5 options: `R3D_FP_COMPASS` (off / heading / threats, default threats), `R3D_FP_EDGE_ALERT`,
-`R3D_FP_CROSSHAIR`. The overlay uses SDL's built-in 8x8 debug font for its few letters.
+`R3D_FP_CROSSHAIR`. The compass letters and the crosshair label are drawn in the game's own
+font (the sidebar's), with a one-pixel shadow: `r3d::draw` leaves them in `r3d::hud_texts()` and
+`sdltiles.cpp` draws them after the picture; the compass strip grows to fit the font's height.
 
 Design for a first-person, **turn-based** view on top of the existing `r3d` renderer
 (`src/r3d*.{h,cpp}`, SDL3 GPU). Target branch: `feature/r3d-first-person`. Companion to

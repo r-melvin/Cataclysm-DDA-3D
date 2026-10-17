@@ -635,6 +635,12 @@ void compare_capture()
             ui_manager::redraw();
         };
         redraw();
+        // The renderer only uploads the new tileset's textures when it presents, and the
+        // capture reads the 3D pass before any present: show one frame so the sheets the
+        // meshes sample from are on the GPU (SDL versions differ in when a flush uploads).
+        if( const SDL_Renderer_Ptr &r = get_sdl_renderer() ) {
+            SDL_RenderPresent( r.get() );
+        }
         state &s = st();
         if( s.cam.orthographic && iso_tile_width > 0 && s.shown.valid ) {
             // Same scale as the flat view: a tile (whose diagonal spans sqrt(2) across the

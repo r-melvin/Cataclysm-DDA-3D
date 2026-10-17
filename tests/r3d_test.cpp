@@ -8,6 +8,7 @@
 #include "r3d_dda.h"
 #include "r3d_math.h"
 #include "r3d_shapes.h"
+#include "r3d_wall_rules.h"
 
 namespace
 {
@@ -473,4 +474,39 @@ TEST_CASE( "r3d_face_visibility", "[r3d]" )
     r3d::neighbourhood low_next_to_tall;
     low_next_to_tall.east = tall;
     CHECK( ( r3d::visible_faces( low, low_next_to_tall ) & r3d::face_east ) == 0 );
+}
+
+TEST_CASE( "r3d_wall_texture_matching", "[r3d]" )
+{
+    r3d::wall_texture_rules rules;
+    rules.by_id = { { "t_wall", "plaster" }, { "t_wall_log_half", "logs" } };
+    rules.by_prefix = { { "t_wall_", "plaster" }, { "t_wall_log", "logs" }, { "t_brick_wall", "brick" } };
+
+    // Exact ids first, along the looks_like chain.
+    CHECK( r3d::match_wall_texture( rules, { "t_wall" } ) == "plaster" );
+    CHECK( r3d::match_wall_texture( rules, { "t_wall_log_half" } ) == "logs" );
+    CHECK( r3d::match_wall_texture( rules, { "t_mod_wall", "t_wall" } ) == "plaster" );
+    // Then the longest prefix.
+    CHECK( r3d::match_wall_texture( rules, { "t_wall_log_widened" } ) == "logs" );
+    CHECK( r3d::match_wall_texture( rules, { "t_wall_b" } ) == "plaster" );
+    CHECK( r3d::match_wall_texture( rules, { "t_brick_wall_halfway" } ) == "brick" );
+    // Nothing matches: the fallback, empty by default (keep the tileset sprite).
+    CHECK( r3d::match_wall_texture( rules, { "t_vat" } ).empty() );
+    rules.fallback = "concrete";
+    CHECK( r3d::match_wall_texture( rules, { "t_vat" } ) == "concrete" );
+}
+
+TEST_CASE( "r3d_wall_atlas_cells", "[r3d]" )
+{
+    // 4 x 3 cells of 32 pixels.
+    const r3d::uv_rect first = r3d::atlas_cell( 0, 32, 128, 96 );
+    REQUIRE( first.valid );
+    CHECK( approx( first.u0, 0.5f / 128.0f ) );
+    CHECK( approx( first.v1, 31.5f / 96.0f ) );
+    const r3d::uv_rect fifth = r3d::atlas_cell( 5, 32, 128, 96 );
+    REQUIRE( fifth.valid );
+    CHECK( approx( fifth.u0, 32.5f / 128.0f ) );
+    CHECK( approx( fifth.v0, 32.5f / 96.0f ) );
+    CHECK_FALSE( r3d::atlas_cell( 12, 32, 128, 96 ).valid );
+    CHECK_FALSE( r3d::atlas_cell( -1, 32, 128, 96 ).valid );
 }

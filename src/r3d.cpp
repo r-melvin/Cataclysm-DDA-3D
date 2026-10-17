@@ -9,26 +9,33 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "avatar.h"
 #include "calendar.h"
+#include "cata_path.h"
 #include "cata_tiles.h"
 #include "coordinates.h"
 #include "creature.h"
 #include "creature_tracker.h"
+#include "debug.h"
+#include "flexbuffer_json.h"
 #include "game_constants.h"
+#include "json_loader.h"
 #include "map.h"
 #include "map_scale_constants.h"
 #include "mapbuffer.h"
 #include "options.h"
+#include "path_info.h"
 #include "r3d_camera.h"
 #include "r3d_dda.h"
 #include "r3d_entities.h"
 #include "r3d_gpu.h"
 #include "r3d_mesh.h"
+#include "sdl_wrappers.h"
 #include "sdltiles.h"
 #include "submap.h"
 
@@ -110,6 +117,7 @@ struct state {
     uint32_t dyn_index_bytes = 0;
     shown_view shown;
     vec3 pan; // free camera: offset of the camera target from the viewed tile, world space
+    bool walls_on = false; // whether the cache was given the wall side textures
 };
 
 state &st()
@@ -200,6 +208,48 @@ bool rebuild_chunk( state &s, chunk_gpu &c, const tripoint_abs_sm &pos, uint64_t
     c.refs = std::move( mesh.light_refs );
     c.light = std::move( mesh.light );
     return true;
+}
+
+// Loads data/raw/r3d/wall_sides.{json,png} (see make_wall_textures.py) onto the renderer.
+// Nothing (the tileset sprites stay on wall sides) if either is missing or broken.
+std::shared_ptr<const wall_sides> load_wall_sides( SDL_Renderer *renderer )
+{
+    try {
+        const cata_path dir = PATH_INFO::datadir_path() / "raw" / "r3d";
+        std::optional<JsonValue> json = json_loader::from_path_opt( dir / "wall_sides.json" );
+        if( !json ) {
+            return nullptr;
+        }
+        JsonObject jo = *json;
+        jo.allow_omitted_members();
+        auto sides = std::make_shared<wall_sides>();
+        sides->cell = jo.get_int( "cell" );
+        for( const std::string name : jo.get_array( "textures" ) ) {
+            sides->names.push_back( name );
+        }
+        for( const JsonMember m : jo.get_object( "by_id" ) ) {
+            sides->rules.by_id[m.name()] = m.get_string();
+        }
+        for( const JsonMember m : jo.get_object( "by_prefix" ) ) {
+            sides->rules.by_prefix[m.name()] = m.get_string();
+        }
+        sides->rules.fallback = jo.get_string( "fallback", "" );
+
+        const SDL_Surface_Ptr surface = load_image( ( dir / "wall_sides.png" ).generic_u8string().c_str() );
+        SDL_Texture *const texture = SDL_CreateTextureFromSurface( renderer, surface.get() );
+        if( !texture ) {
+            DebugLog( D_WARNING, DC_ALL ) << "r3d: wall side textures: " << SDL_GetError();
+            return nullptr;
+        }
+        SDL_SetTextureScaleMode( texture, SDL_SCALEMODE_NEAREST );
+        sides->atlas.reset( texture, SDL_DestroyTexture );
+        sides->width = surface->w;
+        sides->height = surface->h;
+        return sides;
+    } catch( const std::exception &e ) {
+        DebugLog( D_WARNING, DC_ALL ) << "r3d: wall side textures not loaded: " << e.what();
+        return nullptr;
+    }
 }
 
 // Height of the solid part of a tile as drawn: 0 for open air, the floor slab, furniture or a
@@ -525,7 +575,8 @@ void shutdown()
     state &s = st();
     release_all_chunks( s );
     release_dynamic( s );
-    s.cache.clear();
+    s.cache.set_wall_sides( nullptr );
+    s.walls_on = false;
     s.probe_sheet.reset();
     s.device.shutdown();
     s.epoch_valid = false;
@@ -564,6 +615,14 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         }
         s.epoch = render_epoch;
         s.epoch_valid = true;
+    }
+
+    // Wall side textures follow their option; switching it rebuilds every chunk.
+    const bool want_walls = get_option<bool>( "R3D_WALL_TEXTURES" );
+    if( want_walls != s.walls_on ) {
+        release_all_chunks( s );
+        s.cache.set_wall_sides( want_walls ? load_wall_sides( renderer ) : nullptr );
+        s.walls_on = want_walls;
     }
 
     // A tileset reload swaps the sheet textures without necessarily bumping the epoch.

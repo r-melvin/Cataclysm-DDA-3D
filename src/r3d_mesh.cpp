@@ -387,6 +387,17 @@ void emit_side_layers( quad_sink &sink, const tile_info &t, int x, int y, face_b
     emit_side( sink, t.sprite, x, y, face, z_base, z_top, ref, dx, dy, band );
 }
 
+// A side of a wall block: its own side texture when it has one, else the tileset sprite.
+void emit_wall_side( quad_sink &sink, const tile_info &t, int x, int y, face_bit face, float z_base,
+                     float z_top, const light_ref &ref )
+{
+    if( t.side.valid ) {
+        emit_side( sink, t.side, x, y, face, z_base, z_top, ref );
+    } else {
+        emit_side_layers( sink, t, x, y, face, z_base, z_top, ref );
+    }
+}
+
 // How much of a 3/4-view furniture sprite is its front, for a box of the given height (in
 // z-levels): taller furniture shows more front. Storeys are drawn about 1.6 tiles tall.
 float front_fraction( float height )
@@ -469,6 +480,12 @@ chunk_mesh quad_sink::finish()
     return mesh;
 }
 
+void tile_info_cache::set_wall_sides( std::shared_ptr<const wall_sides> sides )
+{
+    wall_sides_ = std::move( sides );
+    clear();
+}
+
 void tile_info_cache::clear()
 {
     terrain_.clear();
@@ -501,6 +518,31 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int sub
     info.tree = traits.tree;
     if( info.sh.kind != shape_kind::empty ) {
         resolve_layers( tiles, t.id.str(), TILE_CATEGORY::TERRAIN, info, subtile, rota );
+    }
+    if( info.sh.kind == shape_kind::block && wall_sides_ ) {
+        // The id and what it looks like, nearest first, pick the side texture.
+        std::vector<std::string> chain{ t.id.str() };
+        std::string like = t.looks_like;
+        while( !like.empty() && chain.size() < 8 ) {
+            chain.push_back( like );
+            const ter_str_id next( like );
+            like = next.is_valid() ? next.obj().looks_like : std::string();
+        }
+        const std::string name = match_wall_texture( wall_sides_->rules, chain );
+        const auto found = std::find( wall_sides_->names.begin(), wall_sides_->names.end(), name );
+        if( !name.empty() && found != wall_sides_->names.end() ) {
+            const uv_rect uv = atlas_cell( static_cast<int>( found - wall_sides_->names.begin() ),
+                                           wall_sides_->cell, wall_sides_->width, wall_sides_->height );
+            if( uv.valid ) {
+                info.side.sheet = wall_sides_->atlas.get();
+                info.side.owner = wall_sides_->atlas;
+                info.side.u0 = uv.u0;
+                info.side.v0 = uv.v0;
+                info.side.u1 = uv.u1;
+                info.side.v1 = uv.v1;
+                info.side.valid = true;
+            }
+        }
     }
     return terrain_.emplace( key, info ).first->second;
 }
@@ -707,19 +749,19 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                                         make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
                     }
                     if( ( faces & face_north ) != 0 ) {
-                        emit_side_layers( sink, terrain, lx, ly, face_north, 0.0f, ts.height,
+                        emit_wall_side( sink, terrain, lx, ly, face_north, 0.0f, ts.height,
                                          make_ref( lx, ly, 0, -1, 0, face_shade[1] ) );
                     }
                     if( ( faces & face_south ) != 0 ) {
-                        emit_side_layers( sink, terrain, lx, ly, face_south, 0.0f, ts.height,
+                        emit_wall_side( sink, terrain, lx, ly, face_south, 0.0f, ts.height,
                                          make_ref( lx, ly, 0, 1, 0, face_shade[2] ) );
                     }
                     if( ( faces & face_west ) != 0 ) {
-                        emit_side_layers( sink, terrain, lx, ly, face_west, 0.0f, ts.height,
+                        emit_wall_side( sink, terrain, lx, ly, face_west, 0.0f, ts.height,
                                          make_ref( lx, ly, -1, 0, 0, face_shade[3] ) );
                     }
                     if( ( faces & face_east ) != 0 ) {
-                        emit_side_layers( sink, terrain, lx, ly, face_east, 0.0f, ts.height,
+                        emit_wall_side( sink, terrain, lx, ly, face_east, 0.0f, ts.height,
                                          make_ref( lx, ly, 1, 0, 0, face_shade[4] ) );
                     }
                     break;

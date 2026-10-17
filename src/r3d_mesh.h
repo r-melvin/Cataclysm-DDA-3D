@@ -17,6 +17,7 @@
 #include "coordinates.h"
 #include "r3d_gpu.h"
 #include "r3d_shapes.h"
+#include "r3d_wall_rules.h"
 #include "type_id.h"
 
 class cata_tiles;
@@ -53,6 +54,7 @@ struct tile_info {
     sprite_ref backdrop; // opaque background layer, drawn first when the tileset has one
     sprite_ref sprite;   // foreground layer (alpha tested, may be sparse)
     bool tree = false;   // the level above holds its treetop, which this sprite already shows
+    sprite_ref side;     // texture for the sides of a wall (see wall_sides), else invalid
 
     /** The layer that represents the tile when only one can be drawn (upright sprites). */
     const sprite_ref &main() const {
@@ -68,6 +70,16 @@ struct upright_sprite {
     const tile_info *info = nullptr; // owned by the tile_info_cache, like the chunk's sheets
 };
 
+/** Side textures for walls: an atlas on the renderer and which wall gets which cell. */
+struct wall_sides {
+    std::shared_ptr<SDL_Texture> atlas;
+    int width = 0;
+    int height = 0;
+    int cell = 0;
+    std::vector<std::string> names; // atlas cells in order
+    wall_texture_rules rules;
+};
+
 /**
  * Per terrain/furniture id lookups (shape + sprite), so the mesher does not walk the tileset
  * once per tile. Must be cleared whenever the tileset or the renderer's textures change.
@@ -75,7 +87,10 @@ struct upright_sprite {
 class tile_info_cache
 {
     public:
+        /** Forgets every lookup; the wall side textures stay. */
         void clear();
+        /** Side textures for walls from now on (nullptr for the tileset sprite); clears. */
+        void set_wall_sides( std::shared_ptr<const wall_sides> sides );
         /**
          * With subtile/rota (see cata_tiles::get_orientation) the sprites are those the flat view
          * draws for that connection; the shape never depends on them.
@@ -93,6 +108,7 @@ class tile_info_cache
         std::unordered_map<std::string, tile_info> named_;
         tile_info ground_;
         bool ground_loaded_ = false;
+        std::shared_ptr<const wall_sides> wall_sides_;
 };
 
 /** Where a vertex gets its light from: the tile at (lx + dx, ly + dy) on level (chunk z + dz). */

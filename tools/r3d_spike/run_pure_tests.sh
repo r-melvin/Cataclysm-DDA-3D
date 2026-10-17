@@ -12,5 +12,5 @@ printf '#define CATCH_CONFIG_MAIN\n#include "catch/catch.hpp"\n' > "$work/main.c
 cp "$root/tests/r3d_test.cpp" "$work/r3d_test.cpp"
 g++ -std=c++17 -O1 -I"$work" -I"$root/tests" -I"$root/src" -o "$work/r3d_tests" "$work/main.cpp" \
     "$work/r3d_test.cpp" "$root"/src/r3d_math.cpp "$root"/src/r3d_camera.cpp \
-    "$root"/src/r3d_dda.cpp "$root"/src/r3d_shapes.cpp
+    "$root"/src/r3d_dda.cpp "$root"/src/r3d_shapes.cpp "$root"/src/r3d_wall_rules.cpp
 "$work/r3d_tests" "$@"

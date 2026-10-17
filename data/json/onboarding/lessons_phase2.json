@@ -1,0 +1,183 @@
+[
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_hunger",
+    "//": "Phase 2: the first hour.  Needs and the world.",
+    "phase": 2,
+    "order": 1,
+    "title": "Eat something",
+    "short": "You are hungry.  Press <keybind:eat> to eat.",
+    "text": "You are hungry.  Press <keybind:eat> to eat something you carry or something next to you.  Eat until the sidebar no longer says Hungry; stuffing yourself past Full makes you feel sick.  Food that has gone bad says so in its name.  Canned and boxed food keeps longest, so eat fresh food first.",
+    "trigger": [
+      {
+        "condition": {
+          "or": [
+            { "u_has_effect": "hunger_hungry" },
+            { "u_has_effect": "hunger_very_hungry" },
+            { "u_has_effect": "hunger_near_starving" },
+            { "u_has_effect": "hunger_starving" },
+            { "u_has_effect": "hunger_famished" }
+          ]
+        }
+      }
+    ],
+    "done_when": [ { "event": "character_eats_item" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_thirst",
+    "phase": 2,
+    "order": 2,
+    "title": "Find water",
+    "short": "You are thirsty.  Drink with <keybind:eat>; boil water that is not clean.",
+    "text": "You are thirsty, and thirst harms you much sooner than hunger.  Drink with <keybind:eat>.  Bottled drinks are safe.  Toilets hold water in their tanks: <keybind:examine> a toilet while you carry an empty bottle.  Water that is not called \"clean water\" can make you ill, so boil it first: open crafting with <keybind:craft> and search for \"clean water\" (it needs a pot and a fire).",
+    "trigger": [ { "condition": { "math": [ "u_val('thirst') > 40" ] } } ],
+    "done_when": [ { "event": "character_consumes_item" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_crafting",
+    "phase": 2,
+    "order": 3,
+    "title": "Make things",
+    "short": "Press <keybind:craft> to craft; <keybind:CRAFTING:FILTER> searches.",
+    "text": "Press <keybind:craft> to open crafting.  Recipes are grouped in tabs, and <keybind:CRAFTING:FILTER> searches them by name.  Recipes you can make right now are shown brightly; the others are greyed out, and the panel on the right shows what is missing in red: a tool, an ingredient, or a skill.  Things lying next to you count as well as what you carry.  Good first crafts: a makeshift sling to carry more, a wooden spear or a cudgel to fight with.",
+    "prerequisites": [ "ob_inventory" ],
+    "trigger": [ { "after_turns": 300 } ],
+    "done_when": [ { "action": "craft" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_time_wait",
+    "phase": 2,
+    "order": 4,
+    "title": "Time passes",
+    "short": "Long tasks take game time.  <keybind:wait> waits on purpose.",
+    "text": "Crafting, reading and many other things take minutes or hours.  Time passes quickly while you do them, and the game stops you if something happens, such as a monster coming into view.  You can also wait on purpose with <keybind:wait>, for example until it gets light.  Check the time in the sidebar before you start something long: night is very dark.",
+    "prerequisites": [ "ob_crafting" ],
+    "trigger": [ { "event": "character_starts_activity" } ],
+    "done_when": [ { "action": "wait" }, { "after_turns": 600 } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_light_night",
+    "phase": 2,
+    "order": 5,
+    "title": "Darkness",
+    "short": "It is dark.  <keybind:apply> turns on a flashlight.  Stay inside at night.",
+    "text": "It is dark here.  In the dark you cannot read, you craft badly, and you do not see what is coming.  If you have a flashlight, turn it on with <keybind:apply>.  At night, stay inside: close the doors, close the curtains (<keybind:examine> a window), and craft, read or sleep until morning.  Light from your windows can be seen from far away.",
+    "prerequisites": [ "ob_move" ],
+    "trigger": [ { "state": "dark_here" } ],
+    "done_when": [ { "action": "apply" }, { "after_turns": 600 } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_sleep",
+    "phase": 2,
+    "order": 6,
+    "title": "Sleep",
+    "short": "You are tired.  Press <keybind:sleep> in a safe place.",
+    "text": "You are tired.  Press <keybind:sleep> to sleep.  Choose a safe place first: a bed or something soft, out of sight, with the doors closed.  It is hard to fall asleep where it is bright or cold, or when you are in pain.  Something attacking you will wake you up.",
+    "trigger": [ { "condition": { "math": [ "u_val('sleepiness') >= 191" ] } } ],
+    "done_when": [ { "event": "character_falls_asleep" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_overmap",
+    "phase": 2,
+    "order": 7,
+    "title": "The map",
+    "short": "Press <keybind:map> for the map of the area.",
+    "text": "Press <keybind:map> to open the map of the area, centered on you.  Places near your start are already marked.  Towns are full of zombies: start with lone houses and small buildings.  On the map, press <keybind:HELP_KEYBINDINGS> to see its keys; you can leave notes and pick a place to travel to.",
+    "prerequisites": [ "ob_move" ],
+    "trigger": [ { "event": "avatar_enters_omt" }, { "after_turns": 900 } ],
+    "done_when": [ { "action": "map" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_list_around",
+    "phase": 2,
+    "order": 8,
+    "title": "What is around you",
+    "short": "Press <keybind:listitems> to list nearby items and monsters.",
+    "text": "Press <keybind:listitems> for a list of everything you can see nearby: items in one tab, monsters in another.  It is the quickest way to find loot in a room, or to see what is coming at you.",
+    "prerequisites": [ "ob_look" ],
+    "trigger": [ { "after_turns": 600 } ],
+    "done_when": [ { "action": "listitems" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_read",
+    "phase": 2,
+    "order": 9,
+    "title": "Read books",
+    "short": "You have a book.  Press <keybind:read> to read it.",
+    "text": "You have a book.  Press <keybind:read> to read it.  Books teach skills and recipes, and reading is the safest way to get better at things early on.  Reading needs light, and goes slowly or not at all when you are unhappy.",
+    "trigger": [ { "state": "carries_book" } ],
+    "done_when": [ { "event": "reads_book" }, { "action": "read" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_character",
+    "phase": 2,
+    "order": 10,
+    "title": "Your character",
+    "short": "Press <keybind:player_data> for stats, skills and effects.",
+    "text": "Press <keybind:player_data> for your character sheet: stats, skills, traits, and the effects on you right now.  The encumbrance part shows how much your clothes hinder each body part.  Too many layers on one part make you slow and clumsy.",
+    "prerequisites": [ "ob_wear_wield" ],
+    "trigger": [ { "after_turns": 600 } ],
+    "done_when": [ { "action": "player_data" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_morale",
+    "phase": 2,
+    "order": 11,
+    "title": "Mood",
+    "short": "Your mood is low.  It slows learning and can stop reading.",
+    "text": "Your mood is low; the sidebar shows it next to Mood.  A bad mood makes you learn slowly and can stop you from reading or crafting.  Good food, a warm dry place and reading for fun lift it.  Being wet, cold, hurt or hungry lowers it.",
+    "trigger": [ { "state": "low_morale" } ],
+    "done_when": [ { "after_turns": 300 } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_pain_hp",
+    "phase": 2,
+    "order": 12,
+    "title": "You got hurt",
+    "short": "Each body part has its own health.  Back off before it is low.",
+    "text": "You got hurt.  Each body part has its own health, shown in the sidebar.  A badly hurt arm or leg works poorly, and if your head or torso runs out you die.  Pain slows you down.  You heal slowly, so back off before you are badly hurt.  Bandages and first aid kits help: use them with <keybind:apply>.",
+    "trigger": [ { "event": "character_takes_damage" } ],
+    "done_when": [ { "action": "player_data" }, { "after_turns": 300 } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_bleeding",
+    "phase": 2,
+    "order": 13,
+    "title": "Bleeding and bites",
+    "short": "You are bleeding.  Bandage it with <keybind:apply>.",
+    "text": "You are bleeding or bitten.  Bleeding can kill you if you leave it.  Use a bandage with <keybind:apply> and pick the hurt body part; a clean rag works in a pinch.  Bites and deep cuts can get infected: disinfect them with disinfectant or alcohol wipes.  If you ever see \"Infected\" on yourself, you need antibiotics.",
+    "trigger": [
+      { "condition": { "or": [ { "u_has_effect": "bleed" }, { "u_has_effect": "bite" }, { "u_has_effect": "infected" } ] } }
+    ],
+    "done_when": [
+      {
+        "condition": { "not": { "or": [ { "u_has_effect": "bleed" }, { "u_has_effect": "bite" }, { "u_has_effect": "infected" } ] } },
+        "while_shown": true
+      }
+    ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_death",
+    "//": "Shown when the character dies, before the death screens.  Its own phase so it never counts in the sidebar.",
+    "phase": 9,
+    "order": 0,
+    "presentation": "popup",
+    "title": "Your character died",
+    "short": "Death is permanent.  Start again from New Game.",
+    "text": "Your character has died, and that is permanent: this save is gone.  Almost everyone's first characters die early, and each death teaches something.\n\nThe next screens show the message log, so you can see what happened, and your score.\n\nTo play again, choose New Game in the main menu.  Play Now gives you a fresh character in a fresh world, with these hints again.",
+    "trigger": [ { "signal": "avatar_died" } ]
+  }
+]

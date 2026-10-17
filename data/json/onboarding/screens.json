@@ -1,0 +1,98 @@
+[
+  {
+    "type": "onboarding_screen",
+    "id": "DEFAULTMODE",
+    "//": "\"Explain this screen\" texts, one per input context category (see input_context).  Shown with <keybind:EXPLAIN_SCREEN> while guided hints are on.",
+    "title": "The main screen",
+    "text": "The big area is the map.  You are in the middle.  Letters and pictures are people, monsters, furniture and items; <keybind:look> tells you what any of them is.\n\nThe sidebar shows your health per body part, stamina, needs (only when they matter), the time, the weather and safe mode.  The message log tells you what just happened; <keybind:messages> shows the whole log.\n\nUseful keys: <keybind:inventory> inventory, <keybind:pickup> pick up, <keybind:examine> use furniture, <keybind:eat> eat and drink, <keybind:craft> craft, <keybind:map> map, <keybind:action_menu> a menu of every action.  <keybind:onboarding_checklist> shows the checklist of hints.",
+    "variants": [
+      {
+        "when": [ "r3d" ],
+        "text": "The big area is the world in 3D.  You are in the middle.  <keybind:look> tells you what anything is.  <keybind:r3d_toggle> switches to the flat map and back.\n\nThe sidebar shows your health per body part, stamina, needs (only when they matter), the time, the weather and safe mode.  The message log tells you what just happened; <keybind:messages> shows the whole log.\n\nUseful keys: <keybind:inventory> inventory, <keybind:pickup> pick up, <keybind:examine> use furniture, <keybind:eat> eat and drink, <keybind:craft> craft, <keybind:map> map, <keybind:action_menu> a menu of every action.  <keybind:onboarding_checklist> shows the checklist of hints."
+      },
+      {
+        "when": [ "r3d_orbit" ],
+        "extra": "Camera: <keybind:r3d_rotate_left> and <keybind:r3d_rotate_right> turn it, <keybind:r3d_pitch_up> and <keybind:r3d_pitch_down> tilt it, <keybind:r3d_zoom_in> and <keybind:r3d_zoom_out> zoom, <keybind:r3d_reset> resets it."
+      },
+      { "when": [ "r3d_wasd" ], "extra": "W A S D walk, following the camera, and the arrow keys turn." },
+      {
+        "when": [ "r3d_first_person" ],
+        "extra": "First person: the picture shows what is ahead, but your character still notices everything around them.  <keybind:r3d_first_person> switches back to the view from above, <keybind:r3d_fp_face_threat> faces the nearest hostile creature."
+      },
+      {
+        "when": [ "r3d_compass" ],
+        "extra": "The strip at the top is a compass: the way you face, and red marks for hostile creatures you can see."
+      },
+      {
+        "when": [ "r3d_edge_alert" ],
+        "extra": "An edge of the view lights up when a hostile creature is next to you on that side, out of the picture."
+      }
+    ]
+  },
+  {
+    "type": "onboarding_screen",
+    "id": "INVENTORY",
+    "title": "Item list",
+    "text": "This is a list of items: what you carry, what is around you, or what you can pick from.  Items are grouped by where they are (worn, in a pocket, on the ground) and by kind.\n\nMove with the arrow keys and confirm with <keybind:CONFIRM>, or press an item's letter.  Where you can pick several, <keybind:INVENTORY:TOGGLE_ENTRY> marks one and <keybind:INVENTORY:MARK_WITH_COUNT> marks a number of them.  <keybind:INVENTORY:INVENTORY_FILTER> filters the list by name.  <keybind:QUIT> goes back."
+  },
+  {
+    "type": "onboarding_screen",
+    "id": "CRAFTING",
+    "title": "Crafting",
+    "text": "The tabs at the top are recipe groups.  The list shows recipes; the panel beside it shows what the highlighted one needs and makes.\n\nRecipes you can make now are bright.  For the others, the missing tool, ingredient or skill is shown in red.  Items next to you count as well as what you carry.\n\n<keybind:CRAFTING:FILTER> searches by name.  <keybind:CONFIRM> crafts the highlighted recipe.  Crafting takes time; you can stop and continue later."
+  },
+  {
+    "type": "onboarding_screen",
+    "id": "ADVANCED_INVENTORY",
+    "title": "Advanced inventory",
+    "text": "Two lists side by side.  Each one shows one place: your inventory, what you wear, the ground around you (by direction), a container or a vehicle.  Pick what each side shows with the keys listed under <keybind:HELP_KEYBINDINGS>.\n\nHighlight an item and move it to the other side to pick it up, drop it or store it.  This is the fastest way to move many items at once."
+  },
+  {
+    "type": "onboarding_screen",
+    "id": "TARGET",
+    "title": "Aiming",
+    "text": "You are choosing a target.  Move the cursor onto it, or cycle through targets.  Aiming longer makes the shot more accurate; the panel shows your chance to hit.  Guns are loud and can bring more monsters.  <keybind:QUIT> cancels."
+  },
+  {
+    "type": "onboarding_screen",
+    "id": "OVERMAP",
+    "title": "The map",
+    "text": "This is the map of the area, one symbol per city block or field.  You are at the cursor when it opens.  Places you have seen are drawn; the rest is dark.\n\nTowns (grey and red buildings) hold food and tools, and many zombies.  Fields, forests and lone houses are quieter.  You can leave notes and choose a place to travel to; the keys are listed under <keybind:HELP_KEYBINDINGS>.  <keybind:QUIT> goes back."
+  },
+  {
+    "type": "onboarding_screen",
+    "id": "LOOK",
+    "title": "Looking around",
+    "text": "Move the cursor with the movement keys.  The panel describes what is under it: the ground, furniture, items, and any creature with how hurt it is.  This takes no time.  <keybind:QUIT> goes back."
+  },
+  {
+    "type": "onboarding_screen",
+    "id": "PLAYER_INFO",
+    "title": "Character sheet",
+    "text": "Your stats, traits, skills, effects and encumbrance.  Move between the sections with the movement keys and read the description of the highlighted line at the bottom.\n\nEncumbrance shows how much your clothes hinder each body part; high numbers make you slow and clumsy.  Effects list what is happening to you right now, such as pain, bleeding or being wet."
+  },
+  {
+    "type": "onboarding_screen",
+    "id": "MESSAGE_LOG",
+    "title": "Message log",
+    "text": "Everything that happened, newest first, with the time.  Hints are here too, starting with [Hint].  Red and yellow lines are the ones to read: danger and warnings.  You can filter the log; the keys are listed under <keybind:HELP_KEYBINDINGS>."
+  },
+  {
+    "type": "onboarding_screen",
+    "id": "CONSTRUCTION",
+    "title": "Construction",
+    "text": "Build or change the terrain: barricade windows, dig, build walls and furniture.  Pick a construction, then the tile where to build it.  What is missing is shown in red, like in crafting.  Most constructions take a long time; early on, barricading windows and doors is the useful part."
+  },
+  {
+    "type": "onboarding_screen",
+    "id": "SORT_ARMOR",
+    "title": "Clothing layers",
+    "text": "What you wear, sorted by layer from skin to outside, and how much each body part is encumbered.  Items on the same layer and body part get in each other's way.  Move items to change their order; take things off that you do not need."
+  },
+  {
+    "type": "onboarding_screen",
+    "id": "UILIST",
+    "title": "Menu",
+    "text": "A menu.  Move with the arrow keys and press <keybind:CONFIRM>, or press the letter shown next to an entry.  <keybind:QUIT> goes back."
+  }
+]

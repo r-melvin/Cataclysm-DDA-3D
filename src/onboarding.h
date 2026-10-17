@@ -43,6 +43,19 @@ void on_action( const std::string &action_id );
 // A one-off thing the game reports, such as "safe_mode_spotted".
 void on_signal( const std::string &name );
 
+// The character died: shows the death lesson, before the death screens.
+void on_death();
+// Default-mode actions handled here ("onboarding_checklist", "EXPLAIN_SCREEN"); returns
+// whether the action was one of them.
+bool handle_action( const std::string &action );
+// The checklist of all lessons, to read them again, show them again or mark them done.
+void show_checklist();
+// Explains the screen whose input context has the given category.  Returns false, doing
+// nothing, when hints are off.
+bool explain_screen( const std::string &category );
+// JSON loading of "onboarding_screen" (the explain-this-screen texts).
+void load_screen( const JsonObject &jo, const std::string &src );
+
 // The sidebar's "Next" line, empty when there is nothing to show.
 // Wrapped to the given width, at most three lines.
 std::string sidebar_text( int width );

@@ -507,6 +507,7 @@ void DynamicDataLoader::initialize()
     add( "conduct", &achievement::load_achievement );
     add( "widget", &widget::load_widget );
     add( "onboarding_lesson", &onboarding::load_lesson );
+    add( "onboarding_screen", &onboarding::load_screen );
     add( "weakpoint_set", &weakpoints::load_weakpoint_sets );
     add( "damage_type", &damage_type::load_damage_types );
     add( "damage_info_order", &damage_info_order::load_damage_info_orders );

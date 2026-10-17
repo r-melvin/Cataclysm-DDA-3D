@@ -3383,6 +3383,11 @@ bool game::handle_action()
         }
     }
 
+    // Guided hints' own keys (the checklist, explain this screen) have no action_id.
+    if( act == ACTION_NULL && onboarding::handle_action( action ) ) {
+        return false;
+    }
+
     if( act == ACTION_NULL ) {
         const input_event &&evt = ctxt.get_raw_input();
         if( !evt.sequence.empty() ) {

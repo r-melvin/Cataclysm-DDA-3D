@@ -56,6 +56,7 @@
 #include "mtype.h"
 #include "music.h"
 #include "npc.h"
+#include "onboarding.h"
 #include "options.h"
 #include "output.h"
 #include "overmapbuffer.h"
@@ -133,6 +134,8 @@ bool cleanup_at_end()
         //save achievements entry
         g->save_achievements();
 
+        // Guided hints explain death before the death screens.
+        onboarding::on_death();
         g->death_screen();
         std::chrono::seconds time_since_load =
             std::chrono::duration_cast<std::chrono::seconds>(

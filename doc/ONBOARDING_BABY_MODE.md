@@ -31,11 +31,30 @@ Done:
   - Popups (welcome, safe mode, first monster) offer **Got it** (`g`/Enter/Esc), **Remind me
     later** (`l`) and **Stop hints** (`S`, sets the option to Off).
 
+- **M2**: the first hour, the checklist and "explain this screen".
+  - Phase 2 lessons in `data/json/onboarding/lessons_phase2.json`: hunger, thirst and water,
+    crafting and its search, time passing and waiting, darkness and night, sleep, the map,
+    listing what is around (`V`), reading, the character sheet, low mood, getting hurt, bleeding
+    and bites, and a death popup shown before the death screens.
+  - **F1** (`onboarding_checklist`): the checklist of every lesson that applies to this game,
+    grouped (first steps / the first hour / the first days), with done `[x]`, current `[>]` and
+    pending `[ ]` marks and each lesson's one-line instruction. Pick a lesson to read its full
+    text, show it again, or mark it done.
+  - **F2** (`EXPLAIN_SCREEN`): explains the screen you are on. Texts are JSON
+    (`onboarding_screen`, `data/json/onboarding/screens.json`, one per input-context category):
+    main screen (with 3D variants), item lists, crafting, advanced inventory, aiming, map, look
+    around, character sheet, message log, construction, clothing layers, generic menus. It works
+    on every screen through one hook in `input_context::handle_input`, and only when the screen
+    does not use F2 itself (the trade screen does) and hints are on.
+  - Both keys can be rebound in the keybindings menu like any other.
+
 How to try it: build, start the game, **New Game > Play Now! (Default Scenario)**. A welcome popup
 appears on the first turn. Press Enter; the sidebar then reads `Next: Walk around (0/12)` and the
 log has the hint. Walk five steps, press `.`, look with `;`, stand next to a locker and press `e`,
 pick something up with `g`, open `i`. Lessons tick off in the log (`[Hint] Done: ...`). To see the
-hints on an existing save or a custom character, set the option to *Hints and popups*.
+hints on an existing save or a custom character, set the option to *Hints and popups*.  Press F1
+at any time for the checklist and F2 on any screen (inventory, crafting, map...) for an
+explanation of it.
 
 Works with the 3D UI: nothing is tied to a screen position. The Next-step line is an ordinary
 widget, so any sidebar preset (including a lean 3D preset) can list it, and its text is always
@@ -52,7 +71,7 @@ exists in orbit view. Key names always come from the input manager (`<keybind:..
 walk instead. A lesson can name `"requires_action"` (used for the planned `status_report` action
 of the UI overhaul); it is skipped while that action does not exist or has no key.
 
-Not done yet: see the M2 and M3 lists in section 4.
+Not done yet: see the M3 list in section 4.
 
 ---
 

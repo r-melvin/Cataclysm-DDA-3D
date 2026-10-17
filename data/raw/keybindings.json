@@ -3403,6 +3403,19 @@
   },
   {
     "type": "keybinding",
+    "name": "Guided hints checklist",
+    "category": "DEFAULTMODE",
+    "id": "onboarding_checklist",
+    "bindings": [ { "input_method": "keyboard_any", "key": "F1" } ]
+  },
+  {
+    "type": "keybinding",
+    "name": "Explain this screen (guided hints)",
+    "id": "EXPLAIN_SCREEN",
+    "bindings": [ { "input_method": "keyboard_any", "key": "F2" } ]
+  },
+  {
+    "type": "keybinding",
     "name": "Zoom in",
     "id": "zoom_in",
     "bindings": [ { "input_method": "keyboard_any", "key": "z" }, { "input_method": "gamepad", "key": "ALT_START" } ]

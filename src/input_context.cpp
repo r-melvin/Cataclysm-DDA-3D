@@ -31,6 +31,7 @@
 #include "imgui/imgui.h"
 #include "input.h"
 #include "map.h"
+#include "onboarding.h"
 #include "options.h"
 #include "output.h"
 #include "point.h"
@@ -575,6 +576,18 @@ const std::string &input_context::handle_input( const int timeout )
             inp_mngr.set_timeout( timeout );
             result = &HELP_KEYBINDINGS;
             break;
+        }
+
+        // Guided hints: "explain this screen" works on every screen, unless the screen uses
+        // the key for something of its own.  It shows a popup and keeps waiting for input.
+        if( action == CATA_ERROR && next_action.type != input_event_t::mouse &&
+            category != "DEFAULTMODE" ) {
+            const std::vector<input_event> &explain = inp_mngr.get_input_for_action( "EXPLAIN_SCREEN",
+                    category );
+            if( std::find( explain.begin(), explain.end(), next_action ) != explain.end() &&
+                onboarding::explain_screen( category ) ) {
+                continue;
+            }
         }
 
         if( next_action.type == input_event_t::mouse

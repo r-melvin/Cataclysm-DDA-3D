@@ -15,6 +15,7 @@
 #include "action.h"
 #include "avatar.h"
 #include "calendar.h"
+#include "cata_scope_helpers.h"
 #include "cata_variant.h"
 #include "character.h"
 #include "character_id.h"
@@ -48,12 +49,36 @@
 #include "translation.h"
 #include "translations.h"
 #include "type_id.h"
+#include "uilist.h"
 #include "ui_manager.h"
 #include "units.h"
 #include "worldfactory.h"
 
 class onboarding_lesson;
 using onboarding_lesson_id = string_id<onboarding_lesson>;
+class onboarding_screen;
+using onboarding_screen_id = string_id<onboarding_screen>;
+
+// Text for a particular UI, such as the 3D view.  The first variant whose flags all hold
+// replaces the title, short and text it sets; every variant whose flags hold adds its "extra"
+// paragraph after the text.
+struct ob_text_variant {
+    std::vector<std::string> when;
+    std::optional<translation> title;
+    std::optional<translation> short_text;
+    std::optional<translation> text;
+    std::optional<translation> extra;
+};
+
+static void load_variants( const JsonObject &jo, std::vector<ob_text_variant> &out );
+static const translation &pick_title( const translation &base,
+                                      const std::vector<ob_text_variant> &variants );
+static const translation &pick_short( const translation &base,
+                                      const std::vector<ob_text_variant> &variants );
+static std::string pick_text( const translation &base,
+                              const std::vector<ob_text_variant> &variants );
+static void check_ui_flags( const std::string &what, const std::vector<std::string> &flags,
+                            const std::vector<ob_text_variant> &variants );
 
 // One lesson as loaded from JSON (type "onboarding_lesson").
 class onboarding_lesson
@@ -80,17 +105,8 @@ class onboarding_lesson
         // An action the lesson is about; without it (a build that lacks it, or no key bound)
         // the lesson does not apply.
         std::string requires_action;
-        // Text for a particular UI, such as the 3D view.  The first variant whose flags all
-        // hold replaces the title, short and text it sets; every variant whose flags hold adds
-        // its "extra" paragraph after the text.
-        struct variant {
-            std::vector<std::string> when;
-            std::optional<translation> title;
-            std::optional<translation> short_text;
-            std::optional<translation> text;
-            std::optional<translation> extra;
-        };
-        std::vector<variant> variants;
+        // Text for particular UIs; see ob_text_variant.
+        std::vector<ob_text_variant> variants;
         // Dialogue conditions used by "condition" matchers, by index.
         std::vector<std::function<bool( const_dialogue const & )>> conditions;
 
@@ -110,17 +126,43 @@ class onboarding_lesson
                             std::vector<ob_matcher> &out );
 };
 
+// What "Explain this screen" says for one input context (type "onboarding_screen"; the id is
+// the input context's category, such as "INVENTORY").
+class onboarding_screen
+{
+    public:
+        onboarding_screen_id id;
+        std::vector<std::pair<onboarding_screen_id, mod_id>> src;
+        bool was_loaded = false;
+
+        translation title;
+        translation text;
+        std::vector<ob_text_variant> variants;
+
+        void load( const JsonObject &jo, std::string_view ) {
+            mandatory( jo, was_loaded, "title", title );
+            mandatory( jo, was_loaded, "text", text );
+            if( jo.has_array( "variants" ) ) {
+                load_variants( jo, variants );
+            }
+        }
+        void check() const {
+            check_ui_flags( "onboarding_screen " + id.str(), {}, variants );
+        }
+};
+
 namespace
 {
 
 generic_factory<onboarding_lesson> lesson_factory( "onboarding_lesson" );
+generic_factory<onboarding_screen> screen_factory( "onboarding_screen" );
 
 // States the game can poll for, used by "state" matchers.
 const std::set<std::string> &known_states()
 {
     static const std::set<std::string> states = {
         "standing_on_items", "items_nearby", "adjacent_door", "adjacent_examinable",
-        "hostile_in_view", "worn_storage"
+        "hostile_in_view", "worn_storage", "dark_here", "carries_book", "low_morale"
     };
     return states;
 }
@@ -129,7 +171,7 @@ const std::set<std::string> &known_states()
 const std::set<std::string> &known_signals()
 {
     static const std::set<std::string> signals = {
-        "safe_mode_spotted"
+        "safe_mode_spotted", "avatar_died"
     };
     return signals;
 }
@@ -209,6 +251,100 @@ bool string_id<onboarding_lesson>::is_valid() const
     return lesson_factory.is_valid( *this );
 }
 
+/** @relates string_id */
+template<>
+const onboarding_screen &string_id<onboarding_screen>::obj() const
+{
+    return screen_factory.obj( *this );
+}
+
+/** @relates string_id */
+template<>
+bool string_id<onboarding_screen>::is_valid() const
+{
+    return screen_factory.is_valid( *this );
+}
+
+static void load_variants( const JsonObject &jo, std::vector<ob_text_variant> &out )
+{
+    out.clear();
+    for( JsonObject vo : jo.get_array( "variants" ) ) {
+        ob_text_variant v;
+        vo.read( "when", v.when );
+        translation t;
+        if( vo.read( "title", t ) ) {
+            v.title = t;
+        }
+        if( vo.read( "short", t ) ) {
+            v.short_text = t;
+        }
+        if( vo.read( "text", t ) ) {
+            v.text = t;
+        }
+        if( vo.read( "extra", t ) ) {
+            v.extra = t;
+        }
+        out.push_back( v );
+    }
+}
+
+static const translation &pick_title( const translation &base,
+                                      const std::vector<ob_text_variant> &variants )
+{
+    for( const ob_text_variant &v : variants ) {
+        if( v.title && all_ui_flags( v.when ) ) {
+            return *v.title;
+        }
+    }
+    return base;
+}
+
+static const translation &pick_short( const translation &base,
+                                      const std::vector<ob_text_variant> &variants )
+{
+    for( const ob_text_variant &v : variants ) {
+        if( v.short_text && all_ui_flags( v.when ) ) {
+            return *v.short_text;
+        }
+    }
+    return base;
+}
+
+static std::string pick_text( const translation &base,
+                              const std::vector<ob_text_variant> &variants )
+{
+    const translation *chosen = &base;
+    for( const ob_text_variant &v : variants ) {
+        if( v.text && all_ui_flags( v.when ) ) {
+            chosen = &*v.text;
+            break;
+        }
+    }
+    std::string ret = chosen->translated();
+    for( const ob_text_variant &v : variants ) {
+        if( v.extra && all_ui_flags( v.when ) ) {
+            ret += "\n\n" + v.extra->translated();
+        }
+    }
+    return ret;
+}
+
+static void check_ui_flags( const std::string &what, const std::vector<std::string> &flags,
+                            const std::vector<ob_text_variant> &variants )
+{
+    const auto check = [&what]( const std::vector<std::string> &list ) {
+        for( const std::string &f : list ) {
+            if( !known_ui_flags().count( f ) ) {
+                debugmsg( "%s uses unknown UI flag %s", what, f );
+            }
+        }
+    };
+    check( flags );
+    for( const ob_text_variant &v : variants ) {
+        check( v.when );
+    }
+}
+
 void onboarding_lesson::load_matchers( const JsonObject &jo, const std::string &member,
                                        std::vector<ob_matcher> &out )
 {
@@ -276,25 +412,7 @@ void onboarding_lesson::load( const JsonObject &jo, std::string_view )
     optional( jo, was_loaded, "only_when", only_when );
     optional( jo, was_loaded, "requires_action", requires_action );
     if( jo.has_array( "variants" ) ) {
-        variants.clear();
-        for( JsonObject vo : jo.get_array( "variants" ) ) {
-            variant v;
-            vo.read( "when", v.when );
-            translation t;
-            if( vo.read( "title", t ) ) {
-                v.title = t;
-            }
-            if( vo.read( "short", t ) ) {
-                v.short_text = t;
-            }
-            if( vo.read( "text", t ) ) {
-                v.text = t;
-            }
-            if( vo.read( "extra", t ) ) {
-                v.extra = t;
-            }
-            variants.push_back( v );
-        }
+        load_variants( jo, variants );
     }
     load_matchers( jo, "trigger", trigger );
     load_matchers( jo, "done_when", done_when );
@@ -308,40 +426,17 @@ bool onboarding_lesson::available() const
 
 const translation &onboarding_lesson::get_title() const
 {
-    for( const variant &v : variants ) {
-        if( v.title && all_ui_flags( v.when ) ) {
-            return *v.title;
-        }
-    }
-    return title;
+    return pick_title( title, variants );
 }
 
 const translation &onboarding_lesson::get_short() const
 {
-    for( const variant &v : variants ) {
-        if( v.short_text && all_ui_flags( v.when ) ) {
-            return *v.short_text;
-        }
-    }
-    return short_text;
+    return pick_short( short_text, variants );
 }
 
 std::string onboarding_lesson::get_text() const
 {
-    const translation *chosen = &text;
-    for( const variant &v : variants ) {
-        if( v.text && all_ui_flags( v.when ) ) {
-            chosen = &*v.text;
-            break;
-        }
-    }
-    std::string ret = chosen->translated();
-    for( const variant &v : variants ) {
-        if( v.extra && all_ui_flags( v.when ) ) {
-            ret += "\n\n" + v.extra->translated();
-        }
-    }
-    return ret;
+    return pick_text( text, variants );
 }
 
 void onboarding_lesson::check() const
@@ -390,17 +485,7 @@ void onboarding_lesson::check() const
     };
     check_list( trigger, true );
     check_list( done_when, false );
-    const auto check_flags = [this]( const std::vector<std::string> &flags ) {
-        for( const std::string &f : flags ) {
-            if( !known_ui_flags().count( f ) ) {
-                debugmsg( "onboarding_lesson %s uses unknown UI flag %s", id.str(), f );
-            }
-        }
-    };
-    check_flags( only_when );
-    for( const variant &v : variants ) {
-        check_flags( v.when );
-    }
+    check_ui_flags( "onboarding_lesson " + id.str(), only_when, variants );
 }
 
 ob_lesson_def onboarding_lesson::def() const
@@ -552,6 +637,32 @@ std::string expand_keys( const std::string &raw )
         }
         ret.replace( pos, end - pos + 1, replacement );
         pos += replacement.size();
+    }
+    return ret;
+}
+
+// Wraps text to the given width, keeping its paragraphs, for menus that do not wrap.
+std::string wrap_text( const std::string &text, int width )
+{
+    std::string ret;
+    size_t start = 0;
+    while( start <= text.size() ) {
+        size_t end = text.find( '\n', start );
+        if( end == std::string::npos ) {
+            end = text.size();
+        }
+        const std::string para = text.substr( start, end - start );
+        if( para.empty() ) {
+            ret += "\n";
+        } else {
+            for( const std::string &line : foldstring( para, width ) ) {
+                ret += line + "\n";
+            }
+        }
+        start = end + 1;
+    }
+    while( !ret.empty() && ret.back() == '\n' ) {
+        ret.pop_back();
     }
     return ret;
 }
@@ -725,6 +836,15 @@ bool manager::poll( size_t lesson, const ob_matcher &match ) const
                 return true;
             }
         }
+    } else if( name == "dark_here" ) {
+        // Too dark to read or craft well.
+        return u.fine_detail_vision_mod() > 4.0f;
+    } else if( name == "carries_book" ) {
+        return u.has_item_with( []( const item & it ) {
+            return it.is_book();
+        } );
+    } else if( name == "low_morale" ) {
+        return u.get_morale_level() < -10;
     } else if( name == "worn_storage" ) {
         // Clothes have small pockets; anything that holds five liters is a bag.
         for( const item_location &worn : u.get_visible_worn_items() ) {
@@ -849,18 +969,21 @@ void load_lesson( const JsonObject &jo, const std::string &src )
 void finalize_lessons()
 {
     lesson_factory.finalize();
+    screen_factory.finalize();
     get_manager().invalidate();
 }
 
 void check_lessons()
 {
     lesson_factory.check();
+    screen_factory.check();
 }
 
 void reset_lessons()
 {
     get_manager().invalidate();
     lesson_factory.reset();
+    screen_factory.reset();
 }
 
 event_subscriber &subscriber()
@@ -950,6 +1073,177 @@ std::string sidebar_text( int width )
         ret += "\n" + lines[i];
     }
     return ret;
+}
+
+void on_death()
+{
+    manager &m = get_manager();
+    if( m.level() == ob_level::off ) {
+        return;
+    }
+    m.ensure_built();
+    m.refresh_availability();
+    m.tracker.on_input( ob_input_kind::signal, "avatar_died", now() );
+    m.present();
+}
+
+bool handle_action( const std::string &action )
+{
+    if( action == "onboarding_checklist" ) {
+        show_checklist();
+        return true;
+    } else if( action == "EXPLAIN_SCREEN" ) {
+        explain_screen( "DEFAULTMODE" );
+        return true;
+    }
+    return false;
+}
+
+void load_screen( const JsonObject &jo, const std::string &src )
+{
+    screen_factory.load( jo, src );
+}
+
+bool explain_screen( const std::string &category )
+{
+    manager &m = get_manager();
+    // The popup below waits for input itself; do not explain the popup.
+    static bool explaining = false;
+    if( explaining || m.level() == ob_level::off ) {
+        return false;
+    }
+    explaining = true;
+    on_out_of_scope reset_explaining( []() {
+        explaining = false;
+    } );
+    const onboarding_screen_id sid( category );
+    std::string body;
+    if( sid.is_valid() ) {
+        body = colorize( pick_title( sid->title, sid->variants ).translated(), c_light_green ) +
+               "\n\n" + expand_keys( pick_text( sid->text, sid->variants ) );
+    } else {
+        body = colorize( _( "This screen" ), c_light_green ) + "\n\n" +
+               _( "There is no explanation for this screen yet." );
+    }
+    //~ Added under every "explain this screen" text.
+    body += "\n\n" + expand_keys( string_format( _( "Press %s on any screen to see all of its keys." ),
+                                   "<keybind:HELP_KEYBINDINGS>" ) );
+    popup( body, PF_NONE );
+    m.tracker.on_input( ob_input_kind::action, "EXPLAIN_SCREEN", now() );
+    return true;
+}
+
+void show_checklist()
+{
+    manager &m = get_manager();
+    if( m.level() == ob_level::off ) {
+        popup( _( "Guided hints are off.  You can turn them on in Settings > Interface > Guided "
+                  "hints." ) );
+        return;
+    }
+    m.ensure_built();
+    m.refresh_availability();
+    m.tracker.on_input( ob_input_kind::action, "onboarding_checklist", now() );
+
+    // Lesson phases as the checklist shows them.
+    const auto phase_name = []( int phase ) -> std::string {
+        switch( phase )
+        {
+            case 0:
+            case 1:
+                return _( "First steps" );
+            case 2:
+                return _( "The first hour" );
+            case 3:
+                return _( "The first days" );
+            default:
+                return _( "Later" );
+        }
+    };
+
+    int selected = 0;
+    while( true ) {
+        std::vector<size_t> order;
+        for( size_t i = 0; i < m.tracker.size(); ++i ) {
+            if( m.tracker.available( i ) && i < m.lesson_ids.size() && m.lesson_ids[i].is_valid() ) {
+                order.push_back( i );
+            }
+        }
+        std::stable_sort( order.begin(), order.end(), [&m]( size_t a, size_t b ) {
+            const ob_lesson_def &da = m.tracker.def( a );
+            const ob_lesson_def &db = m.tracker.def( b );
+            return da.phase != db.phase ? da.phase < db.phase : da.order < db.order;
+        } );
+
+        uilist menu;
+        menu.title = _( "Guided hints" );
+        menu.text = string_format( _( "Done: %1$d of %2$d.  Pick a hint to read it again." ),
+                                   m.tracker.count_done( 0, 3 ), m.tracker.count_total( 0, 3 ) );
+        menu.desc_enabled = true;
+        menu.allow_disabled = false;
+        std::string last_phase;
+        for( size_t i : order ) {
+            const ob_lesson_def &def = m.tracker.def( i );
+            if( def.phase >= 9 ) {
+                // Shown at death only.
+                continue;
+            }
+            const std::string group = phase_name( def.phase );
+            if( group != last_phase ) {
+                menu.addentry( -1, false, 0, colorize( group, c_light_blue ) );
+                last_phase = group;
+            }
+            const ob_lesson_state &st = m.tracker.state( i );
+            std::string mark;
+            switch( st.status ) {
+                case ob_status::done:
+                    mark = colorize( "[x]", c_light_green );
+                    break;
+                case ob_status::active:
+                    mark = colorize( "[>]", c_yellow );
+                    break;
+                case ob_status::queued:
+                case ob_status::waiting:
+                    mark = "[ ]";
+                    break;
+                case ob_status::locked:
+                    mark = colorize( "[ ]", c_dark_gray );
+                    break;
+            }
+            const onboarding_lesson &l = m.lesson_ids[i].obj();
+            menu.addentry_desc( static_cast<int>( i ), true, 0,
+                                mark + " " + l.get_title().translated(),
+                                expand_keys( l.get_short().translated() ) );
+        }
+        menu.selected = selected;
+        menu.query();
+        if( menu.ret < 0 || menu.ret >= static_cast<int>( m.tracker.size() ) ) {
+            break;
+        }
+        selected = menu.selected;
+        const size_t lesson = static_cast<size_t>( menu.ret );
+        const onboarding_lesson &l = m.lesson_ids[lesson].obj();
+
+        uilist detail;
+        detail.title = l.get_title().translated();
+        detail.text = wrap_text( expand_keys( l.get_text() ), 64 );
+        detail.addentry( 0, true, 'b', _( "Back" ) );
+        detail.addentry( 1, true, 's', _( "Show this hint again" ) );
+        detail.addentry( 2, m.tracker.state( lesson ).status != ob_status::done, 'd',
+                         _( "Mark as done" ) );
+        detail.query();
+        if( detail.ret == 1 ) {
+            m.tracker.reopen( lesson, now() );
+            // Shown as a log hint even for popup lessons: the player just read it.
+            for( const ob_notice &n : m.tracker.take_notices() ) {
+                if( n.type == ob_notice_type::shown && n.lesson < m.lesson_ids.size() ) {
+                    m.log_hint( n.lesson, false );
+                }
+            }
+        } else if( detail.ret == 2 ) {
+            m.tracker.complete( lesson, now() );
+        }
+    }
 }
 
 void serialize( JsonOut &json )

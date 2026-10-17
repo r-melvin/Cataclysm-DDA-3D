@@ -93,10 +93,15 @@ void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &laye
         const float ux = up_world.x * lh;
         const float uy = -up_world.y * lh;
         const float uz = up_world.z * lh / z_scale;
+        // The flat view draws a sprite offset_y pixels below its tile's top edge, so its bottom
+        // row lands (offset_y + height - tile) below the tile's bottom: the same shift here,
+        // along the screen's up, keeps a 48-row body and 36-row clothes on the same feet.
+        const float drop = ( s.offset_y + s.size_y - 1.0f ) * scale;
+        const float side = s.offset_x * scale;
         const float lift = 0.01f * static_cast<float>( depth++ );
-        const float ox = cx + tx * lift;
-        const float oy = cy + ty * lift;
-        const float oz = z_base + tz * lift;
+        const float ox = cx + tx * lift - up_world.x * drop + right_world.x * side;
+        const float oy = cy + ty * lift + up_world.y * drop - right_world.y * side;
+        const float oz = z_base + tz * lift - up_world.z * drop / z_scale;
         const float ul = mirrored ? s.u1 : s.u0;
         const float ur = mirrored ? s.u0 : s.u1;
         const uvs_t uv = {{ { ul, s.v0 }, { ur, s.v0 }, { ur, s.v1 }, { ul, s.v1 } }};
@@ -180,12 +185,17 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         return static_cast<float>( p.z() - view.center.z() );
     };
 
-    // Items first: top item of every visible tile near the view, standing on the floor.
+    // Items first: top item of every visible tile near the view, drawn flat on the floor.
     for( int z = view.z_lo; z <= view.z_hi; ++z ) {
         for( int dy = -item_radius; dy <= item_radius; ++dy ) {
             for( int dx = -item_radius; dx <= item_radius; ++dx ) {
                 const tripoint_bub_ms p( view.center.x() + dx, view.center.y() + dy, z );
                 if( !here.inbounds( p ) ) {
+                    continue;
+                }
+                // As the flat view: nothing inside closed furniture (lockers, cupboards), and
+                // nothing on tiles the player cannot see into.
+                if( !here.sees_some_items( p, you ) ) {
                     continue;
                 }
                 map_stack stack = here.i_at( p );
@@ -198,10 +208,10 @@ chunk_mesh build_entity_mesh( const entity_view &view )
                 }
                 const std::string id = stack.begin()->typeId().str();
                 const tile_info &sprite = view.cache.named( TILE_CATEGORY::ITEM, id, view.tiles );
-                // A small sprite standing on the surface: lying flat it is unreadable from
-                // the camera's height.
-                emit_billboard( sink, { &sprite }, right, up, toward, view.cam.z_scale, frame_x( p ), frame_y( p ),
-                                frame_z( p ) + view.surface( p ) + 0.01f, light, false, item_size );
+                // Item art is drawn as seen from above, so it lies on the surface as in the
+                // flat view (the first-person view stands it up).
+                emit_flat( sink, sprite, frame_x( p ), frame_y( p ), frame_z( p ) + view.surface( p ) + 0.02f,
+                           light );
             }
         }
     }

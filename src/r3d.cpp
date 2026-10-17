@@ -421,7 +421,7 @@ void update_chunk_light( state &s, chunk_gpu &c, const tripoint_abs_sm &pos,
         // A never-seen floor is drawn as dark floor (the shader leaves black out), so an
         // unexplored room reads as a dark room, not a hole; nothing standing on it shows.
         if( tile == pack_light( 0, 0, 0 ) && r.floor ) {
-            tile = pack_light( 22, 22, 26 );
+            tile = pack_light( 48, 46, 52 );
         }
         const uint32_t shade = r.shade;
         c.light[i] = pack_light(
@@ -442,21 +442,26 @@ void set_cutaway( block_uniforms &u, const mat4 &view_proj, float aspect, const 
     if( !get_option<bool>( "R3D_CUTAWAY" ) || p.z() != center.z() ) {
         return;
     }
-    // Radius in tiles around the player's middle, and the height (above their floor) below which
-    // nothing is cut, so the floor and low furniture around them stay.
+    ( void )view_proj;
+    ( void )aspect;
+    // Half-width in tiles of the hole across the view; along the view it is stretched by the
+    // pitch so it looks round on screen. Below keep_below (above the player's floor) nothing is
+    // cut, so the floor and low furniture around them stay. See r3d_block.frag.
     constexpr float radius = 1.3f;
     constexpr float keep_below = 0.3f;
-    const float base = floor_height;
     const vec3 middle = tile_to_world( { static_cast<float>( p.x() - center.x() ) + 0.5f,
-                                         static_cast<float>( p.y() - center.y() ) + 0.5f, base + 0.4f } );
-    const vec3 at = transform_point( view_proj, middle );
-    const vec3 side = transform_point( view_proj, middle + cam.ground_right() * radius );
-    u.cut[0] = at.x;
-    u.cut[1] = at.y;
-    u.cut[2] = at.z;
-    u.cut[3] = std::abs( side.x - at.x );
-    u.cut2[0] = 1.0f / std::max( aspect, 0.01f );
-    u.cut2[1] = base + keep_below;
+                                         static_cast<float>( p.y() - center.y() ) + 0.5f, 0.0f } );
+    const vec3 eye = cam.eye();
+    const vec3 target = cam.stretched_target();
+    const vec3 forward = normalize( vec3{ target.x - eye.x, target.y - eye.y, 0.0f } );
+    u.cut[0] = middle.x;
+    u.cut[1] = middle.y;
+    u.cut[2] = floor_height + keep_below;
+    u.cut[3] = radius;
+    u.cut2[0] = forward.x;
+    u.cut2[1] = forward.y;
+    u.cut2[2] = std::clamp( radius / std::max( std::sin( cam.pitch ), 0.25f ), radius, 4.0f );
+    u.cut2[3] = 0.0f;
 }
 
 void apply_env_camera( camera &cam )

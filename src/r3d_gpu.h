@@ -31,9 +31,9 @@ struct block_uniforms {
     // xyz: world direction towards the camera; w: depth pull, in those units, of a vertex whose
     // light alpha is 1 (billboards; 0 for everything else). See r3d_block.vert.
     float pull[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-    // Cutaway around the player: xy their position on screen (NDC), z their depth, w the radius
-    // in NDC x (0: off); cut2 x scales NDC y to NDC x, y is the world height below which nothing
-    // is cut.
+    // Cutaway around the player (see r3d_block.frag): xy their world position, z the height
+    // below which nothing is cut, w the half-width of the hole in tiles (0: off); cut2 xy the
+    // view's forward direction on the ground, z the hole's half-length along it.
     float cut[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
     float cut2[4] = { 1.0f, 0.0f, 0.0f, 0.0f };
 };

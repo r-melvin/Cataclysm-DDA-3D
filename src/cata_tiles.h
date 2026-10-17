@@ -750,6 +750,10 @@ struct texture_draw_data {
     // clockwise quarter turns the thing faces (its front away from south), whether the art is
     // turned (quarter_turns) or the tileset has a sprite drawn for that direction
     int facing = 0;
+    // where the flat view draws the sprite relative to the tile's top-left corner, in pixels
+    // (the sheet's sprite_offset; tall sheets are drawn higher so their feet stay on the tile)
+    int offset_x = 0;
+    int offset_y = 0;
 };
 
 /** type used for color blocks overlays.

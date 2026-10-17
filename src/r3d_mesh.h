@@ -41,6 +41,10 @@ struct sprite_ref {
     float size_y = 1.0f;
     int quarter_turns = 0; // clockwise, applied to top faces like the flat view turns the sprite
     int facing = 0;        // clockwise quarter turns the front of the thing faces from south
+    // how far the flat view shifts the sprite from its tile, in tiles (x right, y down), so
+    // layers of different sheet heights line up as they do there
+    float offset_x = 0.0f;
+    float offset_y = 0.0f;
     bool flip = false;     // mirrored horizontally
     uint32_t top_color = 0;  // average colours from the tileset loader (see sprite_scan)
     uint32_t body_color = 0;

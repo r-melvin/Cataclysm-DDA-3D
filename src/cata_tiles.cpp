@@ -3089,7 +3089,8 @@ std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::st
     const float base_h = static_cast<float>( std::max( 1, tileset_ptr->get_tile_height() ) );
     return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1, texture_ptr, rect.w / base_w,
                               rect.h / base_h, quarter_turns, flip, tile->get_opaque_rect(),
-                              tile->get_top_color(), tile->get_body_color(), rota > 0 ? rota % 4 : 0 };
+                              tile->get_top_color(), tile->get_body_color(), rota > 0 ? rota % 4 : 0,
+                              ttype.offset.x, ttype.offset.y };
 }
 
 std::unordered_set<std::string> cata_tiles::get_all_portrait_tile_ids( bool male ) const

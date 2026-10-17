@@ -97,6 +97,11 @@ sprite_ref to_sprite_ref( const texture_draw_data &data )
     ref.body_color = data.body_color;
     ref.quarter_turns = data.quarter_turns;
     ref.facing = data.facing;
+    // size is in tiles and dimensions in pixels, so a tile is dimensions / size pixels.
+    const float tile_w = static_cast<float>( std::max( 1, data.dimensions.w ) ) / std::max( data.size_x, 0.01f );
+    const float tile_h = static_cast<float>( std::max( 1, data.dimensions.h ) ) / std::max( data.size_y, 0.01f );
+    ref.offset_x = static_cast<float>( data.offset_x ) / tile_w;
+    ref.offset_y = static_cast<float>( data.offset_y ) / tile_h;
     ref.flip = data.flip;
     if( data.opaque.w > 0 && data.opaque.h > 0 && data.dimensions.w > 0 && data.dimensions.h > 0 ) {
         const float w = static_cast<float>( data.dimensions.w );
@@ -416,7 +421,7 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
 
     // Legs: every tile of a bench or table stands on one pair of legs, one at each side
     // across its row (the row runs along x before the turn), in the middle of the tile.
-    constexpr float leg = 0.12f;
+    constexpr float leg = 0.1f;
     constexpr float inset = 0.05f;
     const bool across_y = ( facing & 1 ) == 0;
     const float a0 = ( ( across_y ? fx0 : fy0 ) + ( across_y ? fx1 : fy1 ) - leg ) * 0.5f;
@@ -898,7 +903,11 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                 cache.terrain( below->get_ter( p ), tiles ).tree ) {
                 continue;
             }
-            const uint8_t faces = visible_faces( ts, nb );
+            // Every side is built, even one a neighbour hides: the cutaway around the player
+            // removes whole tiles, and the neighbour's side must then be there to show.
+            constexpr uint8_t all_sides = face_north | face_south | face_west | face_east;
+            const uint8_t faces = visible_faces( ts, nb ) |
+                                  ( ts.kind == shape_kind::block ? all_sides : 0 );
             switch( ts.kind ) {
                 case shape_kind::floor:
                     if( ( faces & face_top ) != 0 ) {
@@ -1012,7 +1021,7 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                 // A bench or table runs along its row (x before the turn): a seat about 0.6 tile
                 // wide across the middle of the tile, the length of the tile when it continues
                 // next door, a little shorter when it stands alone.
-                constexpr float seat = 0.5f;
+                constexpr float seat = 0.65f;
                 constexpr float lone = 0.7f;
                 const bool continues = ( joined & ( face_west | face_east | face_north | face_south ) ) != 0;
                 layout.y0 = ( 1.0f - seat ) * 0.5f;
@@ -1035,8 +1044,8 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                     make_ref( lx, ly, 1, 0, 0, face_shade[4] )
                 }
             };
-            emit_box( sink, spr, lx, ly, ts.height, fs.height, layout, visible_faces( fs, nb ), refs,
-                      facing, joined, fs.slab );
+            emit_box( sink, spr, lx, ly, ts.height, fs.height, layout, visible_faces( fs, nb ) | all_sides,
+                      refs, facing, joined, fs.slab );
         }
     }
     chunk_mesh mesh = sink.finish();

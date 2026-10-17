@@ -7,19 +7,24 @@ layout(set = 2, binding = 0) uniform sampler2D u_atlas;
 
 layout(location = 0) in vec2 v_uv;
 layout(location = 1) in vec4 v_light;
-layout(location = 2) noperspective in vec3 v_ndc;
-layout(location = 3) in float v_height;
-layout(location = 4) flat in vec4 v_cut;
-layout(location = 5) flat in vec2 v_cut2;
+layout(location = 2) in vec3 v_world;
+layout(location = 3) flat in vec4 v_cut;
+layout(location = 4) flat in vec4 v_cut2;
 layout(location = 0) out vec4 out_color;
 
 void main()
 {
     // Cutaway: whatever stands between the camera and the player (a wall, a locker) is left out
-    // above knee height in a circle around them, so they are never hidden.
-    if (v_cut.w > 0.0 && v_height > v_cut2.y && v_ndc.z < v_cut.z) {
-        vec2 d = vec2(v_ndc.x - v_cut.x, (v_ndc.y - v_cut.y) * v_cut2.x);
-        if (dot(d, d) < v_cut.w * v_cut.w) {
+    // above knee height, so they are never hidden. The test is on the fragment's tile, so a
+    // tile goes as a whole and never shows its far faces through the hole: tiles whose centre
+    // lies nearer the camera than the player, inside an ellipse around them that is as long
+    // along the view as it looks wide across it.
+    if (v_cut.w > 0.0 && v_world.z > v_cut.z) {
+        vec2 d = floor(v_world.xy) + 0.5 - v_cut.xy;
+        float along = dot(d, v_cut2.xy);
+        float across = dot(d, vec2(v_cut2.y, -v_cut2.x));
+        float e = (across * across) / (v_cut.w * v_cut.w) + (along * along) / (v_cut2.z * v_cut2.z);
+        if (along < -0.25 && e < 1.0) {
             discard;
         }
     }

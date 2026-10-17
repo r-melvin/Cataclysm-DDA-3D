@@ -34,10 +34,15 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
 * Sound markers: done (not yet seen in the game). The markers the game queues for the turn
   (`sounds::get_footstep_markers`, what `cata_tiles::draw_footsteps_frame` draws in 2D) are
   posts on their tile in first person, using the tileset's `footstep`/`footstep_above`/
-  `footstep_below` sprite (`highlight` when it has none). Since the game only places them where
-  you cannot see, the posts are drawn in front of everything (light alpha 1 plus uniform
-  `flags.y`), like the 2D marker drawn over the map. Sounds outside the horizontal field of
-  view are yellow ticks on the compass strip instead (dimmer at the strip's ends when behind).
+  `footstep_below` sprite (`highlight` when it has none). The posts have normal depth: walls,
+  creatures and anything else nearer the eye hide them, and you never see one through yourself
+  or a monster. This drops the 2D convention of drawing the marker over everything: since the
+  game only places markers where you cannot see, most posts are hidden behind a wall, and the
+  compass strip carries those instead. A sound gets a yellow tick on the strip when its post is
+  out of the horizontal field of view or a line from the eye to the post's middle meets a
+  terrain or furniture column first (`clear_line` in `r3d_dda`; never-seen places count only
+  with `R3D_FP_OCCLUDE_UNSEEN` on, since only then are they drawn solid). Ticks behind the
+  strip's ends are dimmer. `flags.y` of the uniforms is unused again.
   The crosshair label now names only tiles you see or remember.
 * Review of bearings and ceilings: done. The compass, the threat and sound ticks and the edge
   alert go through the pure `src/r3d_hud.{h,cpp}` (bearing = radians clockwise from north with

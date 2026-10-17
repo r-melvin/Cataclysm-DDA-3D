@@ -156,6 +156,23 @@ voxel_hit raycast_columns_reference( const vec3 &origin, const vec3 &dir, float 
     return best;
 }
 
+bool clear_line( const vec3 &from, const vec3 &to, const column_height_fn &height )
+{
+    const vec3 d = to - from;
+    const float dist = length( d );
+    if( dist < 1e-4f ) {
+        return true;
+    }
+    const voxel_hit hit = raycast_columns( from, d * ( 1.0f / dist ), dist, height );
+    if( !hit.hit ) {
+        return true;
+    }
+    // Reaching the target's own column (the furniture it stands on) is not being blocked.
+    return hit.x == static_cast<int>( std::floor( to.x ) ) &&
+           hit.y == static_cast<int>( std::floor( to.y ) ) &&
+           hit.z == static_cast<int>( std::floor( to.z ) );
+}
+
 voxel_hit pick_cell( const camera &cam, float ndc_x, float ndc_y, float aspect, float max_t,
                      const column_height_fn &height, float floor_z )
 {

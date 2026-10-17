@@ -37,8 +37,8 @@ struct entity_view {
         const tile_info *sprite = nullptr;
         bool box = false;           // also draw the sprite on the sides of a box above the tile
         bool large = false;         // first person: a full-height box rather than a small post
-        // First person: a sound the player heard but cannot see. A post drawn in front of
-        // everything, since such places are behind walls by definition (see sounds.cpp).
+        // First person: a sound the player heard but cannot see, drawn as a post with normal
+        // depth (walls and creatures in front hide it; the compass points at hidden ones).
         bool heard = false;
     };
     std::vector<marker> markers;

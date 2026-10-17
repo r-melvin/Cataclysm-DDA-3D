@@ -14,7 +14,7 @@ layout(set = 1, binding = 0) uniform params {
     vec4 pull;   // xyz: direction towards the camera; w: depth pull at light alpha 1
     vec4 cut;    // xy: the player on screen (NDC), z: their depth, w: cutaway radius (0: off)
     vec4 cut2;   // x: NDC y to NDC x scale, y: world height below which nothing is cut
-    vec4 flags;  // x: unseen places occlude (1) or are left out (0); y: light alpha 1 is on top
+    vec4 flags;  // x: unseen places occlude (1) or are left out (0); yzw: unused
 } u;
 
 layout(location = 0) out vec2 v_uv;
@@ -37,10 +37,6 @@ void main()
     if (u.pull.w > 0.0) {
         vec4 pulled = u.view_proj * vec4(pos + u.pull.xyz * (u.pull.w * a_light.a), 1.0);
         clip.z = pulled.z / pulled.w * clip.w;
-    } else if (u.flags.y > 0.0 && a_light.a > 0.5) {
-        // Markers the player only hears (first person): just behind the near plane, so they show
-        // through walls. Vertices behind the eye keep a negative w and are still clipped.
-        clip.z = 1e-5 * clip.w;
     }
     gl_Position = clip;
     v_ndc = clip.xyz / clip.w;

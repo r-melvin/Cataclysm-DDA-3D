@@ -146,6 +146,9 @@ struct state {
     bool fp_easing = false; // the last frame was drawn mid-ease, so another is needed
     int fp_heading_saved = 0; // the heading last written to the save's UI state
     std::vector<hud_text> hud; // labels of the first-person overlay, see hud_texts()
+    // Sounds heard this turn whose post cannot be seen (out of the picture or behind something):
+    // the compass strip shows a tick for each.
+    std::vector<tripoint_bub_ms> heard_ticks;
     int hud_cell_w = 8;        // the size of a character of the font they are drawn in
     int hud_cell_h = 16;
 };
@@ -1167,14 +1170,10 @@ void draw_fp_hud( state &s, SDL_Renderer *renderer, float x, float y, float w, f
             text( strip_x( rel ), top + 1.0f, label, cardinal ? white : light_gray );
         }
         fill( mid - 1.0f, top + strip_h - 5.0f, 2.0f, 5.0f, 255, 255, 255, 255 );
-        // Sounds heard this turn that are not in the picture: a short yellow tick each, dimmer
-        // when they lie behind the strip's ends. Those in the picture are posts on their tile.
-        const float half_fov = cam.fovx * 0.5f;
-        for( const tripoint_bub_ms &p : sounds::get_footstep_markers() ) {
+        // Sounds heard this turn whose post cannot be seen: a short yellow tick each, dimmer
+        // when they lie behind the strip's ends. Those in sight are posts on their tile.
+        for( const tripoint_bub_ms &p : s.heard_ticks ) {
             const float rel = bearing_to( p );
-            if( std::abs( rel ) <= half_fov ) {
-                continue;
-            }
             fill( strip_x( rel ) - 2.0f, top + strip_h - 9.0f, 4.0f, 9.0f, 240, 210, 60,
                   on_compass( rel, compass_span ) ? 255 : 150 );
         }
@@ -1491,10 +1490,40 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         add_markers( queued.highlights, "highlight", false, true );
         add_markers( queued.cursors, "cursor", true, true );
         // Sounds heard this turn, which cata_tiles::draw_footsteps_frame would draw: posts on
-        // their tile, seen through walls; the compass strip points at those out of the picture.
+        // their tile with normal depth, so walls and creatures in front hide them. The 2D view
+        // draws them over everything; here the compass strip points at the hidden ones instead
+        // (out of the picture, or behind something solid).
+        s.heard_ticks.clear();
         if( fp ) {
             const int player_z = player_pos.z();
+            const bool occlude_unseen = get_option<bool>( "R3D_FP_OCCLUDE_UNSEEN" );
+            // What hides a post: terrain and furniture as drawn. Unseen places only when they
+            // are drawn solid (R3D_FP_OCCLUDE_UNSEEN); creatures never fill a whole tile.
+            const column_height_fn solid = [&]( int dx, int dy, int dz ) {
+                const tripoint_bub_ms c( center.x() + dx, center.y() + dy, center.z() + dz );
+                if( c.z() < z_lo || c.z() > z_hi || !here.inbounds( c ) ) {
+                    return 0.0f;
+                }
+                if( !occlude_unseen && sampler.color_at( c ) == pack_light( 0, 0, 0 ) ) {
+                    return 0.0f;
+                }
+                return column_height( s, here, c );
+            };
+            const vec3 eye_world = s.cam.eye();
+            const vec3 eye_tile = world_to_tile( { eye_world.x, eye_world.y,
+                                                   eye_world.z / s.cam.z_scale } );
+            const float view_yaw = s.cam.fp_yaw();
             for( const tripoint_bub_ms &p : sounds::get_footstep_markers() ) {
+                const tripoint_rel_ms d = p - player_pos;
+                const float rel = relative_bearing( static_cast<float>( d.x() ),
+                                                    static_cast<float>( d.y() ), view_yaw );
+                // The middle of the post (see r3d_entities.cpp), in the scene's tile space.
+                const vec3 post{ static_cast<float>( p.x() - center.x() ) + 0.5f,
+                                 static_cast<float>( p.y() - center.y() ) + 0.5f,
+                                 static_cast<float>( p.z() - center.z() ) + column_height( s, here, p ) + 0.4f };
+                if( std::abs( rel ) > s.cam.fovx * 0.5f || !clear_line( eye_tile, post, solid ) ) {
+                    s.heard_ticks.push_back( p );
+                }
                 const char *const id = p.z() > player_z ? "footstep_above" :
                                        p.z() < player_z ? "footstep_below" : "footstep";
                 const tile_info *sprite = &s.cache.named( TILE_CATEGORY::NONE, id, *tilecontext );
@@ -1559,7 +1588,6 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         uniforms.cut[3] = 0.0f; // creatures in front of the player stay
         // Unseen creatures and items are not drawn at all; unseen trees are left out.
         uniforms.flags[0] = 0.0f;
-        uniforms.flags[1] = fp ? 1.0f : 0.0f; // sound markers on top (see r3d_entities.cpp)
         uniforms.offset[0] = 0.0f;
         uniforms.offset[1] = 0.0f;
         uniforms.offset[2] = 0.0f;

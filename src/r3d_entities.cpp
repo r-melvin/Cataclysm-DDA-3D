@@ -164,12 +164,11 @@ void emit_stand( quad_sink &sink, const tile_info &sprite, const vec3 &right_wor
 }
 
 // Box standing on a tile with the sprite on its four sides, so a cursor reads as a 3D outline.
-// size is the footprint's width; the box is centred on the tile. An on_top box keeps a light
-// alpha of 1, which the first-person entity pass draws in front of everything (r3d_block.vert).
+// size is the footprint's width; the box is centred on the tile.
 void emit_marker_box( quad_sink &sink, const sprite_ref &s, float x0, float y0, float z0, float z1,
-                      uint32_t color, float size = 1.0f, bool on_top = false )
+                      uint32_t color, float size = 1.0f )
 {
-    const uint32_t vertex_color = on_top ? color | 0xff000000u : no_pull( color );
+    const uint32_t vertex_color = no_pull( color );
     x0 += ( 1.0f - size ) * 0.5f;
     y0 += ( 1.0f - size ) * 0.5f;
     const float x1 = x0 + size;
@@ -323,8 +322,7 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         if( m.heard ) {
             const sprite_ref &s = m.sprite->main();
             if( upright && s.valid ) {
-                emit_marker_box( sink, s, x0, y0, z, z + heard_post_height, white, heard_post_width,
-                                 true );
+                emit_marker_box( sink, s, x0, y0, z, z + heard_post_height, white, heard_post_width );
             }
             continue;
         }

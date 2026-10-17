@@ -37,9 +37,7 @@ struct block_uniforms {
     float cut[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
     float cut2[4] = { 1.0f, 0.0f, 0.0f, 0.0f };
     // x: 1 draws places never seen (lit black) as solid black that hides what is behind them,
-    // 0 leaves them out (see r3d_block.frag); y: 1 draws vertices whose light alpha is 1 in front
-    // of everything (first-person sound markers, seen through walls like the flat view's), only
-    // used while pull.w is 0; zw unused.
+    // 0 leaves them out (see r3d_block.frag); yzw unused.
     float flags[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 };
 static_assert( sizeof( block_uniforms ) == 144, "block_uniforms is mirrored by r3d_block.vert" );

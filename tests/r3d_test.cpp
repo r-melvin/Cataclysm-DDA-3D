@@ -921,3 +921,30 @@ TEST_CASE( "r3d_minimap_disc_stays_whole_when_turned", "[r3d]" )
         }
     }
 }
+
+TEST_CASE( "r3d_clear_line_is_blocked_by_walls_but_not_by_the_target", "[r3d]" )
+{
+    // Floors everywhere on level 0, a wall at (3, 0), a counter at (5, 2).
+    const r3d::column_height_fn world = []( int x, int y, int z ) {
+        if( z != 0 ) {
+            return 0.0f;
+        }
+        if( x == 3 && y == 0 ) {
+            return 1.0f;
+        }
+        if( x == 5 && y == 2 ) {
+            return 0.4f;
+        }
+        return r3d::floor_height;
+    };
+    const r3d::vec3 eye{ 0.5f, 0.5f, 0.55f };
+    // Behind the wall: hidden. In front of it: seen.
+    CHECK_FALSE( r3d::clear_line( eye, { 6.5f, 0.5f, 0.5f }, world ) );
+    CHECK( r3d::clear_line( eye, { 2.5f, 0.5f, 0.5f }, world ) );
+    // Off to the side of the wall: seen.
+    CHECK( r3d::clear_line( eye, { 4.5f, 3.5f, 0.5f }, world ) );
+    // Standing on the counter: its own column does not hide it.
+    CHECK( r3d::clear_line( eye, { 5.5f, 2.5f, 0.6f }, world ) );
+    // The same point as the eye is trivially seen.
+    CHECK( r3d::clear_line( eye, eye, world ) );
+}

@@ -41,6 +41,13 @@ using column_height_fn = std::function<float( int x, int y, int z )>;
 voxel_hit raycast_columns( const vec3 &origin, const vec3 &dir, float max_t,
                            const column_height_fn &height );
 
+/**
+ * Whether the straight line from one point to another (tile space) reaches the cell holding the
+ * second point without first touching another cell's column: what lies there can be seen from
+ * the first point unless something nearer stands in the way.
+ */
+bool clear_line( const vec3 &from, const vec3 &to, const column_height_fn &height );
+
 /** Slow reference: tests every cell in the box [lo, hi] and keeps the nearest hit. For tests. */
 voxel_hit raycast_columns_reference( const vec3 &origin, const vec3 &dir, float max_t,
                                      const column_height_fn &height,

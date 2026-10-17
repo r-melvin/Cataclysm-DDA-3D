@@ -50,6 +50,12 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
   none. Ceiling shade stays 170 (150 for the floor-sprite fallback): darker than any floor or
   wall cap (255), about the walls' darker sides (128-178), with the plaster colour as tint like
   plaster walls and caps, and lit by its own tile like the floor.
+* FP7 z-levels: done in part (not yet seen in the game). With `R3D_FP_TWEEN_MS` above 0, taking
+  stairs (a level up or down, landing on the same or a neighbouring tile) and climbing onto or
+  off furniture ease the eye vertically like a step. Looking at another level in look mode
+  (`<`/`>`, i.e. `view_offset.z`) tilts the view 45 degrees towards it (`camera::tilt_pitch`,
+  display only) and shows "Looking: N level(s) up/down" under the compass. Not done: holes and
+  stairwells were not checked, the eye on ramps uses the floor height.
 
 What to test locally (FP0): toggle with ctrl+F in a house; the picture is a perspective view from
 eye height; left/right arrows (with `R3D_WASD` on, the default) or ctrl+left/right turn by 45

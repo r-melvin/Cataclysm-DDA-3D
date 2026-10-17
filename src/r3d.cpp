@@ -43,7 +43,9 @@
 #include "sdl_wrappers.h"
 #include "sdltiles.h"
 #include "sounds.h"
+#include "string_formatter.h"
 #include "submap.h"
+#include "translations.h"
 #include "ui_manager.h"
 #include "uistate.h"
 
@@ -136,6 +138,8 @@ struct state {
     int fp_prev_heading = 0;
     float fp_ease_dx = 0.0f; // tiles east and south at the start of the ease
     float fp_ease_dy = 0.0f;
+    float fp_ease_dz = 0.0f; // levels up at the start of the ease (stairs, climbing on things)
+    float fp_prev_surface = 0.0f;
     float fp_ease_yaw = 0.0f; // radians at the start of the ease
     uint32_t fp_ease_start = 0;
     uint32_t fp_ease_ms = 0;
@@ -569,7 +573,10 @@ void remember_heading( state &s )
 // First person: eases the picture from where the camera was to where the player now is. The
 // game state (position, heading, picking) always has the end values; only what is drawn lags, for
 // at most R3D_FP_TWEEN_MS. Sets the offsets to add to the camera this frame and the yaw to show.
-void update_fp_ease( state &s, const tripoint_abs_ms &pos, float &offset_x, float &offset_y )
+// surface is the height the player stands at within their level (floor, counter top): taking
+// stairs, or climbing onto a counter, eases the eye up or down as well (offset_z, in levels).
+void update_fp_ease( state &s, const tripoint_abs_ms &pos, float surface, float &offset_x,
+                     float &offset_y, float &offset_z )
 {
     constexpr float eighth = 0.78539816f;
     avatar &you = get_avatar();
@@ -590,14 +597,20 @@ void update_fp_ease( state &s, const tripoint_abs_ms &pos, float &offset_x, floa
     };
     if( s.fp_prev_valid && length > 0 ) {
         const tripoint_rel_ms step = pos - s.fp_prev_pos;
-        const bool stepped = ( step.x() != 0 || step.y() != 0 ) && step.z() == 0 &&
-                             std::abs( step.x() ) <= 1 && std::abs( step.y() ) <= 1;
+        // How far the eye rises: a storey for stairs, plus the change in what is stood on.
+        const float rise = static_cast<float>( step.z() ) + surface - s.fp_prev_surface;
+        // A step to a neighbouring tile, up or down stairs (which may land on a tile next to
+        // the one above or below), or onto furniture; teleports and falls are not eased.
+        const bool stepped = ( step.x() != 0 || step.y() != 0 || rise != 0.0f ) &&
+                             std::abs( step.x() ) <= 1 && std::abs( step.y() ) <= 1 &&
+                             std::abs( step.z() ) <= 1;
         const int turned = ( ( s.cam.heading - s.fp_prev_heading + 12 ) % 8 ) - 4;
         if( stepped || turned != 0 ) {
             // Carry over what is left, so a held key flows from one step into the next.
             const float left = remaining();
             s.fp_ease_dx = s.fp_ease_dx * left - ( stepped ? static_cast<float>( step.x() ) : 0.0f );
             s.fp_ease_dy = s.fp_ease_dy * left - ( stepped ? static_cast<float>( step.y() ) : 0.0f );
+            s.fp_ease_dz = s.fp_ease_dz * left - ( stepped ? rise : 0.0f );
             s.fp_ease_yaw = s.fp_ease_yaw * left - static_cast<float>( turned ) * eighth;
             s.fp_ease_start = now;
             s.fp_ease_ms = length;
@@ -607,11 +620,13 @@ void update_fp_ease( state &s, const tripoint_abs_ms &pos, float &offset_x, floa
     }
     s.fp_prev_valid = true;
     s.fp_prev_pos = pos;
+    s.fp_prev_surface = surface;
     s.fp_prev_heading = s.cam.heading;
     const float left = remaining();
     s.fp_easing = left > 0.0f;
     offset_x = s.fp_ease_dx * left;
     offset_y = s.fp_ease_dy * left;
+    offset_z = s.fp_ease_dz * left;
     s.cam.tween_yaw = s.fp_ease_yaw * left;
 }
 
@@ -1201,6 +1216,19 @@ void draw_fp_hud( state &s, SDL_Renderer *renderer, float x, float y, float w, f
         }
     }
 
+    // Look mode on another level: say which, under the compass strip.
+    const int looking = you.view_offset.z();
+    if( looking != 0 ) {
+        const int levels = std::abs( looking );
+        const std::string line = looking > 0 ?
+                                 string_format( n_gettext( "Looking: %d level up", "Looking: %d levels up",
+                                         levels ), levels ) :
+                                 string_format( n_gettext( "Looking: %d level down", "Looking: %d levels down",
+                                         levels ), levels );
+        constexpr unsigned char light_cyan = 14;
+        text( x + w * 0.5f, y + std::max( 22.0f, cell_h + 8.0f ) + 10.0f, line, light_cyan );
+    }
+
     if( get_option<bool>( "R3D_FP_CROSSHAIR" ) ) {
         const float cx = x + w * 0.5f;
         const float cy = y + h * 0.5f;
@@ -1359,19 +1387,27 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     if( fp ) {
         float ease_x = 0.0f;
         float ease_y = 0.0f;
-        update_fp_ease( s, get_map().get_abs( player_pos ), ease_x, ease_y );
+        float ease_z = 0.0f;
+        const float stand = surface_height( s, here, player_pos );
+        update_fp_ease( s, get_map().get_abs( player_pos ), stand, ease_x, ease_y, ease_z );
         // The camera stands on the player's tile, at the height of what they stand on.
         s.cam.target = tile_to_world( {
             static_cast<float>( player_pos.x() - center.x() ) + 0.5f + ease_x,
             static_cast<float>( player_pos.y() - center.y() ) + 0.5f + ease_y,
-            static_cast<float>( player_pos.z() - center.z() ) + surface_height( s, here, player_pos )
+            static_cast<float>( player_pos.z() - center.z() ) + stand + ease_z
         } );
+        // Looking at another level (look mode's < and >) tilts the view towards it, 45 degrees
+        // per level at most one level's worth; the eye stays where the player stands.
+        constexpr float level_tilt = 0.7854f;
+        s.cam.tilt_pitch = static_cast<float>( std::clamp( view_z - player_pos.z(), -1, 1 ) ) *
+                           level_tilt;
         s.cam.fovx = static_cast<float>( get_option<int>( "R3D_FP_FOV" ) ) * 0.017453293f;
         s.cam.eye_height = static_cast<float>( get_option<int>( "R3D_FP_EYE_HEIGHT" ) ) / 100.0f;
     } else {
         s.fp_prev_valid = false;
         s.fp_easing = false;
         s.cam.tween_yaw = 0.0f;
+        s.cam.tilt_pitch = 0.0f;
         s.cam.target = tile_to_world( { 0.5f, 0.5f, 0.5f } ) + s.pan;
     }
     const float aspect = static_cast<float>( target_w ) / static_cast<float>( target_h );

@@ -44,7 +44,8 @@ float camera::fp_yaw() const
 vec3 camera::fp_forward() const
 {
     const float yaw_w = fp_yaw();
-    const float p = std::clamp( look_pitch + glance_pitch, -max_look_pitch, max_look_pitch );
+    const float p = std::clamp( look_pitch + glance_pitch + tilt_pitch, -max_look_pitch,
+                                max_look_pitch );
     const float cp = std::cos( p );
     return { std::sin( yaw_w ) * cp, std::cos( yaw_w ) * cp, std::sin( p ) };
 }

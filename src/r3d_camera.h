@@ -87,6 +87,7 @@ struct camera {
     float glance_yaw = 0.0f;   // mouse glance, display only; snaps back to 0
     float glance_pitch = 0.0f;
     float tween_yaw = 0.0f;    // the turn still to be shown while a turn is eased, display only
+    float tilt_pitch = 0.0f;   // looking at another level (look mode), display only
     float fovx = 1.5708f;      // horizontal field of view, 90 degrees
 
     bool first_person() const {

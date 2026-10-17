@@ -878,3 +878,24 @@ TEST_CASE( "r3d_ceilings_close_everything_but_open_air", "[r3d]" )
     nb.up = r3d::shape();
     CHECK( ( r3d::visible_faces( pane, nb ) & r3d::face_ceiling ) == 0 );
 }
+
+TEST_CASE( "r3d_first_person_level_tilt_adds_to_the_look_pitch", "[r3d]" )
+{
+    r3d::camera cam;
+    cam.mode = r3d::camera_mode::first_person;
+    cam.heading = 2;
+    // Looking one level up tilts the view 45 degrees up, still facing the heading.
+    cam.tilt_pitch = 0.7854f;
+    const r3d::vec3 up = cam.fp_forward();
+    CHECK( approx( up.z, std::sin( 0.7854f ) ) );
+    CHECK( up.x > 0.0f );
+    CHECK( approx( up.y, 0.0f ) );
+    // Together with a look up it stays within the clamp.
+    cam.look_pitch = 0.7854f;
+    CHECK( approx( cam.fp_forward().z, std::sin( r3d::camera::max_look_pitch ) ) );
+    // Looking a level down tilts the view down; walking directions keep the heading.
+    cam.look_pitch = 0.0f;
+    cam.tilt_pitch = -0.7854f;
+    CHECK( cam.fp_forward().z < 0.0f );
+    CHECK( cam.forward_eighths() == 2 );
+}

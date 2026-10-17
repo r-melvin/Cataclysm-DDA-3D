@@ -1048,6 +1048,134 @@ void shutdown()
     s.shown.valid = false;
 }
 
+namespace
+{
+// First-person overlay, drawn with the 2D renderer over the finished picture: a compass strip
+// (the game keeps full-circle vision, so this shows what is behind you), an alert on the edge
+// nearest an adjacent hostile that is out of the picture, and a crosshair with its label.
+void draw_fp_hud( SDL_Renderer *renderer, float x, float y, float w, float h, const camera &cam )
+{
+    constexpr float pi = 3.14159265f;
+    const std::string compass = get_option<std::string>( "R3D_FP_COMPASS" );
+    const bool edge_alert = get_option<bool>( "R3D_FP_EDGE_ALERT" );
+    const avatar &you = get_avatar();
+    map &here = get_map();
+    // The bearing of a tile from the player relative to the view, in radians clockwise, -pi..pi.
+    auto relative_bearing = [&]( const tripoint_bub_ms & at ) {
+        const tripoint_rel_ms d = at - you.pos_bub();
+        float rel = std::atan2( static_cast<float>( d.x() ), static_cast<float>( -d.y() ) ) -
+                    cam.fp_yaw();
+        while( rel > pi ) {
+            rel -= 2.0f * pi;
+        }
+        while( rel < -pi ) {
+            rel += 2.0f * pi;
+        }
+        return rel;
+    };
+    auto fill = [&]( float rx, float ry, float rw, float rh, uint8_t r, uint8_t g, uint8_t b,
+    uint8_t a ) {
+        SDL_SetRenderDrawBlendMode( renderer, SDL_BLENDMODE_BLEND );
+        SDL_SetRenderDrawColor( renderer, r, g, b, a );
+        const SDL_FRect rect{ rx, ry, rw, rh };
+        SDL_RenderFillRect( renderer, &rect );
+    };
+    auto text = [&]( float tx, float ty, const std::string & str, uint8_t r, uint8_t g, uint8_t b ) {
+        SDL_SetRenderDrawColor( renderer, r, g, b, 255 );
+        SDL_RenderDebugText( renderer, tx, ty, str.c_str() );
+    };
+
+    if( compass != "off" ) {
+        // The strip shows 180 degrees: the heading in the middle, what is beside you at the ends.
+        const float strip_w = std::max( 120.0f, w * 0.4f );
+        const float strip_h = 22.0f;
+        const float left = x + ( w - strip_w ) * 0.5f;
+        const float top = y + 6.0f;
+        const float mid = left + strip_w * 0.5f;
+        auto bearing_x = [&]( float rel ) {
+            return mid + rel / ( pi * 0.5f ) * strip_w * 0.5f;
+        };
+        fill( left, top, strip_w, strip_h, 0, 0, 0, 110 );
+        static const char *const names[8] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
+        for( int i = 0; i < 8; ++i ) {
+            float rel = static_cast<float>( i ) * pi * 0.25f - cam.fp_yaw();
+            while( rel > pi ) {
+                rel -= 2.0f * pi;
+            }
+            while( rel < -pi ) {
+                rel += 2.0f * pi;
+            }
+            if( std::abs( rel ) > pi * 0.5f ) {
+                continue;
+            }
+            const float tx = bearing_x( rel );
+            const std::string label = names[i];
+            const bool cardinal = label.size() == 1;
+            text( tx - 4.0f * static_cast<float>( label.size() ), top + 2.0f, label, cardinal ? 255 : 170,
+                  cardinal ? 255 : 170, cardinal ? 255 : 170 );
+        }
+        fill( mid - 1.0f, top + strip_h - 5.0f, 2.0f, 5.0f, 255, 255, 255, 255 );
+        if( compass == "threats" ) {
+            for( Creature *critter : you.get_hostile_creatures( MAX_VIEW_DISTANCE ) ) {
+                if( critter->posz() != you.posz() ) {
+                    continue;
+                }
+                const float rel = relative_bearing( critter->pos_bub() );
+                const int distance = std::max( 1, rl_dist( you.pos_bub(), critter->pos_bub() ) );
+                // Behind the player the tick sits at the end of the strip it is nearer to.
+                const float shown = std::clamp( rel, -pi * 0.5f, pi * 0.5f );
+                const float tick_h = std::clamp( 24.0f / static_cast<float>( distance ), 5.0f, strip_h );
+                const float tick_w = distance == 1 ? 5.0f : 3.0f;
+                fill( bearing_x( shown ) - tick_w * 0.5f, top + strip_h - tick_h, tick_w, tick_h, 230, 40, 40,
+                      std::abs( rel ) > pi * 0.5f ? 150 : 255 );
+            }
+        }
+    }
+
+    if( edge_alert ) {
+        const float half_fov = cam.fovx * 0.5f;
+        constexpr float bar = 6.0f;
+        for( Creature *critter : you.get_hostile_creatures( 1 ) ) {
+            if( critter->posz() != you.posz() ) {
+                continue;
+            }
+            const float rel = relative_bearing( critter->pos_bub() );
+            if( std::abs( rel ) <= half_fov ) {
+                continue; // in the picture
+            }
+            if( std::abs( rel ) > pi * 0.75f ) {
+                fill( x, y + h - bar, w, bar, 230, 40, 40, 200 );
+            } else if( rel < 0.0f ) {
+                fill( x, y, bar, h, 230, 40, 40, 200 );
+            } else {
+                fill( x + w - bar, y, bar, h, 230, 40, 40, 200 );
+            }
+        }
+    }
+
+    if( get_option<bool>( "R3D_FP_CROSSHAIR" ) ) {
+        const float cx = x + w * 0.5f;
+        const float cy = y + h * 0.5f;
+        fill( cx - 2.0f, cy - 2.0f, 4.0f, 4.0f, 255, 255, 255, 200 );
+        std::string label;
+        if( const std::optional<tripoint_bub_ms> at = crosshair() ) {
+            const Creature *critter = get_creature_tracker().creature_at( *at );
+            if( critter && you.sees( here, *critter ) ) {
+                label = critter->disp_name();
+            } else if( here.furn( *at ) != furn_str_id::NULL_ID() ) {
+                label = here.furnname( *at );
+            } else {
+                label = here.tername( *at );
+            }
+        }
+        if( !label.empty() ) {
+            text( cx - 4.0f * static_cast<float>( label.size() ), cy + 10.0f, label, 255, 255, 255 );
+        }
+    }
+}
+
+} // namespace
+
 bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
            const tripoint_bub_ms &center, unsigned render_epoch )
 {
@@ -1356,6 +1484,9 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     tilecontext->drop_frame_layers();
     s.shown = { true, x, y, w, h, s.cam, center, z_lo, z_hi };
     s.drawn = true;
+    if( fp ) {
+        draw_fp_hud( renderer, x, y, w, h, s.cam );
+    }
     return true;
 }
 

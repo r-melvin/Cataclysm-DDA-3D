@@ -2673,6 +2673,32 @@ void options_manager::add_options_graphics()
 
         get_option( "R3D_FP_TWEEN_MS" ).setPrerequisite( "RENDERER_3D" );
 
+        add( "R3D_FP_COMPASS", page_id, to_translation( "3D first-person compass" ),
+             to_translation( "A strip at the top of the first-person view showing the way you face and, since the picture covers only part of the view all around you, where visible hostile creatures are.  Threats: heading and hostile creatures.  Heading: only the way you face." ),
+        {
+            { "off", to_translation( "Off" ) },
+            { "heading", to_translation( "Heading" ) },
+            { "threats", to_translation( "Threats" ) }
+        },
+        "threats", COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_FP_COMPASS" ).setPrerequisite( "RENDERER_3D" );
+
+        add( "R3D_FP_EDGE_ALERT", page_id, to_translation( "3D first-person edge alert" ),
+             to_translation( "Light up the edge of the first-person view on the side of a hostile creature next to you that is out of the picture." ),
+             true, COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_FP_EDGE_ALERT" ).setPrerequisite( "RENDERER_3D" );
+
+        add( "R3D_FP_CROSSHAIR", page_id, to_translation( "3D first-person crosshair" ),
+             to_translation( "A dot in the middle of the first-person view with the name of what is under it." ),
+             true, COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_FP_CROSSHAIR" ).setPrerequisite( "RENDERER_3D" );
+
         add( "R3D_FP_USE_HEADING", page_id, to_translation( "3D first-person: Space picks the tile ahead" ),
              to_translation( "In first person, direction prompts (close, examine, smash and so on) also accept Space for the tile you are facing." ),
              true, COPT_CURSES_HIDE

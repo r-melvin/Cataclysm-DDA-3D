@@ -12,7 +12,8 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
   turn, `e` stays examine).
 * FP3 ceilings and sky: done (not yet seen in the game).
 * FP4 tweening and redraw loop: done (not yet seen in the game); instant by default.
-* FP5 HUD: not started.
+* FP5 HUD: done in part (not yet seen in the game): compass strip with hostile ticks, edge alert,
+  crosshair dot with label. Not done: sound markers, look-level line, auto-travel caret.
 
 What to test locally (FP0): toggle with ctrl+F in a house; the picture is a perspective view from
 eye height; left/right arrows (with `R3D_WASD` on, the default) or ctrl+left/right turn by 45
@@ -38,6 +39,9 @@ Ceilings exist only in first-person meshes (`mesh_options.ceilings`).
 FP4: `R3D_FP_TWEEN_MS` (0-250, default 0 = instant). When above 0 a step or turn slides into place
 over that time; it is skipped while travelling, during activities and with ANIMATIONS off. The game
 redraws at about 60 Hz only while an ease is live (`r3d::animating()`).
+
+FP5 options: `R3D_FP_COMPASS` (off / heading / threats, default threats), `R3D_FP_EDGE_ALERT`,
+`R3D_FP_CROSSHAIR`. The overlay uses SDL's built-in 8x8 debug font for its few letters.
 
 Design for a first-person, **turn-based** view on top of the existing `r3d` renderer
 (`src/r3d*.{h,cpp}`, SDL3 GPU). Target branch: `feature/r3d-first-person`. Companion to

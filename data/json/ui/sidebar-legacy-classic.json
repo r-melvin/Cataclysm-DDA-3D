@@ -180,6 +180,7 @@
     "padding": 2,
     "width": 44,
     "widgets": [
+      "onboarding_next",
       "lcla_health_layout",
       "lcla_health_sa_layout",
       "ll_movement_layout",

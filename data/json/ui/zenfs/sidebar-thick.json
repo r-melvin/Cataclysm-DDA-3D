@@ -134,6 +134,7 @@
     "padding": 1,
     "width": 66,
     "widgets": [
+      "onboarding_next",
       "zenfs_complete_status_display",
       "zenfs_complete_status_display_alt",
       "zenfs_spacer",
@@ -163,6 +164,7 @@
     "padding": 1,
     "width": 58,
     "widgets": [
+      "onboarding_next",
       "zenfs_complete_number_display",
       "zenfs_complete_number_display_alt",
       "zenfs_spacer",

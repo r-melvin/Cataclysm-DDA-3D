@@ -9,6 +9,7 @@
     "width": 48,
     "padding": 1,
     "widgets": [
+      "onboarding_next",
       "structured_time_moon_layout",
       "structured_weather_layout",
       "structured_place_sound_layout",

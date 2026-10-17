@@ -77,6 +77,7 @@ enum class widget_var : int {
     faction_territory,  // Name of faction whose base/territory you are at, if any
     mood_text,      // Mood as a text emote, color string
     move_count_mode_text, // Movement counter and mode letter like "50(R)", color string
+    onboarding_text, // Guided hints: the "Next" lesson and its key, multi-line color string
     overmap_loc_text,// Local overmap position, pseudo latitude/longitude with Z-level
     overmap_text,   // Local overmap and mission marker, multi-line color string
     oxygen,         // Current oxygen

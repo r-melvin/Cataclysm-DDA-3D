@@ -8,6 +8,7 @@
     "separator": ": ",
     "padding": 2,
     "widgets": [
+      "onboarding_next",
       "hitpoints_all_narrow_graphs_layout",
       "hitpoints_all_narrow_nums_layout",
       "stats_narrow_layout",

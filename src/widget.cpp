@@ -27,6 +27,7 @@
 #include "magic.h"
 #include "magic_enchantment.h"
 #include "npc.h"
+#include "onboarding.h"
 #include "output.h"
 #include "panels.h"
 #include "pimpl.h"
@@ -188,6 +189,8 @@ std::string enum_to_string<widget_var>( widget_var data )
             return "mood_text";
         case widget_var::move_count_mode_text:
             return "move_count_mode_text";
+        case widget_var::onboarding_text:
+            return "onboarding_text";
         case widget_var::pain_text:
             return "pain_text";
         case widget_var::overmap_loc_text:
@@ -1162,6 +1165,7 @@ bool widget::uses_text_function() const
         case widget_var::faction_territory:
         case widget_var::mood_text:
         case widget_var::move_count_mode_text:
+        case widget_var::onboarding_text:
         case widget_var::pain_text:
         case widget_var::overmap_loc_text:
         case widget_var::overmap_text:
@@ -1279,6 +1283,10 @@ std::string widget::color_text_function_string( const avatar &ava, unsigned int 
             break;
         case widget_var::move_count_mode_text:
             desc = display::move_count_and_mode_text_color( ava );
+            break;
+        case widget_var::onboarding_text:
+            desc.first = onboarding::sidebar_text( _width == 0 ? max_width : _width );
+            apply_color = false; // Already colorized
             break;
         case widget_var::pain_text:
             desc = display::pain_text_color( ava );

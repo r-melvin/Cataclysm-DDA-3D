@@ -164,6 +164,7 @@
     "padding": 2,
     "width": 66,
     "widgets": [
+      "onboarding_next",
       "thick_side_by_side_cleaner",
       "more_graphs_layout",
       "thick_side_by_side_more_graphs",

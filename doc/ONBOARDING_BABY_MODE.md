@@ -1,6 +1,62 @@
 # Onboarding review and "baby mode" design
 
-Status: design document only. No code or data changes. Branch `feature/r3d-renderer`, repo head `3e0db5ee`
+## Status (implementation on `feature/baby-mode`)
+
+Done:
+
+- **M1**: guided hints for the first ten minutes.
+  - Option **Settings > Interface > Guided hints** (`ONBOARDING_HINTS`): *Off*, *Play Now
+    characters* (default: on for characters made with either Play Now entry, off for others),
+    *Hints only* (every character, no popups), *Hints and popups* (every character). Off means
+    nothing at all happens: no messages, no sidebar line, no popups. The Tutorial Game is never
+    touched (hints are off in its world).
+  - JSON type `onboarding_lesson` in `data/json/onboarding/lessons.json`: welcome, walk, let time
+    pass, turn the camera (3D orbit only), first-person view (first person only), read the sidebar,
+    look, use furniture, pick up, inventory, wear/wield, carry more, doors, safe mode, first
+    monster, and a status-report lesson that only appears in builds that have that action.
+  - Rules in `src/onboarding_core.{h,cpp}` (no game types, unit tested in
+    `tests/onboarding_test.cpp`); game side in `src/onboarding.{h,cpp}`: event-bus subscriber,
+    a check before every player input (polls and popups), an action hook next to
+    `gamemode->pre_action`, the safe-mode "Spotted" hook, saving with the avatar (`"onboarding"`
+    member), and loading/checking of the JSON (`--check-mods` reports bad actions, events, states,
+    signals, UI flags and prerequisites).
+  - Hints go to the message log as `[Hint: title] text` (re-read with `P`), and the sidebar shows
+    a **Next step** panel (widget `onboarding_next`, var `onboarding_text`, in
+    `data/json/ui/onboarding.json`): `Next: <title> (n/total)` plus the one-line instruction with
+    the live key. It takes no space when there is nothing to show. It is listed first in every
+    core sidebar preset.
+  - Lessons complete themselves when the player does the thing; a lesson done before it was due
+    is completed quietly and never shown. At most three hints are active at once; each reminds at
+    most twice (every `snooze_turns`).
+  - Popups (welcome, safe mode, first monster) offer **Got it** (`g`/Enter/Esc), **Remind me
+    later** (`l`) and **Stop hints** (`S`, sets the option to Off).
+
+How to try it: build, start the game, **New Game > Play Now! (Default Scenario)**. A welcome popup
+appears on the first turn. Press Enter; the sidebar then reads `Next: Walk around (0/12)` and the
+log has the hint. Walk five steps, press `.`, look with `;`, stand next to a locker and press `e`,
+pick something up with `g`, open `i`. Lessons tick off in the log (`[Hint] Done: ...`). To see the
+hints on an existing save or a custom character, set the option to *Hints and popups*.
+
+Works with the 3D UI: nothing is tied to a screen position. The Next-step line is an ordinary
+widget, so any sidebar preset (including a lean 3D preset) can list it, and its text is always
+in the message log as well. Lessons branch at runtime on what is active, through UI flags
+(`classic`, `r3d`, `r3d_orbit`, `r3d_first_person`, `r3d_wasd`, `r3d_cutaway`, `r3d_compass`,
+`r3d_edge_alert`) computed from `RENDERER_3D` and the `R3D_*` options, where a missing option counts
+as off (so the same code runs on branches without the first-person options). A lesson can be
+limited to a UI (`"only_when"`), and can carry `"variants"` that replace its text or add an
+`"extra"` paragraph for a UI: walking explains W A S D and arrow-key turning when `R3D_WASD` is
+on, first person explains turning and the face-threat key, the sidebar lesson mentions the
+first-person compass strip and edge alert when those options are on, and the camera lesson only
+exists in orbit view. Key names always come from the input manager (`<keybind:...>`), and with
+`R3D_WASD` on, a key that is one of w a s d is replaced by "the action menu", because those keys
+walk instead. A lesson can name `"requires_action"` (used for the planned `status_report` action
+of the UI overhaul); it is skipped while that action does not exist or has no key.
+
+Not done yet: see the M2 and M3 lists in section 4.
+
+---
+
+Original status: design document only. Branch `feature/r3d-renderer`, repo head `3e0db5ee`
 at the time of writing. Everything here is independent of the 3D renderer and the first-person mode;
 the one place they interact is noted in section 5.
 

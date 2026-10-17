@@ -42,6 +42,7 @@
 #include "mapsharing.h"
 #include "messages.h"
 #include "music.h"
+#include "onboarding.h"
 #include "options.h"
 #include "output.h"
 #include "overmapbuffer.h"
@@ -1060,6 +1061,7 @@ bool main_menu::new_character_tab()
             overmap_buffer.clear();
             return false;
         }
+        onboarding::prepare_new_game( is_play_now );
 
         if( !g->start_game() ) {
             return false;

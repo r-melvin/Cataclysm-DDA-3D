@@ -89,6 +89,7 @@
 #include "npc.h"
 #include "npc_class.h"
 #include "omdata.h"
+#include "onboarding.h"
 #include "options.h"
 #include "overlay_ordering.h"
 #include "overmap.h"
@@ -505,6 +506,7 @@ void DynamicDataLoader::initialize()
     add( "achievement", &achievement::load_achievement );
     add( "conduct", &achievement::load_achievement );
     add( "widget", &widget::load_widget );
+    add( "onboarding_lesson", &onboarding::load_lesson );
     add( "weakpoint_set", &weakpoints::load_weakpoint_sets );
     add( "damage_type", &damage_type::load_damage_types );
     add( "damage_info_order", &damage_info_order::load_damage_info_orders );
@@ -648,6 +650,7 @@ void DynamicDataLoader::unload_data()
 
     achievement::reset();
     activity_type::reset();
+    onboarding::reset_lessons();
     add_type::reset();
     ammo_effects::reset();
     ammunition_type::reset();
@@ -928,6 +931,7 @@ void DynamicDataLoader::finalize_loaded_data()
             { _( "Mutations" ), &mutation_branch::finalize_all },
             { _( "Achievements" ), &achievement::finalize_all },
             { _( "Widgets" ), &widget::finalize_all },
+            { _( "Guided hints" ), &onboarding::finalize_lessons },
             { _( "Weakpoint Families" ), &weakpoints::finalize_all },
             { _( "Weapon Categories" ), &weapon_category::finalize_all },
             { _( "Wounds" ), &wound_type::finalize_all },
@@ -1041,6 +1045,7 @@ void DynamicDataLoader::check_consistency()
             { _( "Scent types" ), &scent_type::check_scent_consistency },
             { _( "Scores" ), &score::check_consistency },
             { _( "Achievements" ), &achievement::check_consistency },
+            { _( "Guided hints" ), &onboarding::check_lessons },
             { _( "Disease types" ), &disease_type::check_disease_consistency },
             { _( "Factions" ), &faction_template::check_consistency },
             { _( "Damage types" ), &damage_type::check },

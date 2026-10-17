@@ -165,6 +165,7 @@
 #include "npc.h"
 #include "npctrade.h"
 #include "omdata.h"
+#include "onboarding.h"
 #include "options.h"
 #include "output.h"
 #include "overmap.h"
@@ -483,6 +484,7 @@ game::game() :
     events().subscribe( &*achievements_tracker_ptr );
     events().subscribe( &*spell_events_ptr );
     events().subscribe( &*eoc_events_ptr );
+    events().subscribe( &onboarding::subscriber() );
     debug_menu::debug_capture::instance().on_game_load( events() );
     world_generator = std::make_unique<worldfactory>();
     // do nothing, everything that was in here is moved to init_data() which is called immediately after g = new game; in main.cpp
@@ -686,6 +688,8 @@ void game::reenter_fullscreen()
 void game::setup()
 {
     new_game = true;
+    // Guided hints belong to one character; forget the previous one's.
+    onboarding::reset_progress();
     {
         static_popup popup;
         popup.message( "%s", _( "Please wait while the world data loads…\nLoading core data" ) );
@@ -7412,6 +7416,7 @@ bool game::check_safe_mode_allowed( bool repeat_safe_mode_warnings )
              _( "Spotted %1$s -- safe mode is on!  (%2$s to turn it off, %3$s to ignore monster%4$s)" ),
              spotted_creature_text, msg_safe_mode, msg_ignore, whitelist );
     safe_mode_warning_logged = true;
+    onboarding::on_signal( "safe_mode_spotted" );
     return false;
 }
 

@@ -73,6 +73,7 @@
 #include "move_mode.h"
 #include "mtype.h"
 #include "mutation.h"
+#include "onboarding.h"
 #include "options.h"
 #include "output.h"
 #include "overmap_ui.h"
@@ -3224,7 +3225,8 @@ bool game::handle_action()
         open_menu_tmp.value()();
         return false;
     } else {
-        // No auto-move, ask player for input
+        // No auto-move, ask player for input.  Guided hints get a look first.
+        onboarding::before_input();
         ctxt = get_player_input( action );
     }
 
@@ -3254,6 +3256,7 @@ bool game::handle_action()
 
         if( act == ACTION_KEYBINDINGS ) {
             // already handled by input context
+            onboarding::on_action( action_ident( act ) );
             return false;
         }
 
@@ -3401,6 +3404,8 @@ bool game::handle_action()
 
     // This has no action unless we're in a special game mode.
     gamemode->pre_action( act );
+    // Guided hints only watch; they never change what the action does.
+    onboarding::on_action( action_ident( act ) );
 
     int before_action_moves = player_character.get_moves();
 

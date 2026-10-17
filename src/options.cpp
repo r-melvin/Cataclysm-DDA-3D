@@ -1867,6 +1867,22 @@ void options_manager::add_options_interface()
 
     add_empty_line();
 
+    add( "ONBOARDING_HINTS", "interface", to_translation( "Guided hints" ),
+         to_translation( "Hints for new players: what to try next, shown in the sidebar and the "
+                         "message log, with a few popups for important moments.  They never change "
+                         "the game.  Play Now characters: on for characters made with Play Now, off "
+                         "for others.  Hints only: every character, without popups.  Hints and "
+                         "popups: every character." ),
+    {
+        { "off", to_translation( "Off" ) },
+        { "play_now", to_translation( "Play Now characters" ) },
+        { "hints", to_translation( "Hints only" ) },
+        { "full", to_translation( "Hints and popups" ) }
+    },
+    "play_now" );
+
+    add_empty_line();
+
     add_option_group( "interface", Group( "measurement_unit", to_translation( "Measurement units" ),
                                           to_translation( "Options regarding measurement units." ) ),
     [&]( const std::string & page_id ) {

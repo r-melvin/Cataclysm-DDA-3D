@@ -165,6 +165,7 @@
     "padding": 2,
     "width": 32,
     "widgets": [
+      "onboarding_next",
       "ln_limbs_layout",
       "ln_limbs_sa_layout",
       "ln_movement_layout",

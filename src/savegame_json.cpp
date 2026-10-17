@@ -97,6 +97,7 @@
 #include "mutation.h"
 #include "npc.h"
 #include "npc_sleep.h"
+#include "onboarding.h"
 #include "options.h"
 #include "overmapbuffer.h"
 #include "pimpl.h"
@@ -1584,6 +1585,9 @@ void avatar::store( JsonOut &json ) const
                  may_activity_occupancy_after_end_items_loc );
 
     json.member_as_string( "desired_move_mode",  desired_move_mode );
+
+    json.member( "onboarding" );
+    onboarding::serialize( json );
 }
 
 void avatar::deserialize( const JsonObject &data )
@@ -1595,6 +1599,11 @@ void avatar::deserialize( const JsonObject &data )
 void avatar::load( const JsonObject &data )
 {
     Character::load( data );
+    if( data.has_object( "onboarding" ) ) {
+        onboarding::deserialize( data.get_object( "onboarding" ) );
+    } else {
+        onboarding::reset_progress();
+    }
     // standing where the save left you counts from now
     relocation_anchor = pos_abs();
     relocated_at = calendar::turn;

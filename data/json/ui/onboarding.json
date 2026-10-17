@@ -1,0 +1,12 @@
+[
+  {
+    "id": "onboarding_next",
+    "type": "widget",
+    "//": "Guided hints (baby mode): the next lesson and its key.  Empty, and taking no space, when hints are off or nothing is pending.  Any sidebar preset can list it; the same text is always in the message log too.",
+    "label": "Next step",
+    "style": "text",
+    "var": "onboarding_text",
+    "height": 3,
+    "flags": [ "W_LABEL_NONE", "W_DISABLED_WHEN_EMPTY" ]
+  }
+]

@@ -1,0 +1,276 @@
+[
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_welcome",
+    "//": "Phase 0: shown once at the start of a guided game.  Completed by its popup.",
+    "phase": 0,
+    "order": 0,
+    "presentation": "popup",
+    "title": "Welcome to Cataclysm",
+    "short": "Press <keybind:HELP_KEYBINDINGS> on any screen to see its keys.",
+    "text": "You survived the end of the world, for now.  You are the person in the middle of the map, inside an evacuation shelter.  It is a fairly safe place to start.\n\nThe game waits for you.  Nothing moves until you press a key, so take your time.\n\nHints will guide your first steps.  The <color_light_green>Next</color> line in the sidebar shows what to try now.  Every hint also goes into the message log, which you can read again with <keybind:messages>.\n\nPress <keybind:HELP_KEYBINDINGS> on any screen to see which keys work there.  You can turn hints off at any time in Settings > Interface > Guided hints, or with \"Stop hints\" below.",
+    "trigger": [ { "start": true } ],
+    "variants": [
+      {
+        "when": [ "r3d" ],
+        "text": "You survived the end of the world, for now.  You are the person in the middle of the 3D view, inside an evacuation shelter.  It is a fairly safe place to start.\n\nThe game waits for you.  Nothing moves until you press a key, so take your time.\n\nHints will guide your first steps.  The <color_light_green>Next</color> line in the sidebar shows what to try now, if your sidebar layout includes it.  Every hint also goes into the message log, which you can read again with <keybind:messages>.\n\nPress <keybind:HELP_KEYBINDINGS> on any screen to see which keys work there.  You can turn hints off at any time in Settings > Interface > Guided hints, or with \"Stop hints\" below."
+      }
+    ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_move",
+    "phase": 1,
+    "order": 1,
+    "title": "Walk around",
+    "short": "Move with the arrow keys or the number pad.",
+    "text": "Move with the arrow keys or the number pad.  You can also move diagonally, which matters in doorways and tight corners: <keybind:LEFTUP>, <keybind:RIGHTUP>, <keybind:LEFTDOWN> and <keybind:RIGHTDOWN>.  Take a few steps.",
+    "prerequisites": [ "ob_welcome" ],
+    "trigger": [ { "start": true } ],
+    "done_when": [ { "event": "avatar_moves", "count": 5 } ],
+    "variants": [
+      {
+        "when": [ "r3d_first_person", "r3d_wasd" ],
+        "short": "W walks forward, A and D step aside, the arrows turn.",
+        "text": "You see through your character's eyes.  W walks forward, S walks back, A and D step to the side.  The left and right arrow keys turn you by an eighth of a circle, and turning takes no time.  The number pad also walks, relative to the way you face.  Take a few steps."
+      },
+      {
+        "when": [ "r3d_first_person" ],
+        "short": "The number pad walks the way you face; <keybind:r3d_rotate_left> and <keybind:r3d_rotate_right> turn.",
+        "text": "You see through your character's eyes.  The number pad and the movement keys walk relative to the way you face.  <keybind:r3d_rotate_left> and <keybind:r3d_rotate_right> turn you by an eighth of a circle, and turning takes no time.  Take a few steps."
+      },
+      {
+        "when": [ "r3d_wasd" ],
+        "short": "Walk with W A S D; the arrow keys turn the camera.",
+        "text": "Walk with W A S D.  They follow the camera: W walks away from you into the screen.  The arrow keys turn the camera.  You can also move diagonally, which matters in doorways and tight corners: <keybind:LEFTUP>, <keybind:RIGHTUP>, <keybind:LEFTDOWN> and <keybind:RIGHTDOWN>.  Take a few steps."
+      }
+    ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_pass_turn",
+    "phase": 1,
+    "order": 2,
+    "title": "Let time pass",
+    "short": "Press <keybind:pause> to wait one turn.",
+    "text": "Every key you press takes a little time, and the world only moves when you do.  To let time pass without doing anything, press <keybind:pause>.  That is how you wait for something to come to you, or catch your breath.",
+    "prerequisites": [ "ob_move" ],
+    "trigger": [ { "start": true } ],
+    "done_when": [ { "action": "pause" }, { "action": "wait" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_camera",
+    "phase": 1,
+    "order": 2,
+    "title": "Turn the camera",
+    "short": "<keybind:r3d_rotate_left> and <keybind:r3d_rotate_right> turn the camera.",
+    "text": "You are looking at the world in 3D.  Turn the camera with <keybind:r3d_rotate_left> and <keybind:r3d_rotate_right>, tilt it with <keybind:r3d_pitch_up> and <keybind:r3d_pitch_down>, and move it closer or further with <keybind:r3d_zoom_in> and <keybind:r3d_zoom_out>, or with the mouse wheel.  <keybind:r3d_reset> puts it back.  <keybind:r3d_toggle> switches between the 3D view and the flat map.",
+    "only_when": [ "r3d_orbit" ],
+    "variants": [
+      { "when": [ "r3d_wasd" ], "extra": "With WASD controls on, the arrow keys turn the camera too." },
+      {
+        "when": [ "r3d_cutaway" ],
+        "extra": "Walls and furniture between the camera and you are left out of the picture, so you are never hidden behind them."
+      }
+    ],
+    "prerequisites": [ "ob_move" ],
+    "trigger": [ { "after_turns": 4 } ],
+    "done_when": [
+      { "action": "r3d_rotate_left" },
+      { "action": "r3d_rotate_right" },
+      { "action": "r3d_zoom_in" },
+      { "action": "r3d_zoom_out" },
+      { "action": "r3d_pitch_up" },
+      { "action": "r3d_pitch_down" },
+      { "after_turns": 100 }
+    ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_first_person",
+    "phase": 1,
+    "order": 2,
+    "title": "First-person view",
+    "short": "<keybind:r3d_first_person> switches back to the view from above.",
+    "text": "You see through your character's eyes, but the game underneath is the same: your character still notices everything around them, the picture just shows what is ahead.  <keybind:r3d_first_person> switches between first person and the view from above.  <keybind:r3d_fp_face_threat> turns you to face the nearest hostile creature.",
+    "only_when": [ "r3d_first_person" ],
+    "prerequisites": [ "ob_move" ],
+    "trigger": [ { "after_turns": 4 } ],
+    "done_when": [ { "action": "r3d_first_person" }, { "action": "r3d_fp_face_threat" }, { "after_turns": 100 } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_sidebar",
+    "phase": 1,
+    "order": 3,
+    "title": "Read the sidebar",
+    "short": "The sidebar shows your health, needs, time and safety.",
+    "text": "The panel beside the map is the sidebar.  It shows the health of each body part and your stamina.  Hunger, thirst and tiredness are shown as words, and only appear once they start to matter, so a blank is good news.  The sidebar also shows the time, the weather, how bright it is, and whether safe mode is on.  Press <keybind:player_data> for the full character screen.",
+    "prerequisites": [ "ob_move" ],
+    "trigger": [ { "after_turns": 3 } ],
+    "done_when": [ { "action": "player_data" }, { "after_turns": 60 } ],
+    "variants": [
+      {
+        "when": [ "r3d" ],
+        "text": "The panel beside the 3D view is the sidebar.  It shows the health of each body part and your stamina.  Hunger, thirst and tiredness are shown as words, and only appear once they start to matter, so a blank is good news.  The sidebar also shows the time, the weather, how bright it is, and whether safe mode is on.  Press <keybind:player_data> for the full character screen."
+      },
+      {
+        "when": [ "r3d_compass" ],
+        "extra": "In first person, the strip at the top of the view is a compass.  It shows the way you face, and red marks show hostile creatures you can see, even behind you."
+      },
+      {
+        "when": [ "r3d_edge_alert" ],
+        "extra": "When a hostile creature is right next to you but out of the picture, that edge of the view lights up."
+      }
+    ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_look",
+    "phase": 1,
+    "order": 4,
+    "title": "Look around",
+    "short": "Press <keybind:look> to look at things without moving.",
+    "text": "You do not have to walk up to something to find out what it is.  Press <keybind:look>, move the cursor over anything you can see and read what it is, then press <keybind:QUIT> to come back.  Hovering the mouse over a tile works too.",
+    "prerequisites": [ "ob_move" ],
+    "trigger": [ { "after_turns": 8 } ],
+    "done_when": [ { "action": "look" } ],
+    "variants": [
+      {
+        "when": [ "r3d_first_person" ],
+        "text": "You do not have to walk up to something to find out what it is.  Press <keybind:look> and move the cursor over anything you can see, or press <keybind:LOOK:r3d_fp_select_ahead> to pick the tile you are facing.  Press <keybind:QUIT> to come back.  Hovering the mouse over a tile works too."
+      }
+    ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_examine",
+    "phase": 1,
+    "order": 5,
+    "title": "Use furniture",
+    "short": "Press <keybind:examine> and a direction to use furniture.",
+    "text": "There is something next to you that you can use, such as a locker, a sink or a bed.  Press <keybind:examine>, then the direction it is in, to search it or use it.  Three keys are easy to mix up: <keybind:examine> uses things in the world, <keybind:apply> uses an item you carry, and <keybind:eat> eats or drinks.",
+    "prerequisites": [ "ob_move" ],
+    "trigger": [ { "state": "adjacent_examinable" } ],
+    "done_when": [ { "action": "examine" }, { "action": "examine_and_pickup" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_pickup",
+    "phase": 1,
+    "order": 6,
+    "title": "Pick things up",
+    "short": "Press <keybind:pickup> to pick up items nearby.",
+    "text": "There are items here.  Press <keybind:pickup> to pick up things on your tile or next to you (choose the direction).  In the list, mark what you want with <keybind:INVENTORY:TOGGLE_ENTRY> or the item's letter, then press <keybind:CONFIRM>.  Useful early finds: anything to drink or eat, a bag, a flashlight, and something to hit with.",
+    "prerequisites": [ "ob_move" ],
+    "trigger": [ { "state": "items_nearby" } ],
+    "done_when": [ { "action": "pickup" }, { "action": "pickup_all" }, { "action": "examine_and_pickup" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_inventory",
+    "phase": 1,
+    "order": 7,
+    "title": "Your inventory",
+    "short": "Press <keybind:inventory> to see what you carry.",
+    "text": "Press <keybind:inventory> to see what you carry.  Everything you carry sits inside something: a pocket, a bag, a backpack.  When the game says there is no room, your pockets are full; the item is not too heavy.  Select an item in the list to read about it and see what you can do with it.",
+    "prerequisites": [ "ob_pickup" ],
+    "trigger": [ { "after_turns": 2 } ],
+    "done_when": [ { "action": "inventory" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_wear_wield",
+    "phase": 1,
+    "order": 8,
+    "title": "Wear and wield",
+    "short": "<keybind:wear> wears clothes, <keybind:wield> holds a weapon.",
+    "text": "<keybind:wear> puts on clothing, armor and bags.  <keybind:wield> holds an item in your hands, which is how you ready a weapon; a sturdy stick or a pipe is much better than your fists.  <keybind:take_off> takes clothing off and <keybind:drop> drops an item.  Capital and lowercase letters are different keys.",
+    "prerequisites": [ "ob_inventory" ],
+    "trigger": [ { "after_turns": 15 } ],
+    "done_when": [
+      { "event": "character_wears_item" },
+      { "event": "character_wields_item" },
+      { "action": "wear" },
+      { "action": "wield" }
+    ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_storage",
+    "phase": 1,
+    "order": 9,
+    "title": "Carry more",
+    "short": "Wear a backpack or a bag to carry more.",
+    "text": "Your clothes only have small pockets.  To carry more, find a backpack, a bag or a purse and put it on with <keybind:wear>.  If you cannot find one, make a makeshift sling from a blanket or a sheet: press <keybind:craft> to open crafting, press <keybind:CRAFTING:FILTER> and search for \"sling\".",
+    "prerequisites": [ "ob_inventory" ],
+    "trigger": [ { "after_turns": 40 } ],
+    "done_when": [ { "state": "worn_storage" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_doors",
+    "phase": 1,
+    "order": 10,
+    "title": "Doors",
+    "short": "Walk into a door to open it; <keybind:close> closes it.",
+    "text": "Walk into a closed door to open it, and press <keybind:close> and a direction to close it behind you.  A closed door hides you from monsters and slows them down.  <keybind:smash> can break doors and windows, but it is loud and can bring trouble.",
+    "prerequisites": [ "ob_move" ],
+    "trigger": [ { "state": "adjacent_door" } ],
+    "done_when": [ { "action": "close" } ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_safe_mode",
+    "phase": 1,
+    "order": 11,
+    "presentation": "popup",
+    "title": "Safe mode stopped you",
+    "short": "A monster is in sight.  <keybind:ignore_enemy> ignores it, <keybind:safemode> turns safe mode off.",
+    "text": "You tried to act, but a monster is in view, so the game stopped you.  This is <color_light_green>safe mode</color>.  It keeps you from walking into danger without noticing.\n\nYou have three choices:\n- Deal with it: back off, close a door, or get ready to fight.\n- Press <keybind:ignore_enemy> to ignore this one monster and carry on.\n- Press <keybind:safemode> to turn safe mode off.  Do this only when you mean to fight, and turn it back on afterwards with the same key.\n\nThe yellow line in the message log says what you saw and where it is.",
+    "trigger": [ { "signal": "safe_mode_spotted" } ],
+    "done_when": [ { "action": "safemode" }, { "action": "ignore_enemy" } ],
+    "snooze_turns": 100
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_first_monster",
+    "phase": 1,
+    "order": 12,
+    "presentation": "popup",
+    "title": "A monster!",
+    "short": "Attack by walking into it.  Fight one at a time, or back off and close a door.",
+    "text": "Something hostile is in sight.  Most monsters early on are zombies.  One is beatable; three at once can kill you.\n\n- To attack, walk into the monster.\n- Fight one at a time, ideally in a doorway, never surrounded in the open.\n- Watch your stamina in the sidebar.  When it runs out you can barely fight or run.\n- Leaving is always an option.  A closed door between you and them buys time.\n\nPress <keybind:look> and move the cursor over a monster to see what it is and how hurt it is.",
+    "trigger": [ { "state": "hostile_in_view" } ],
+    "snooze_turns": 100,
+    "variants": [
+      {
+        "when": [ "r3d_first_person" ],
+        "extra": "The picture only shows what is ahead, but your character still notices everything around you.  <keybind:r3d_fp_face_threat> turns you to face the nearest hostile creature."
+      },
+      {
+        "when": [ "r3d_compass" ],
+        "extra": "Red marks on the compass strip at the top show where hostile creatures are."
+      },
+      {
+        "when": [ "r3d_orbit" ],
+        "extra": "If the monster is hard to see, turn the camera with <keybind:r3d_rotate_left> and <keybind:r3d_rotate_right>."
+      }
+    ]
+  },
+  {
+    "type": "onboarding_lesson",
+    "id": "ob_status_report",
+    "phase": 1,
+    "order": 13,
+    "//": "Only for builds that have the status report action from the UI overhaul; skipped otherwise.",
+    "title": "Ask for a status report",
+    "short": "<keybind:status_report> sums up time, weather, needs and threats.",
+    "text": "Press <keybind:status_report> for a short written summary: the time, the weather, how hungry, thirsty and tired you are, and any hostile creatures nearby.  Use it whenever you are not sure what the screen is telling you.",
+    "requires_action": "status_report",
+    "prerequisites": [ "ob_sidebar" ],
+    "trigger": [ { "after_turns": 100 } ],
+    "done_when": [ { "action": "status_report" }, { "after_turns": 300 } ]
+  }
+]

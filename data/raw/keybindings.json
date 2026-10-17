@@ -4845,6 +4845,36 @@
   },
   {
     "type": "keybinding",
+    "id": "GOT_IT",
+    "category": "ONBOARDING_POPUP",
+    "name": "Got it",
+    "bindings": [
+      { "input_method": "keyboard_any", "key": "g" },
+      { "input_method": "keyboard_any", "key": "RETURN" },
+      { "input_method": "keyboard_code", "key": "KEYPAD_ENTER" },
+      { "input_method": "gamepad", "key": "A" }
+    ]
+  },
+  {
+    "type": "keybinding",
+    "id": "LATER",
+    "category": "ONBOARDING_POPUP",
+    "name": "Remind me later",
+    "bindings": [ { "input_method": "keyboard_any", "key": "l" }, { "input_method": "gamepad", "key": "X" } ]
+  },
+  {
+    "type": "keybinding",
+    "id": "STOP_HINTS",
+    "category": "ONBOARDING_POPUP",
+    "name": "Stop hints",
+    "bindings": [
+      { "input_method": "keyboard_char", "key": "S" },
+      { "input_method": "keyboard_code", "key": "s", "mod": [ "shift" ] },
+      { "input_method": "gamepad", "key": "Y" }
+    ]
+  },
+  {
+    "type": "keybinding",
     "id": "LOAD",
     "category": "LOAD_DELETE_CANCEL",
     "name": "Load",

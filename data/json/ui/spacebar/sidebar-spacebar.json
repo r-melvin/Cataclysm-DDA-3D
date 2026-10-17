@@ -8,6 +8,7 @@
     "separator": ": ",
     "padding": 1,
     "widgets": [
+      "onboarding_next",
       "spacebar_separator",
       "environment_conditions_block",
       "spacebar_separator",

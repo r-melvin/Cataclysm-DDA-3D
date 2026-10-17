@@ -468,11 +468,35 @@ void emit_top_layers( quad_sink &sink, const tile_info &t, int x, int y, float z
     emit_top( sink, t.sprite, x, y, t.backdrop.valid ? z + layer_lift : z, ref, front );
 }
 
+// Height, in levels, of one repeat of a tileset sprite up a side: about one tile width at the
+// usual storey height, so a brick or plank sprite keeps its scale instead of being stretched
+// over the whole storey.
+constexpr float side_repeat = 0.6f;
+
+// A side textured with the tile's own sprite, repeated up the face from its base (strips of
+// side_repeat; the last one shows the bottom of the next repeat). Walls that have no entry in
+// the wall-side atlas, or all of them when the option is off, take their look from the tileset
+// this way.
+void emit_side_tiled( quad_sink &sink, const sprite_ref &s, int x, int y, face_bit face, float z_base,
+                      float z_top, const light_ref &ref, float shift_x, float shift_y )
+{
+    for( float z0 = z_base; z0 < z_top - 0.001f; z0 += side_repeat ) {
+        const float z1 = std::min( z0 + side_repeat, z_top );
+        const float shown = ( z1 - z0 ) / side_repeat;
+        emit_side( sink, s, x, y, face, z0, z1, ref, shift_x, shift_y, sprite_band{ 1.0f - shown, 1.0f } );
+    }
+}
+
 void emit_side_layers( quad_sink &sink, const tile_info &t, int x, int y, face_bit face, float z_base,
                        float z_top, const light_ref &ref, const sprite_band &band = {} )
 {
+    const bool whole = band.top < 0.0f;
     if( t.backdrop.valid ) {
-        emit_side( sink, t.backdrop, x, y, face, z_base, z_top, ref, 0.0f, 0.0f, band );
+        if( whole ) {
+            emit_side_tiled( sink, t.backdrop, x, y, face, z_base, z_top, ref, 0.0f, 0.0f );
+        } else {
+            emit_side( sink, t.backdrop, x, y, face, z_base, z_top, ref, 0.0f, 0.0f, band );
+        }
     }
     // Pushing the foreground outwards means shifting the whole face by its normal.
     float dx = 0.0f;
@@ -481,7 +505,11 @@ void emit_side_layers( quad_sink &sink, const tile_info &t, int x, int y, face_b
         dx = face == face_east ? layer_lift : face == face_west ? -layer_lift : 0.0f;
         dy = face == face_south ? layer_lift : face == face_north ? -layer_lift : 0.0f;
     }
-    emit_side( sink, t.sprite, x, y, face, z_base, z_top, ref, dx, dy, band );
+    if( whole ) {
+        emit_side_tiled( sink, t.sprite, x, y, face, z_base, z_top, ref, dx, dy );
+    } else {
+        emit_side( sink, t.sprite, x, y, face, z_base, z_top, ref, dx, dy, band );
+    }
 }
 
 // A side of a wall block: its own side texture when it has one, else the tileset sprite.

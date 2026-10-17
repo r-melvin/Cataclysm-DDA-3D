@@ -23,6 +23,7 @@ layout(location = 1) out vec4 v_light;
 layout(location = 2) out vec3 v_world;
 layout(location = 3) flat out vec4 v_cut;
 layout(location = 4) flat out vec4 v_cut2;
+layout(location = 5) flat out vec2 v_tile;
 
 void main()
 {
@@ -41,4 +42,11 @@ void main()
     v_world = pos;
     v_cut = u.cut;
     v_cut2 = u.cut2;
+    // In the terrain pass the light's alpha is the vertex's tile within its 12x12 chunk; the
+    // tile's centre in world space (y runs north) is what the cutaway tests. Billboards carry
+    // their depth pull there instead, but the cutaway is off for them.
+    float tile_index = floor(a_light.a * 255.0 + 0.5);
+    float tile_y = floor(tile_index / 12.0);
+    float tile_x = tile_index - tile_y * 12.0;
+    v_tile = u.offset.xy + vec2(tile_x + 0.5, -(tile_y + 0.5));
 }

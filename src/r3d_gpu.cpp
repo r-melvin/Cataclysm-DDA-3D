@@ -172,8 +172,9 @@ bool gpu::init( SDL_Renderer *renderer )
     ghost_target.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
     ghost_target.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
     ghost_target.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+    // Depth is still written, so of a ghosted tile's several faces only the nearest one or two
+    // blend: without it every face of the tile would pile up into a near-opaque block.
     pci.target_info.color_target_descriptions = &ghost_target;
-    pci.depth_stencil_state.enable_depth_write = false;
     ghost_pipeline_ = SDL_CreateGPUGraphicsPipeline( device_, &pci );
     SDL_ReleaseGPUShader( device_, vs );
     SDL_ReleaseGPUShader( device_, fs );

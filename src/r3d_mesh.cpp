@@ -353,11 +353,15 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
     if( ( faces & face_top ) != 0 ) {
         // A slab's top is the middle of the lid: the lid's edge rows are the sprite's outline
         // and shadow, which would read as a raised rim on a seat.
+        // A slab's top is the middle of the lid in both directions: the lid's edge rows and
+        // columns are the sprite's outline, shadow and the legs peeking out at its sides (a
+        // top-down bench sprite draws them mid-tile), which would read as marks on the seat.
         const float lid_span = b.lid_bottom - b.lid_top;
         const float lv0 = s.v0 + dv * ( slab > 0.0f ? b.lid_top + lid_span * 0.2f : b.lid_top );
         const float lv1 = s.v0 + dv * ( slab > 0.0f ? b.lid_bottom - lid_span * 0.15f : b.lid_bottom );
-        const float ul = s.flip ? u1 : u0;
-        const float ur = s.flip ? u0 : u1;
+        const float inset_u = slab > 0.0f ? ( u1 - u0 ) * 0.22f : 0.0f;
+        const float ul = s.flip ? u1 - inset_u : u0 + inset_u;
+        const float ur = s.flip ? u0 + inset_u : u1 - inset_u;
         const uvs_t base = {{ { ul, lv0 }, { ur, lv0 }, { ur, lv1 }, { ul, lv1 } }};
         uvs_t uv;
         for( size_t i = 0; i < 4; ++i ) {
@@ -961,12 +965,11 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                     }
                     break;
                 case shape_kind::block:
-                    // A see-through block (fence, bars, a sparse wall sprite) needs a floor, or
-                    // the alpha-tested holes show the level below.
-                    if( terrain.see_through || !terrain.backdrop.valid ) {
-                        emit_floor_under( lx, ly, nb.north.kind == shape_kind::block ||
-                                          nb.south.kind == shape_kind::block );
-                    }
+                    // Every wall stands on a floor: a see-through block (fence, bars, a sparse
+                    // wall sprite) would otherwise show the level below through its holes, and
+                    // the cutaway around the player would show a void where a wall was.
+                    emit_floor_under( lx, ly, nb.north.kind == shape_kind::block ||
+                                      nb.south.kind == shape_kind::block );
                     if( ( faces & face_top ) != 0 ) {
                         if( terrain.cap.valid ) {
                             emit_top( sink, terrain.cap, lx, ly, ts.height,
@@ -1081,8 +1084,11 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                     make_ref( lx, ly, 1, 0, 0, face_shade[4] )
                 }
             };
-            emit_box( sink, spr, lx, ly, ts.height, fs.height, layout, visible_faces( fs, nb ) | all_sides,
-                      refs, facing, joined, fs.slab );
+            // A slab (bench, table) sits below the cutaway, so it needs no hidden sides; the
+            // faces between its joined tiles would only fight with its top along the seams.
+            const uint8_t box_faces = visible_faces( fs, nb ) | ( fs.slab > 0.0f ? 0 : all_sides );
+            emit_box( sink, spr, lx, ly, ts.height, fs.height, layout, box_faces, refs, facing, joined,
+                      fs.slab );
 
         }
     }

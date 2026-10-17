@@ -288,6 +288,12 @@ uint32_t remembered_light()
     return pack_light( 205, 188, 160 );
 }
 
+// Marker light of a never-seen tile under a roof (see light_sampler and update_chunk_light).
+uint32_t unseen_indoor_light()
+{
+    return pack_light( 1, 1, 1 );
+}
+
 // Where things on a tile stand: the floor, or the top of furniture that can be climbed onto
 // (benches, counters, tables are boxes; anything that is not a full tile can be stood on).
 float surface_height( state &s, const map &here, const tripoint_bub_ms &p )
@@ -361,6 +367,10 @@ struct light_sampler {
             }
         } else if( you.has_memory_at( here.get_abs( p ) ) ) {
             return remembered_light();
+        } else if( !here.is_outside( p ) ) {
+            // Never seen, but under a roof: marked so that the floor there can be drawn dark
+            // (an unexplored room reads as a dark room, not a hole); nothing else on it is.
+            return unseen_indoor_light();
         }
         const auto to_byte = []( float v ) {
             return static_cast<uint8_t>( std::clamp( v, 0.0f, 1.0f ) * 255.0f + 0.5f );
@@ -420,14 +430,19 @@ void update_chunk_light( state &s, chunk_gpu &c, const tripoint_abs_sm &pos,
         }
         // A never-seen floor is drawn as dark floor (the shader leaves black out), so an
         // unexplored room reads as a dark room, not a hole; nothing standing on it shows.
-        if( tile == pack_light( 0, 0, 0 ) && r.floor ) {
-            tile = pack_light( 48, 46, 52 );
+        if( tile == unseen_indoor_light() ) {
+            tile = r.floor ? pack_light( 70, 68, 74 ) : pack_light( 0, 0, 0 );
         }
         const uint32_t shade = r.shade;
         c.light[i] = pack_light(
                          static_cast<uint8_t>( ( ( tile >> 0 ) & 255u ) * shade / 255u * r.tint_r / 255u ),
                          static_cast<uint8_t>( ( ( tile >> 8 ) & 255u ) * shade / 255u * r.tint_g / 255u ),
                          static_cast<uint8_t>( ( ( tile >> 16 ) & 255u ) * shade / 255u * r.tint_b / 255u ) );
+        // The light's alpha carries the vertex's tile within the chunk, so the cutaway can judge
+        // a face by the tile it belongs to rather than by where it lies (a face on a tile's
+        // edge would otherwise count for the neighbour). See r3d_block.vert.
+        c.light[i] = ( c.light[i] & 0x00ffffffu ) |
+                     ( static_cast<uint32_t>( r.ly * SEEX + r.lx ) << 24 );
     }
     s.device.upload( c.lights, c.light.data(),
                      static_cast<uint32_t>( c.light.size() * sizeof( uint32_t ) ), true );
@@ -444,11 +459,11 @@ void set_cutaway( block_uniforms &u, const mat4 &view_proj, float aspect, const 
     }
     ( void )view_proj;
     ( void )aspect;
-    // Half-width in tiles of the cutaway across the view; along the view it is stretched by the
-    // pitch so it looks round on screen. Below the stub height nothing is cut, so the floor and
+    // Half-width in tiles of the cutaway across the view and, stretched by the pitch, its reach
+    // along the view towards the camera: a box of tiles in front of the player. Below the stub height nothing is cut, so the floor and
     // low furniture around the player stay; what is cut is drawn again see-through by the ghost
     // pass. See r3d_block.frag.
-    constexpr float radius = 1.3f;
+    constexpr float radius = 1.6f;
     const vec3 middle = tile_to_world( { static_cast<float>( p.x() - center.x() ) + 0.5f,
                                          static_cast<float>( p.y() - center.y() ) + 0.5f, 0.0f } );
     const vec3 eye = cam.eye();
@@ -460,7 +475,7 @@ void set_cutaway( block_uniforms &u, const mat4 &view_proj, float aspect, const 
     u.cut[3] = radius;
     u.cut2[0] = forward.x;
     u.cut2[1] = forward.y;
-    u.cut2[2] = std::clamp( radius / std::max( std::sin( cam.pitch ), 0.25f ), radius, 4.0f );
+    u.cut2[2] = std::clamp( radius / std::max( std::sin( cam.pitch ), 0.25f ), radius, 3.0f );
     u.cut2[3] = 0.0f;
 }
 

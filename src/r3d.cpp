@@ -43,6 +43,7 @@
 #include "sdltiles.h"
 #include "submap.h"
 #include "ui_manager.h"
+#include "uistate.h"
 
 namespace r3d
 {
@@ -137,6 +138,7 @@ struct state {
     uint32_t fp_ease_start = 0;
     uint32_t fp_ease_ms = 0;
     bool fp_easing = false; // the last frame was drawn mid-ease, so another is needed
+    int fp_heading_saved = 0; // the heading last written to the save's UI state
 };
 
 state &st()
@@ -534,6 +536,31 @@ void sync_camera_mode( camera &cam )
     }
 }
 
+// The first-person heading is kept in the save's UI state (uistate), so a loaded game faces the
+// way it was saved. A value there that the renderer did not write itself came from loading a
+// game: the view takes it over at once, without easing a turn in.
+void sync_saved_heading( state &s )
+{
+    const int saved = ( uistate.r3d_fp_heading % 8 + 8 ) % 8;
+    if( saved != s.fp_heading_saved ) {
+        s.cam.heading = saved;
+        s.fp_prev_heading = saved;
+    }
+    if( s.cam.first_person() ) {
+        uistate.r3d_fp_heading = s.cam.heading;
+    }
+    s.fp_heading_saved = ( uistate.r3d_fp_heading % 8 + 8 ) % 8;
+}
+
+// Writes a heading the player just chose to the save's UI state, before any frame is drawn.
+void remember_heading( state &s )
+{
+    if( s.cam.first_person() ) {
+        uistate.r3d_fp_heading = s.cam.heading;
+        s.fp_heading_saved = s.cam.heading;
+    }
+}
+
 // First person: eases the picture from where the camera was to where the player now is. The
 // game state (position, heading, picking) always has the end values; only what is drawn lags, for
 // at most R3D_FP_TWEEN_MS. Sets the offsets to add to the camera this frame and the yaw to show.
@@ -885,18 +912,20 @@ std::optional<tripoint_bub_ms> crosshair()
 
 void face_towards( int dx, int dy )
 {
-    camera &cam = st().cam;
-    if( cam.first_person() && ( dx != 0 || dy != 0 ) ) {
-        cam.heading = eighths_towards( dx, dy );
+    state &s = st();
+    if( s.cam.first_person() && ( dx != 0 || dy != 0 ) ) {
+        s.cam.heading = eighths_towards( dx, dy );
+        remember_heading( s );
         end_glance();
     }
 }
 
 void rotate( int dir )
 {
-    camera &cam = st().cam;
-    cam.rotate_steps( dir );
-    if( cam.first_person() ) {
+    state &s = st();
+    s.cam.rotate_steps( dir );
+    if( s.cam.first_person() ) {
+        remember_heading( s );
         end_glance();
     }
 }
@@ -1235,6 +1264,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     ++s.frame;
     maybe_take_screenshot( s );
     sync_camera_mode( s.cam );
+    sync_saved_heading( s );
     // Meshes differ between the modes (see mesh_options), so a switch rebuilds every chunk.
     if( s.cam.first_person() != s.chunks_first_person ) {
         release_all_chunks( s );

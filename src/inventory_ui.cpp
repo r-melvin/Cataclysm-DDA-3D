@@ -435,6 +435,7 @@ void uistatedata::serialize( JsonOut &json ) const
     json.member( "distraction_withdrawal", distraction_withdrawal );
     json.member( "distraction_craft_step_complete", distraction_craft_step_complete );
     json.member( "numpad_navigation", numpad_navigation );
+    json.member( "r3d_fp_heading", r3d_fp_heading );
 
     json.member( "overmap_sidebar_uistate" );
     overmap_sidebar_state.serialize( json );
@@ -529,6 +530,7 @@ void uistatedata::deserialize( const JsonObject &jo )
     jo.read( "distraction_withdrawal", distraction_withdrawal );
     jo.read( "distraction_craft_step_complete", distraction_craft_step_complete );
     jo.read( "numpad_navigation", numpad_navigation );
+    jo.read( "r3d_fp_heading", r3d_fp_heading );
     jo.read( "vmenu_tab", vmenu_tab );
     jo.read( "vmenu_item_sort", vmenu_item_sort );
     jo.read( "vmenu_monster_sort", vmenu_monster_sort );

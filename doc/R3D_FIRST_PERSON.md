@@ -19,6 +19,10 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
   face points up; your beacon stays put and the map turns under it. North-up in orbit mode, in
   the flat view and with an isometric tileset. At 45 degree headings the square map leaves its
   corners empty (the minimap background shows there).
+* Heading saved with the game: done (not yet seen in the game). `uistate.r3d_fp_heading` is
+  written whenever the first-person heading changes and read back on load, so you load facing
+  the way you saved. Loading in orbit mode keeps the orbit camera; switching to first person
+  then starts from the orbit camera's direction, as before.
 
 What to test locally (FP0): toggle with ctrl+F in a house; the picture is a perspective view from
 eye height; left/right arrows (with `R3D_WASD` on, the default) or ctrl+left/right turn by 45

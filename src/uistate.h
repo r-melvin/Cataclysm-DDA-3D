@@ -208,6 +208,9 @@ class uistatedata
 
         int tileset_zoom = DEFAULT_TILESET_ZOOM;
         int overmap_tileset_zoom = DEFAULT_TILESET_ZOOM;
+        // The way the first-person 3D view faces, in eighths of a turn clockwise from north
+        // (see r3d::camera::heading), so a loaded game faces the way it was saved.
+        int r3d_fp_heading = 0;
 
         overmap_sidebar_uistate overmap_sidebar_state;
         editmap_uistate editmap_state;

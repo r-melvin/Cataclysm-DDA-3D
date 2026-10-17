@@ -9,13 +9,13 @@ namespace
 {
 constexpr float tree_height = 1.4f;
 constexpr float shrub_height = 0.7f;
-// Furniture heights are in z-levels, which the view draws about 1.6 tiles (2.5 m) tall: a bench
+// Furniture heights are in z-levels, which the view draws about 1.8 tiles (2.5 m) tall: a bench
 // seat ~0.45 m, a table or counter ~0.75 m, a locker ~1.8 m.
 constexpr float tiny_height = 0.15f;
 constexpr float low_height = 0.28f;
 constexpr float surface_height = 0.4f;
 constexpr float default_furniture_height = 0.5f;
-constexpr float tall_furniture_height = 0.8f;
+constexpr float tall_furniture_height = 0.9f;
 constexpr float slab_thickness = 0.04f;
 // Floor-like furniture (rugs, carpets) sits just above the terrain floor.
 constexpr float decal_height = floor_height + 0.01f;

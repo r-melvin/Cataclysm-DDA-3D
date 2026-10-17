@@ -273,7 +273,7 @@ float column_height( state &s, const map &here, const tripoint_bub_ms &p )
 // flat view draws its memory (color_pixel_sepia_light), so known rooms stay readable.
 uint32_t remembered_light()
 {
-    return pack_light( 178, 158, 128 );
+    return pack_light( 205, 188, 160 );
 }
 
 // Where things on a tile stand: the floor, or the top of furniture that can be climbed onto
@@ -334,14 +334,15 @@ struct light_sampler {
                 case lit_level::BRIGHT:
                     r = g = b = 1.0f;
                     break;
+                // Close to the flat view, which barely dims tiles that are seen at all.
                 case lit_level::BRIGHT_ONLY:
-                    r = g = b = 0.9f;
+                    r = g = b = 0.95f;
                     break;
                 case lit_level::LOW:
-                    r = g = b = 0.75f;
+                    r = g = b = 0.88f;
                     break;
                 case lit_level::DARK:
-                    r = g = b = 0.6f;
+                    r = g = b = 0.8f;
                     break;
                 default:
                     break;

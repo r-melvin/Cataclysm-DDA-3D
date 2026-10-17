@@ -399,10 +399,16 @@ void emit_wall_side( quad_sink &sink, const tile_info &t, int x, int y, face_bit
 }
 
 // How much of a 3/4-view furniture sprite is its front, for a box of the given height (in
-// z-levels): taller furniture shows more front. Storeys are drawn about 1.6 tiles tall.
+// z-levels): taller furniture shows more front. Storeys are drawn about 1.8 tiles tall.
 float front_fraction( float height )
 {
-    const float seen = height * 1.6f;
+    // Tall storage (lockers, fridges, bookcases) is mostly front in the art: doors and shelves
+    // under a thin lid.
+    constexpr float tall = 0.6f;
+    if( height >= tall ) {
+        return 0.78f;
+    }
+    const float seen = height * 1.8f;
     return std::clamp( seen / ( seen + 1.0f ), 0.25f, 0.65f );
 }
 
@@ -548,6 +554,15 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int sub
                 info.side.u1 = uv.u1;
                 info.side.v1 = uv.v1;
                 info.side.valid = true;
+                // The cap is the middle of the texture, scaled up: an even surface in the wall's
+                // colour, as isometric tilesets draw the top of a wall.
+                info.cap = info.side;
+                const float du = ( uv.u1 - uv.u0 ) * 0.4f;
+                const float dv = ( uv.v1 - uv.v0 ) * 0.4f;
+                info.cap.u0 += du;
+                info.cap.u1 -= du;
+                info.cap.v0 += dv;
+                info.cap.v1 -= dv;
             }
         }
     }
@@ -776,8 +791,13 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                                           nb.south.kind == shape_kind::block );
                     }
                     if( ( faces & face_top ) != 0 ) {
-                        emit_top_layers( sink, terrain, lx, ly, ts.height,
-                                        make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                        if( terrain.cap.valid ) {
+                            emit_top( sink, terrain.cap, lx, ly, ts.height,
+                                      make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                        } else {
+                            emit_top_layers( sink, terrain, lx, ly, ts.height,
+                                             make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                        }
                     }
                     if( ( faces & face_north ) != 0 ) {
                         emit_wall_side( sink, terrain, lx, ly, face_north, 0.0f, ts.height,

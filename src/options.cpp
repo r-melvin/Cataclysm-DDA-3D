@@ -2615,7 +2615,7 @@ void options_manager::add_options_graphics()
 
         add( "R3D_LEVEL_HEIGHT", page_id, to_translation( "3D storey height" ),
              to_translation( "Height of one z-level in the 3D view, in percent of a tile's width.  Higher values make walls taller next to characters." ),
-             100, 300, 160, COPT_CURSES_HIDE
+             100, 300, 180, COPT_CURSES_HIDE
            );
 
         get_option( "R3D_LEVEL_HEIGHT" ).setPrerequisite( "RENDERER_3D" );

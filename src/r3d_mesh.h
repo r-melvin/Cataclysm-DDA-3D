@@ -55,6 +55,7 @@ struct tile_info {
     sprite_ref sprite;   // foreground layer (alpha tested, may be sparse)
     bool tree = false;   // the level above holds its treetop, which this sprite already shows
     sprite_ref side;     // texture for the sides of a wall (see wall_sides), else invalid
+    sprite_ref cap;      // the top of such a wall: a plain patch of the same texture
     bool see_through = false; // transparent terrain (fences, bars): the floor shows through it
 
     /** The layer that represents the tile when only one can be drawn (upright sprites). */

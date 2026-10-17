@@ -1203,6 +1203,13 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
                 }
                 entities_view.markers.push_back( { p, column_height( s, here, p ), sprite, false } );
             }
+            // The route auto-travel is walking, as a ribbon of the targeting line's sprite.
+            const tile_info &path = s.cache.named( TILE_CATEGORY::NONE, "animation_line", *tilecontext );
+            for( const tripoint_bub_ms &p : get_avatar().get_auto_move_route() ) {
+                if( here.inbounds( p ) ) {
+                    entities_view.markers.push_back( { p, column_height( s, here, p ), &path, false } );
+                }
+            }
             if( queued.zones ) {
                 const tile_info &zone = s.cache.named( TILE_CATEGORY::NONE, "highlight", *tilecontext );
                 const int zone_z = get_avatar().pos_bub().z();

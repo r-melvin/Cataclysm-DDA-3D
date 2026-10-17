@@ -23,6 +23,29 @@ shows leaves the 3D sidebar preset.
 | 5 | Compass tape at the top, centred on the camera's facing: N/E/S/W, sun and moon icons, a wind chevron where the wind comes from (local wind as in the sidebar), mission target (gold diamond), auto-travel destination (X), the four nearest overmap notes within 30 tiles (their own symbol and colour). Threats are deliberately not on it: the arrows carry them | done | `R3D_HUD` | Set a mission active, travel with the overmap, add a note nearby |
 | 6 | "3D" sidebar preset (`data/json/ui/sidebar-r3d.json`): HP bars by body part, stamina + safe mode, place + time; plus the **status report** action (F4, also in the action menu under Info) that writes one paragraph to the log: date and time (watch/sky gated as in the sidebar), weather, wind, moon at night, temperature (thermometer gated), place, needs that are not normal, hostiles in sight with distance and direction, sounds heard | done | (preset: sidebar menu) | Sidebar options → layout "3D"; press F4 |
 | 7 | Status badges: abnormal needs and conditions as coloured boxed words along the bottom left of the view, from the widgets listed in `r3d_status_row` (hunger, thirst, sleepiness, body temperature, pain, weariness); a widget whose text is empty or "fine"-coloured has no badge, so the thresholds stay in the widgets' clauses | done | `R3D_HUD` | Get hungry, cold or tired |
+| 8 | Hit direction: when `character_takes_damage` names the player, a red glow on the edge of the view on the attacker's side, fading over a second. The event does not say who hit, so the attacker is the nearest hostile the player sees; with none seen the glow runs all round the edge | done | `R3D_HUD` | Let a zombie hit you |
+| 9 | "Entering: <place>" under the compass for 3.5 s when the sidebar's place name changes (from `avatar_enters_omt`, so not on every forest tile); the auto-travel route drawn as a ribbon of the targeting line's sprite on the ground | done | `R3D_HUD` | Walk into a town; auto-travel from the overmap |
+| 10 | Horizon landmarks beyond the loaded area | not built | — | See "What was cut and why" |
+
+**What was cut and why** (veto any of these and it can come back):
+
+* *Horizon landmarks (top-ten item 10).* Large (new mesh source beyond the reality bubble, an
+  overmap tileset) for a cue the compass tape already gives: notes and the travel destination
+  point the way. Not built.
+* *Hostile ticks on the compass and a hostile list on the overlay.* One threat cue only: the edge
+  arrows. The sidebar compass widgets stay in the classic presets; the status report lists
+  hostiles with bearings.
+* *A sky dial / clock on the overlay.* The sky colour, the sun and moon in the world and on the
+  compass tape show the time of day; the exact time is in the 3D sidebar and the status report.
+* *From the 3D sidebar preset:* stats, speed and move counter, focus, mood, lighting, moon,
+  weather, wind, temperature, sound level, the creature compass and its legend, weapon/style,
+  vehicle lines, armour, body part status lists, mana. The world shows weather, wind, light and
+  threats; the badges show abnormal needs; the status report has the rest as text, and every
+  classic preset is still selectable.
+* *Separate options per feature.* Two switches instead of ten: `R3D_WEATHER` (world) and
+  `R3D_HUD` (marks over it).
+* *Weather log messages for every change.* Only weather type changes and wind changes across
+  speed bands (calm / breeze / wind / strong) are logged, and only when the sky is visible.
 
 Notes:
 

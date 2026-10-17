@@ -17,6 +17,10 @@
 #include "calendar.h"
 #include "creature.h"
 #include "cursesport.h"
+#include "display.h"
+#include "event.h"
+#include "event_bus.h"
+#include "event_subscriber.h"
 #include "game.h"
 #include "line.h"
 #include "map.h"
@@ -26,6 +30,8 @@
 #include "output.h"
 #include "r3d_hud_math.h"
 #include "sounds.h"
+#include "string_formatter.h"
+#include "translations.h"
 #include "weather.h"
 #include "widget.h"
 
@@ -404,6 +410,139 @@ void add_status_badges( const hud_frame &frame, std::vector<hud_text> &texts )
     }
 }
 
+// Listens on the game's event bus for what the overlays react to: the player being hurt and the
+// player entering another overmap tile.
+class hud_events : public event_subscriber
+{
+    public:
+        void notify( const cata::event &e ) override {
+            if( e.type() == event_type::character_takes_damage ) {
+                const avatar &you = get_avatar();
+                if( e.get<character_id>( "character" ) != you.getID() || e.get<int>( "damage" ) <= 0 ) {
+                    return;
+                }
+                hit_ticks = SDL_GetTicks();
+                hit_from = guess_attacker( you );
+            } else if( e.type() == event_type::avatar_enters_omt ) {
+                const std::string name = display::current_position_text( tripoint_abs_omt( e.get<tripoint>( "pos" ) ) );
+                if( name != place ) {
+                    place = name;
+                    place_ticks = SDL_GetTicks();
+                }
+            }
+        }
+
+        uint64_t hit_ticks = 0;
+        std::optional<tripoint_bub_ms> hit_from;
+        uint64_t place_ticks = 0;
+        std::string place;
+
+    private:
+        // The event does not say who hit; take the nearest hostile the player can see, preferring
+        // one within reach. Nothing when none is seen: then the hit has no direction.
+        static std::optional<tripoint_bub_ms> guess_attacker( const avatar &you ) {
+            map &here = get_map();
+            std::optional<tripoint_bub_ms> best;
+            int best_dist = 61;
+            for( Creature &critter : g->all_creatures() ) {
+                if( critter.is_avatar() || critter.attitude_to( you ) != Creature::Attitude::HOSTILE ||
+                    !you.sees( here, critter ) ) {
+                    continue;
+                }
+                const int dist = rl_dist( you.pos_bub(), critter.pos_bub() );
+                if( dist < best_dist ) {
+                    best_dist = dist;
+                    best = critter.pos_bub();
+                }
+            }
+            return best;
+        }
+};
+
+hud_events &events()
+{
+    // Leaked like the renderer's state: it must outlive the game's event bus, which unsubscribes
+    // it when it goes away.
+    static hud_events *ev = new hud_events();
+    static const event_bus *bus = nullptr;
+    event_bus &current = get_event_bus();
+    if( bus != &current ) {
+        current.subscribe( ev );
+        bus = &current;
+    }
+    return *ev;
+}
+
+// A red glow at the edge of the view on the side the hit came from, fading over a second; all
+// around the edge when the attacker is not seen.
+void draw_hit_direction( SDL_Renderer *renderer, const hud_frame &frame )
+{
+    const hud_events &ev = events();
+    constexpr uint64_t fade_ms = 1000;
+    const uint64_t now = SDL_GetTicks();
+    if( ev.hit_ticks == 0 || now - ev.hit_ticks > fade_ms ) {
+        return;
+    }
+    const float strength = 1.0f - static_cast<float>( now - ev.hit_ticks ) / fade_ms;
+    const SDL_FColor outer{ 0.9f, 0.05f, 0.05f, 0.75f * strength };
+    const SDL_FColor inner{ 0.9f, 0.05f, 0.05f, 0.0f };
+    const auto quad = [&]( SDL_FPoint a, SDL_FPoint b, SDL_FPoint c, SDL_FPoint d ) {
+        // a-b on the edge (opaque), c-d inside (clear).
+        const SDL_Vertex v[6] = {
+            { a, outer, {} }, { b, outer, {} }, { c, inner, {} },
+            { a, outer, {} }, { c, inner, {} }, { d, inner, {} }
+        };
+        SDL_RenderGeometry( renderer, nullptr, v, 6, nullptr, 0 );
+    };
+    const float x0 = frame.x;
+    const float y0 = frame.y;
+    const float x1 = frame.x + frame.w;
+    const float y1 = frame.y + frame.h;
+    const avatar &you = get_avatar();
+    std::optional<vec3> from_screen;
+    std::optional<vec3> me = frame.screen( you.pos_bub(), 0.5f );
+    if( ev.hit_from ) {
+        from_screen = frame.screen( *ev.hit_from, 0.5f );
+    }
+    if( !from_screen || !me || ( std::fabs( from_screen->x - me->x ) < 1.0f &&
+                                 std::fabs( from_screen->y - me->y ) < 1.0f ) ) {
+        const float d = 24.0f;
+        quad( { x0, y0 }, { x1, y0 }, { x1 - d, y0 + d }, { x0 + d, y0 + d } );
+        quad( { x1, y0 }, { x1, y1 }, { x1 - d, y1 - d }, { x1 - d, y0 + d } );
+        quad( { x1, y1 }, { x0, y1 }, { x0 + d, y1 - d }, { x1 - d, y1 - d } );
+        quad( { x0, y1 }, { x0, y0 }, { x0 + d, y0 + d }, { x0 + d, y1 - d } );
+        return;
+    }
+    // Where the line from the middle of the view along the attacker's direction leaves it.
+    const float dx = from_screen->x - me->x;
+    const float dy = from_screen->y - me->y;
+    const edge_mark m = place_edge_mark( dx, -dy, 1e-3f, 0.0f, 0.0f );
+    const float ex = frame.x + ( m.x * 0.5f + 0.5f ) * frame.w;
+    const float ey = frame.y + ( 0.5f - m.y * 0.5f ) * frame.h;
+    const float len = std::sqrt( dx * dx + dy * dy );
+    const float ux = dx / len;
+    const float uy = dy / len;
+    // Across the direction, and inwards.
+    const float half = std::min( frame.w, frame.h ) * 0.22f;
+    const float depth = 40.0f;
+    const SDL_FPoint a{ ex - uy * half, ey + ux * half };
+    const SDL_FPoint b{ ex + uy * half, ey - ux * half };
+    quad( a, b, SDL_FPoint{ b.x - ux * depth, b.y - uy * depth }, SDL_FPoint{ a.x - ux * depth, a.y - uy * depth } );
+}
+
+// "Entering: <place>" under the compass for a few seconds when the place the sidebar names
+// changes (not on every overmap tile of a forest).
+void add_place_notice( const hud_frame &frame, std::vector<hud_text> &texts )
+{
+    const hud_events &ev = events();
+    constexpr uint64_t show_ms = 3500;
+    if( ev.place_ticks == 0 || SDL_GetTicks() - ev.place_ticks > show_ms || ev.place.empty() ) {
+        return;
+    }
+    texts.push_back( { frame.x + frame.w * 0.5f, frame.y + 44.0f,
+                       string_format( _( "Entering: %s" ), ev.place ), 15, 0, true } );
+}
+
 } // namespace
 
 void draw_hud( SDL_Renderer *renderer, const hud_frame &frame, const atmosphere &air,
@@ -414,6 +553,11 @@ void draw_hud( SDL_Renderer *renderer, const hud_frame &frame, const atmosphere 
         draw_edge_arrows( renderer, frame );
         draw_compass( renderer, frame, air, texts );
         add_status_badges( frame, texts );
+        draw_hit_direction( renderer, frame );
+        add_place_notice( frame, texts );
+    } else {
+        // Keep listening so a notice is not shown late when the option comes back on.
+        events();
     }
 }
 

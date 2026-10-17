@@ -24,6 +24,21 @@ namespace
 constexpr int side = SEEX; // SEEX == SEEY
 constexpr int border = side + 2;
 
+// Light multiplier that turns a grey wall texture cell (whose average is about grey_mean, see
+// make_wall_textures.py) into the given colour: the tileset's (0xAARRGGBB, alpha 0 when unknown)
+// or else the preset (0xRRGGBB).
+uint32_t wall_tint( uint32_t tileset_color, uint32_t preset )
+{
+    constexpr float grey_mean = 200.0f;
+    const uint32_t rgb = ( tileset_color >> 24 ) != 0 ? tileset_color & 0xffffffu : preset;
+    uint32_t out = 0;
+    for( int shift : { 16, 8, 0 } ) {
+        const float c = static_cast<float>( ( rgb >> shift ) & 255u ) * 255.0f / grey_mean;
+        out |= static_cast<uint32_t>( std::min( c, 255.0f ) ) << shift;
+    }
+    return out;
+}
+
 tile_traits traits_of( const map_data_common_t &d )
 {
     tile_traits t;
@@ -67,6 +82,8 @@ sprite_ref to_sprite_ref( const texture_draw_data &data )
     ref.v1 = data.uv1.second - half_v;
     ref.size_x = data.size_x;
     ref.size_y = data.size_y;
+    ref.top_color = data.top_color;
+    ref.body_color = data.body_color;
     ref.quarter_turns = data.quarter_turns;
     ref.flip = data.flip;
     if( data.opaque.w > 0 && data.opaque.h > 0 && data.dimensions.w > 0 && data.dimensions.h > 0 ) {
@@ -390,11 +407,19 @@ void emit_side_layers( quad_sink &sink, const tile_info &t, int x, int y, face_b
 }
 
 // A side of a wall block: its own side texture when it has one, else the tileset sprite.
+light_ref tinted( light_ref ref, uint32_t rgb )
+{
+    ref.tint_r = static_cast<uint8_t>( ( rgb >> 16 ) & 255u );
+    ref.tint_g = static_cast<uint8_t>( ( rgb >> 8 ) & 255u );
+    ref.tint_b = static_cast<uint8_t>( rgb & 255u );
+    return ref;
+}
+
 void emit_wall_side( quad_sink &sink, const tile_info &t, int x, int y, face_bit face, float z_base,
                      float z_top, const light_ref &ref )
 {
     if( t.side.valid ) {
-        emit_side( sink, t.side, x, y, face, z_base, z_top, ref );
+        emit_side( sink, t.side, x, y, face, z_base, z_top, tinted( ref, t.side_tint ) );
     } else {
         emit_side_layers( sink, t, x, y, face, z_base, z_top, ref );
     }
@@ -565,6 +590,14 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int sub
                 info.cap.u1 -= du;
                 info.cap.v0 += dv;
                 info.cap.v1 -= dv;
+                // Colours: the tileset's own wall sprite (its front for the sides, its top for
+                // the cap), else the texture's default.
+                const sprite_ref &art = info.main();
+                const auto fallback = wall_sides_->colors.find( name );
+                const uint32_t preset = fallback != wall_sides_->colors.end() ? fallback->second :
+                                        0xb4b4b4u;
+                info.side_tint = wall_tint( art.body_color, preset );
+                info.cap_tint = wall_tint( art.top_color, preset );
             }
         }
     }
@@ -795,7 +828,7 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                     if( ( faces & face_top ) != 0 ) {
                         if( terrain.cap.valid ) {
                             emit_top( sink, terrain.cap, lx, ly, ts.height,
-                                      make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                                      tinted( make_ref( lx, ly, 0, 0, 0, face_shade[0] ), terrain.cap_tint ) );
                         } else {
                             emit_top_layers( sink, terrain, lx, ly, ts.height,
                                              make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );

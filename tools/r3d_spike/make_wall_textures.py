@@ -2,7 +2,9 @@
 """Generates data/raw/r3d/wall_sides.png: tileable side textures for walls in the 3D view.
 
 Original procedural pixel art (no tileset sprites involved), deterministic for a given seed.
-The cell order must match "textures" in data/raw/r3d/wall_sides.json.
+The cells are stored in grey with an average of GREY_MEAN: the 3D view colours them with the
+tileset's own wall colours (or the defaults in "colors" of data/raw/r3d/wall_sides.json, which
+are the colours drawn here). The cell order must match "textures" in that file.
 
     python3 tools/r3d_spike/make_wall_textures.py
 """
@@ -14,6 +16,23 @@ from PIL import Image
 CELL = 32
 NAMES = ["plaster", "concrete", "brick", "wood", "logs", "rock", "metal", "glass", "stone",
          "sandbag"]
+# Average grey of every cell; must match grey_mean in src/r3d_mesh.cpp (wall_tint).
+GREY_MEAN = 200.0
+
+
+def to_grey(cell):
+    """The cell's luminance, scaled so that its average is GREY_MEAN."""
+    px = cell.load()
+    lum = [[0.299 * px[x, y][0] + 0.587 * px[x, y][1] + 0.114 * px[x, y][2] for x in range(CELL)]
+           for y in range(CELL)]
+    mean = sum(sum(row) for row in lum) / (CELL * CELL)
+    out = Image.new("RGB", (CELL, CELL))
+    o = out.load()
+    for y in range(CELL):
+        for x in range(CELL):
+            v = clamp(lum[y][x] * GREY_MEAN / mean)
+            o[x, y] = (v, v, v)
+    return out
 
 
 def clamp(v):
@@ -169,7 +188,7 @@ def main():
     for i, name in enumerate(NAMES):
         cell = Image.new("RGB", (CELL, CELL))
         globals()[name](cell.load(), rng)
-        atlas.paste(cell.convert("RGBA"), ((i % columns) * CELL, (i // columns) * CELL))
+        atlas.paste(to_grey(cell).convert("RGBA"), ((i % columns) * CELL, (i // columns) * CELL))
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     out = os.path.join(root, "data", "raw", "r3d", "wall_sides.png")
     os.makedirs(os.path.dirname(out), exist_ok=True)

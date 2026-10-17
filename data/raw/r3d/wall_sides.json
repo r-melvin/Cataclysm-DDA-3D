@@ -1,5 +1,5 @@
 {
-  "//": "Side textures of walls in the 3D view (option R3D_WALL_TEXTURES). 'textures' names the cells of wall_sides.png in order (made by tools/r3d_spike/make_wall_textures.py). A terrain id, or one it looks like, is matched in 'by_id' first, then by its longest prefix in 'by_prefix'; walls nothing matches keep the tileset sprite on their sides ('fallback' empty).",
+  "//": "Side textures of walls in the 3D view (option R3D_WALL_TEXTURES). 'textures' names the cells of wall_sides.png in order (made by tools/r3d_spike/make_wall_textures.py). A terrain id, or one it looks like, is matched in 'by_id' first, then by its longest prefix in 'by_prefix'; walls nothing matches keep the tileset sprite on their sides ('fallback' empty). The cells are grey: a wall takes its colours from the tileset's own wall sprite, or else from 'colors' (red, green, blue).",
   "cell": 32,
   "textures": [ "plaster", "concrete", "brick", "wood", "logs", "rock", "metal", "glass", "stone", "sandbag" ],
   "by_id": {
@@ -42,5 +42,17 @@
     "t_stone_wall": "stone",
     "t_fungus_wall": "rock"
   },
-  "fallback": ""
+  "fallback": "",
+  "colors": {
+    "plaster": [ 196, 186, 160 ],
+    "concrete": [ 150, 150, 146 ],
+    "brick": [ 150, 70, 52 ],
+    "wood": [ 128, 92, 58 ],
+    "logs": [ 112, 80, 50 ],
+    "rock": [ 112, 108, 100 ],
+    "metal": [ 126, 132, 138 ],
+    "glass": [ 150, 190, 205 ],
+    "stone": [ 150, 144, 132 ],
+    "sandbag": [ 156, 138, 100 ]
+  }
 }

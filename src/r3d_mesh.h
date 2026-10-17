@@ -41,6 +41,8 @@ struct sprite_ref {
     float size_y = 1.0f;
     int quarter_turns = 0; // clockwise, applied to top faces like the flat view turns the sprite
     bool flip = false;     // mirrored horizontally
+    uint32_t top_color = 0;  // average colours from the tileset loader (see sprite_scan)
+    uint32_t body_color = 0;
     // opaque part of the sprite as fractions of it (whole sprite when unknown)
     float opaque_x0 = 0.0f;
     float opaque_y0 = 0.0f;
@@ -56,6 +58,8 @@ struct tile_info {
     bool tree = false;   // the level above holds its treetop, which this sprite already shows
     sprite_ref side;     // texture for the sides of a wall (see wall_sides), else invalid
     sprite_ref cap;      // the top of such a wall: a plain patch of the same texture
+    uint32_t side_tint = 0xffffffu; // 0xRRGGBB colours for the side texture and the cap
+    uint32_t cap_tint = 0xffffffu;
     bool see_through = false; // transparent terrain (fences, bars): the floor shows through it
 
     /** The layer that represents the tile when only one can be drawn (upright sprites). */
@@ -80,6 +84,9 @@ struct wall_sides {
     int cell = 0;
     std::vector<std::string> names; // atlas cells in order
     wall_texture_rules rules;
+    // The cells are grey; a wall takes its colours from the tileset's sprite, or else from here
+    // (0xRRGGBB by cell name).
+    std::unordered_map<std::string, uint32_t> colors;
 };
 
 /**
@@ -121,6 +128,10 @@ struct light_ref {
     int8_t dy = 0;
     int8_t dz = 0;
     uint8_t shade = 255; // directional shading baked into the face, 255 = full brightness
+    // colour multiplied into the light (wall textures take the tileset's colours), 255 = none
+    uint8_t tint_r = 255;
+    uint8_t tint_g = 255;
+    uint8_t tint_b = 255;
 };
 
 struct mesh_batch {

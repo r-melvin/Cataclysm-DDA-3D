@@ -140,7 +140,7 @@ static SDL_Surface_Ptr apply_color_filter( const SDL_Surface_Ptr &original,
 // a sprite rect. The surface must be 32-bit RGBA (e.g. from create_surface_32).
 // Returns coordinates relative to the sprite rect origin. A fully transparent
 // sprite returns {0, 0, 0, 0}.
-static SDL_Rect compute_opaque_rect( const SDL_Surface_Ptr &surf, const SDL_Rect &rect )
+static sprite_scan scan_sprite( const SDL_Surface_Ptr &surf, const SDL_Rect &rect )
 {
     int min_x = rect.w; // NOLINT(cata-combine-locals-into-point)
     int min_y = rect.h;
@@ -172,10 +172,44 @@ static SDL_Rect compute_opaque_rect( const SDL_Surface_Ptr &surf, const SDL_Rect
             }
         }
     }
+    sprite_scan scan;
     if( max_x < 0 ) {
-        return { 0, 0, 0, 0 };
+        return scan;
     }
-    return { min_x, min_y, max_x - min_x + 1, max_y - min_y + 1 };
+    scan.opaque = { min_x, min_y, max_x - min_x + 1, max_y - min_y + 1 };
+    // Average colours of the top third of the opaque rows and of the rest.
+    const int split = min_y + ( max_y - min_y + 1 ) / 3;
+    std::array<std::array<uint64_t, 4>, 2> sums = {};
+    for( int y = min_y; y <= max_y; ++y ) {
+        std::array<uint64_t, 4> &sum = sums[y < split ? 0 : 1];
+        for( int x = min_x; x <= max_x; ++x ) {
+            Uint8 r;
+            Uint8 g;
+            Uint8 b;
+            Uint8 a;
+            GetRGBA( pixels[( rect.y + y ) * pitch + ( rect.x + x )], surf, r, g, b, a );
+            if( a >= 128 ) {
+                sum[0] += r;
+                sum[1] += g;
+                sum[2] += b;
+                ++sum[3];
+            }
+        }
+    }
+    const auto average = []( const std::array<uint64_t, 4> &sum ) -> uint32_t {
+        if( sum[3] == 0 )
+        {
+            return 0;
+        }
+        return 0xff000000u | static_cast<uint32_t>( sum[0] / sum[3] ) << 16 |
+        static_cast<uint32_t>( sum[1] / sum[3] ) << 8 | static_cast<uint32_t>( sum[2] / sum[3] );
+    };
+    scan.top_color = average( sums[0] );
+    scan.body_color = average( sums[1] );
+    if( scan.top_color == 0 ) {
+        scan.top_color = scan.body_color;
+    }
+    return scan;
 }
 
 static bool is_contained( const SDL_Rect &smaller, const SDL_Rect &larger )
@@ -215,7 +249,7 @@ std::shared_ptr<SDL_Texture> tileset_cache::loader::make_gated_atlas_texture(
 
 void tileset_cache::loader::copy_surface_to_texture( const SDL_Surface_Ptr &surf,
         const point &offset, std::vector<texture> &target,
-        const std::vector<SDL_Rect> &opaque_bounds,
+        const std::vector<sprite_scan> &scans,
         const atlas_replay_quarantine::gate &abandon_gate )
 {
     cata_assert( surf );
@@ -241,10 +275,9 @@ void tileset_cache::loader::copy_surface_to_texture( const SDL_Surface_Ptr &surf
         cata_assert( target[index].dimension() == std::make_pair( 0, 0 ) );
         const size_t in_chunk = ( rect.x / sprite_width ) + ( rect.y / sprite_height ) *
                                 ( surf->w / sprite_width );
-        const SDL_Rect &opaque = in_chunk < opaque_bounds.size()
-                                 ? opaque_bounds[in_chunk]
-                                 : SDL_Rect{ 0, 0, rect.w, rect.h };
-        target[index] = texture( texture_ptr, rect, opaque );
+        const sprite_scan scan = in_chunk < scans.size() ? scans[in_chunk] :
+                                 sprite_scan{ SDL_Rect{ 0, 0, rect.w, rect.h }, 0, 0 };
+        target[index] = texture( texture_ptr, rect, scan );
     }
 }
 
@@ -271,11 +304,11 @@ void tileset_cache::loader::create_textures_from_tile_atlas( const SDL_Surface_P
                                                    tile_atlas->h / sprite_height ) );
     // one entry per sprite of this chunk, however far down the atlas it sits
     const int chunk_cols = tile_atlas->w / sprite_width;
-    std::vector<SDL_Rect> opaque_bounds( static_cast<size_t>( chunk_cols ) *
-                                         ( tile_atlas->h / sprite_height ), SDL_Rect{ 0, 0, 0, 0 } );
+    std::vector<sprite_scan> scans( static_cast<size_t>( chunk_cols ) *
+                                    ( tile_atlas->h / sprite_height ) );
     for( const SDL_Rect rect : scan_range ) {
-        opaque_bounds[( rect.x / sprite_width ) + ( rect.y / sprite_height ) * chunk_cols] =
-            compute_opaque_rect( scan_surf, rect );
+        scans[( rect.x / sprite_width ) + ( rect.y / sprite_height ) * chunk_cols] =
+            scan_sprite( scan_surf, rect );
     }
 
     /** perform color filter conversion here */
@@ -297,10 +330,10 @@ void tileset_cache::loader::create_textures_from_tile_atlas( const SDL_Surface_P
         color_pixel_function_pointer color_pixel_function = get_color_pixel_function( std::get<1>
                 ( entry ) );
         if( !color_pixel_function ) {
-            copy_surface_to_texture( scan_surf, offset, *tile_values, opaque_bounds, abandon_gate );
+            copy_surface_to_texture( scan_surf, offset, *tile_values, scans, abandon_gate );
         } else {
             copy_surface_to_texture( apply_color_filter( tile_atlas, color_pixel_function ), offset,
-                                     *tile_values, opaque_bounds, abandon_gate );
+                                     *tile_values, scans, abandon_gate );
         }
     }
 }

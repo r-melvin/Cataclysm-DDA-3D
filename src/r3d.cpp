@@ -236,6 +236,16 @@ std::shared_ptr<const wall_sides> load_wall_sides( gpu &device )
             sides->rules.by_prefix[m.name()] = m.get_string();
         }
         sides->rules.fallback = jo.get_string( "fallback", "" );
+        if( jo.has_member( "colors" ) ) {
+            const JsonObject colors = jo.get_object( "colors" );
+            for( const JsonMember m : colors ) {
+                const std::vector<int> rgb = colors.get_int_array( m.name() );
+                if( rgb.size() == 3 ) {
+                    sides->colors[m.name()] = static_cast<uint32_t>( rgb[0] ) << 16 |
+                                              static_cast<uint32_t>( rgb[1] ) << 8 | static_cast<uint32_t>( rgb[2] );
+                }
+            }
+        }
 
         const SDL_Surface_Ptr surface = load_image( ( dir / "wall_sides.png" ).generic_u8string().c_str() );
         // Uploaded by the 3D renderer itself: a texture made through the SDL_Renderer would
@@ -400,9 +410,10 @@ void update_chunk_light( state &s, chunk_gpu &c, const tripoint_abs_sm &pos,
         const uint32_t tile = grid[std::clamp( static_cast<int>( r.dz ), 0, 1 )][static_cast<size_t>
                               ( gy * border + gx )];
         const uint32_t shade = r.shade;
-        c.light[i] = pack_light( static_cast<uint8_t>( ( ( tile >> 0 ) & 255u ) * shade / 255u ),
-                                 static_cast<uint8_t>( ( ( tile >> 8 ) & 255u ) * shade / 255u ),
-                                 static_cast<uint8_t>( ( ( tile >> 16 ) & 255u ) * shade / 255u ) );
+        c.light[i] = pack_light(
+                         static_cast<uint8_t>( ( ( tile >> 0 ) & 255u ) * shade / 255u * r.tint_r / 255u ),
+                         static_cast<uint8_t>( ( ( tile >> 8 ) & 255u ) * shade / 255u * r.tint_g / 255u ),
+                         static_cast<uint8_t>( ( ( tile >> 16 ) & 255u ) * shade / 255u * r.tint_b / 255u ) );
     }
     s.device.upload( c.lights, c.light.data(),
                      static_cast<uint32_t>( c.light.size() * sizeof( uint32_t ) ), true );

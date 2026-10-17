@@ -152,6 +152,17 @@ class tile_lookup_res
         }
 };
 
+/** What the loader learns from scanning a sprite's pixels. */
+struct sprite_scan {
+    // Tightest rect containing non-transparent pixels, relative to the sprite origin.
+    SDL_Rect opaque = { 0, 0, 0, 0 };
+    // Average colour (0xAARRGGBB, alpha 0 when unknown) of the top third of the opaque part and
+    // of the rest: for 3/4-view art roughly the top and the front of what is drawn. The 3D view
+    // colours wall textures with them.
+    uint32_t top_color = 0;
+    uint32_t body_color = 0;
+};
+
 class texture
 {
     private:
@@ -160,6 +171,8 @@ class texture
         // Tightest rect containing non-transparent pixels, relative to srcrect origin.
         // Used for tint overlay bounds so transparent padding is excluded.
         SDL_Rect opaque_rect = { 0, 0, 0, 0 };
+        uint32_t top_color = 0; // see sprite_scan
+        uint32_t body_color = 0;
 
     public:
         texture( std::shared_ptr<SDL_Texture> ptr,
@@ -168,7 +181,18 @@ class texture
         texture( std::shared_ptr<SDL_Texture> ptr,
                  const SDL_Rect &rect, const SDL_Rect &opaque ) : sdl_texture_ptr( std::move( ptr ) ),
             srcrect( rect ), opaque_rect( opaque ) { }
+        texture( std::shared_ptr<SDL_Texture> ptr,
+                 const SDL_Rect &rect, const sprite_scan &scan ) : sdl_texture_ptr( std::move( ptr ) ),
+            srcrect( rect ), opaque_rect( scan.opaque ), top_color( scan.top_color ),
+            body_color( scan.body_color ) { }
         texture() = default;
+
+        uint32_t get_top_color() const {
+            return top_color;
+        }
+        uint32_t get_body_color() const {
+            return body_color;
+        }
 
         /// Returns the width (first) and height (second) of the stored texture.
         std::pair<int, int> dimension() const {
@@ -720,6 +744,9 @@ struct texture_draw_data {
     bool flip = false;
     // bounding box of the sprite's opaque pixels, relative to dimensions (empty when unknown)
     SDL_Rect opaque = { 0, 0, 0, 0 };
+    // average colours of its top and the rest (see sprite_scan)
+    uint32_t top_color = 0;
+    uint32_t body_color = 0;
 };
 
 /** type used for color blocks overlays.

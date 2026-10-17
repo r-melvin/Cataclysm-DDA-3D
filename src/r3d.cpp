@@ -137,6 +137,8 @@ struct state {
     bool walls_on = false; // whether the cache was given the wall side rules and atlas
     bool plaster_atlas = false; // whether painted walls take the atlas plaster (see the option)
     std::vector<hud_text> texts; // drawn over the last frame by sdltiles
+    int text_w = 8;              // their font's character size (set_text_cell)
+    int text_h = 16;
     sky_sprites sky;        // sun, moon and fallback weather sprites (see r3d_sky.h)
     bool sky_failed = false;
 };
@@ -608,6 +610,22 @@ void add_weather_particles( state &s, entity_view &view, const atmosphere &air, 
     }
 }
 
+// The sun and the moon as discs far out in the sky, in their direction from the camera target.
+// Far enough that the loaded map stands in front of them; the weather's fog hides them too.
+void add_sky_bodies( state &s, entity_view &view, const atmosphere &air, int view_z )
+{
+    if( !s.sky.loaded() ) {
+        return;
+    }
+    constexpr float distance = 300.0f;
+    for( const sky_body &b : sky_bodies( view_z, air ) ) {
+        // The view stretches heights by z_scale: shrink the direction's height to keep the angle.
+        const vec3 at = s.cam.target + vec3{ b.dir.x, b.dir.y, b.dir.z / s.cam.z_scale } * distance;
+        view.particles.push_back( { at.x, -at.y, at.z, b.sun ? 16.0f : 14.0f,
+                                    &s.sky.cells[static_cast<size_t>( b.cell )], pack_light( 255, 255, 255 ) } );
+    }
+}
+
 void maybe_take_screenshot( state &s )
 {
     // CATA_R3D_SCREENSHOT=<path> saves the finished previous frame once things have settled;
@@ -813,6 +831,12 @@ void compare_capture()
 const std::vector<hud_text> &hud_texts()
 {
     return st().texts;
+}
+
+void set_text_cell( int width, int height )
+{
+    st().text_w = std::max( width, 1 );
+    st().text_h = std::max( height, 1 );
 }
 
 bool active()
@@ -1198,6 +1222,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     }
     if( weather_on ) {
         add_weather_particles( s, entities_view, air, here, center, origin, sampler );
+        add_sky_bodies( s, entities_view, air, view_z );
     }
     const chunk_mesh entities = build_entity_mesh( entities_view );
     const bool draw_entities = !entities.empty() &&
@@ -1297,6 +1322,10 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     frame.view_proj = view_proj;
     frame.center = center;
     frame.sct = queued_sct;
+    frame.view_z = view_z;
+    frame.cell_w = static_cast<float>( s.text_w );
+    frame.cell_h = static_cast<float>( s.text_h );
+    frame.sky = &s.sky;
     draw_hud( renderer, frame, air, s.texts );
 
     // Drop chunks that have not been needed for a while (the player moved on).

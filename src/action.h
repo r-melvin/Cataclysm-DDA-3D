@@ -374,6 +374,8 @@ enum action_id : int {
     ACTION_TOGGLE_HOUR_TIMER,
     /** Interact with the current or nearby tile */
     ACTION_INTERACT,
+    /** Describe what the character perceives now in one paragraph, in the message log */
+    ACTION_STATUS_REPORT,
     /** Not an action, serves as count of enumerated actions */
     NUM_ACTIONS
     /**@}*/

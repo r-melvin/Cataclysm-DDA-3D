@@ -7,6 +7,7 @@
 #include <array>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "calendar.h"
 #include "r3d_hud_math.h"
@@ -62,6 +63,20 @@ struct atmosphere {
  * clear sky (the option is off).
  */
 atmosphere current_atmosphere( int view_z, bool with_weather );
+
+/** The sun or the moon: its world direction and its cell in sky_sprites. */
+struct sky_body {
+    vec3 dir;
+    int cell = sky_sprites::sun;
+    bool sun = true;
+};
+
+/**
+ * The sun and the moon above the horizon, from the same calculation as the sidebar's sundial
+ * (sun_azimuth_altitude; the moon opposite the sun, as the sundial places it) and the moon's
+ * phase from get_moon_phase. Empty underground and when cloud hides them.
+ */
+std::vector<sky_body> sky_bodies( int view_z, const atmosphere &air );
 
 /**
  * Writes weather and wind changes the character can perceive to the message log ("The wind

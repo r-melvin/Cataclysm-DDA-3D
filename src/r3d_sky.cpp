@@ -236,6 +236,27 @@ atmosphere current_atmosphere( int view_z, bool with_weather )
     return a;
 }
 
+std::vector<sky_body> sky_bodies( int view_z, const atmosphere &air )
+{
+    std::vector<sky_body> out;
+    if( view_z < 0 || air.cloud > 0.4f ) {
+        return out;
+    }
+    const std::pair<units::angle, units::angle> sun = sun_azimuth_altitude( sky_time() );
+    const float azimuth = static_cast<float>( to_radians( sun.first ) );
+    const float altitude = static_cast<float>( to_radians( sun.second ) );
+    if( altitude > -0.05f ) {
+        out.push_back( { sky_direction( azimuth, altitude ), sky_sprites::sun, true } );
+    }
+    // The sundial puts the moon opposite the sun; it is up when the sun is down.
+    if( -altitude > -0.05f ) {
+        const int phase = static_cast<int>( get_moon_phase( sky_time() ) );
+        out.push_back( { sky_direction( azimuth + 3.14159265f, -altitude ),
+                         sky_sprites::moon + std::clamp( phase, 0, 7 ), false } );
+    }
+    return out;
+}
+
 namespace
 {
 // Bands of wind speed (mph) that are worth a message when the wind moves between them.

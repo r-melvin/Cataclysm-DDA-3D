@@ -81,6 +81,7 @@
 #include "point.h"
 #include "popup.h"
 #include "r3d.h"
+#include "status_report.h"
 #include "ranged.h"
 #include "rng.h"
 #include "safemode_ui.h"
@@ -3177,6 +3178,10 @@ bool game::do_regular_action( action_id &act, avatar &player_character,
 
         case ACTION_R3D_RESET:
             r3d::reset();
+            break;
+
+        case ACTION_STATUS_REPORT:
+            add_msg( m_info, status_report( player_character ) );
             break;
 
         case ACTION_ITEMACTION:

@@ -4115,6 +4115,9 @@ void cata_cursesport::curses_drawwindow( const catacurses::window &w )
 
         // game::w_terrain can be drawn by the tilecontext.
         // skip the normal drawing code for it.
+        if( map_font ) {
+            r3d::set_text_cell( map_font->width, map_font->height );
+        }
         const bool drawn_3d = r3d::draw( renderer.get(),
                                          static_cast<float>( win->pos.x * fontwidth ),
                                          static_cast<float>( win->pos.y * fontheight ),

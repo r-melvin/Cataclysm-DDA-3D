@@ -1,0 +1,45 @@
+[
+  {
+    "id": "r3d_stamina_safe_layout",
+    "type": "widget",
+    "style": "layout",
+    "label": "Stamina/Safe",
+    "arrange": "columns",
+    "widgets": [ "stamina_graph", "safe_mode_desc" ]
+  },
+  {
+    "id": "r3d_place_time_layout",
+    "type": "widget",
+    "style": "layout",
+    "label": "Place/Time",
+    "arrange": "columns",
+    "widgets": [ "place_desc_no_label", "time_desc_no_label" ]
+  },
+  {
+    "id": "r3d_status_row",
+    "type": "widget",
+    "style": "layout",
+    "label": "Abnormal states",
+    "description": "Needs and conditions the 3D view shows as a row of badges over the picture, only while they are not normal.  The text of each badge is its widget's current clause.",
+    "arrange": "columns",
+    "widgets": [
+      "hunger_desc_no_label",
+      "thirst_desc_no_label",
+      "sleepiness_desc_no_label",
+      "body_temp_desc_no_label",
+      "pain_desc_no_label",
+      "weariness_desc_no_label"
+    ]
+  },
+  {
+    "id": "r3d_sidebar",
+    "type": "widget",
+    "style": "sidebar",
+    "label": { "str": "3D", "ctxt": "UI sidebar" },
+    "description": "For the 3D view: only what is needed at a glance.  The world shows time, weather, light and threats, the view's badges show abnormal needs, and the status report action gives everything else as text.",
+    "width": 36,
+    "separator": ": ",
+    "padding": 1,
+    "widgets": [ "hitpoints_all_narrow_graphs_layout", "r3d_stamina_safe_layout", "r3d_place_time_layout" ]
+  }
+]

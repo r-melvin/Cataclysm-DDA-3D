@@ -365,6 +365,8 @@ std::string action_ident( action_id act )
             return "r3d_zoom_out";
         case ACTION_R3D_RESET:
             return "r3d_reset";
+        case ACTION_STATUS_REPORT:
+            return "status_report";
         case ACTION_TOGGLE_FULLSCREEN:
             return "toggle_fullscreen";
         case ACTION_TOGGLE_PIXEL_MINIMAP:
@@ -487,6 +489,7 @@ bool can_action_change_worldstate( const action_id act )
         case ACTION_R3D_ZOOM_IN:
         case ACTION_R3D_ZOOM_OUT:
         case ACTION_R3D_RESET:
+        case ACTION_STATUS_REPORT:
         case ACTION_TOGGLE_PIXEL_MINIMAP:
         case ACTION_TOGGLE_PANEL_ADM:
         case ACTION_PANEL_MGMT:
@@ -1092,6 +1095,7 @@ action_id handle_action_menu( map &here )
             REGISTER_ACTION( ACTION_MEDICAL );
             REGISTER_ACTION( ACTION_BODYSTATUS );
             REGISTER_ACTION( ACTION_MESSAGES );
+            REGISTER_ACTION( ACTION_STATUS_REPORT );
             REGISTER_ACTION( ACTION_DIARY );
         } else if( category == _( "Misc" ) ) {
             REGISTER_ACTION( ACTION_WAIT );

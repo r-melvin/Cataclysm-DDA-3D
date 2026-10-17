@@ -32,6 +32,8 @@ struct hud_text {
 
 /** Texts to draw over the 3D frame the last draw() returned true for. */
 const std::vector<hud_text> &hud_texts();
+/** Size in logical pixels of a character of the font hud texts are drawn in. */
+void set_text_cell( int width, int height );
 
 /**
  * Draws the map around center into the pixel rectangle (x, y, w, h) of the renderer's current

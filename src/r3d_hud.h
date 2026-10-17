@@ -27,6 +27,10 @@ struct hud_frame {
     mat4 view_proj;
     tripoint_bub_ms center; // the viewed tile: the origin of the scene frame
     bool sct = false;       // the game queued its scrolling combat text for this frame
+    int view_z = 0;         // level of the viewed tile
+    const sky_sprites *sky = nullptr; // sun and moon sprites, when loaded
+    float cell_w = 8.0f;    // size of a character of the font hud texts are drawn in
+    float cell_h = 16.0f;
 
     /** Clip position of a point in scene-frame tile space (x east, y south, z levels). */
     vec3 clip( const vec3 &tile, float &w_out ) const;

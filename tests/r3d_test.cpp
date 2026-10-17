@@ -373,8 +373,13 @@ TEST_CASE( "r3d_furniture_box_layout", "[r3d]" )
     CHECK( approx( bench.x1, 0.7f ) );
     CHECK( approx( bench.col0, bench.x0 ) );
     CHECK( approx( bench.col1, bench.x1 ) );
-    CHECK( bench.y0 > 0.0f );
-    CHECK( bench.y1 > bench.y0 );
+    // Boxes stand against the back (north) of their tile, where a wall would be.
+    CHECK( approx( bench.y0, 0.0f ) );
+    CHECK( bench.y1 >= 0.5f );
+    CHECK( bench.y1 <= 1.0f );
+    // A tall piece whose art starts a little below the top still touches the back.
+    const r3d::box_layout locker = r3d::furniture_box_layout( 0.0f, 0.06f, 1.0f, 1.0f, 0.78f, false );
+    CHECK( approx( locker.y0, 0.0f ) );
     CHECK( approx( bench.side_bottom, bench.lid_bottom ) );
     CHECK( bench.side_top < bench.side_bottom );
 

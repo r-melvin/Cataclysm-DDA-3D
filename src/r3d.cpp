@@ -407,8 +407,14 @@ void update_chunk_light( state &s, chunk_gpu &c, const tripoint_abs_sm &pos,
         const light_ref &r = c.refs[i];
         const int gx = std::clamp( r.lx + r.dx + 1, 0, border - 1 );
         const int gy = std::clamp( r.ly + r.dy + 1, 0, border - 1 );
-        const uint32_t tile = grid[std::clamp( static_cast<int>( r.dz ), 0, 1 )][static_cast<size_t>
-                              ( gy * border + gx )];
+        uint32_t tile = grid[std::clamp( static_cast<int>( r.dz ), 0, 1 )][static_cast<size_t>
+                        ( gy * border + gx )];
+        // A side lit by the tile it faces would go black when that tile is out of sight (behind
+        // lockers, the far side of a wall) although the thing itself is seen: then it takes its
+        // own tile's light.
+        if( tile == pack_light( 0, 0, 0 ) && ( r.dx != 0 || r.dy != 0 ) ) {
+            tile = grid[0][static_cast<size_t>( ( r.ly + 1 ) * border + ( r.lx + 1 ) )];
+        }
         const uint32_t shade = r.shade;
         c.light[i] = pack_light(
                          static_cast<uint8_t>( ( ( tile >> 0 ) & 255u ) * shade / 255u * r.tint_r / 255u ),

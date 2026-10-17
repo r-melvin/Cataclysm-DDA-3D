@@ -81,11 +81,12 @@ box_layout furniture_box_layout( float ox0, float oy0, float ox1, float oy1, flo
     b.col1 = ox1;
     b.x0 = ox0;
     b.x1 = ox1;
-    // The rows above the front of a full sprite cover the tile's depth, so lid rows map onto it
-    // in that proportion.
+    // Furniture art stands with its back to the north (turned pieces turn with the box), so the
+    // box starts at the back of the tile, against whatever wall is there. Its depth follows the
+    // lid rows, which cover the tile's depth over the rows above the front of a full sprite.
     const float depth_rows = std::max( 1.0f - front, 0.05f );
-    b.y0 = std::clamp( oy0 / depth_rows, 0.0f, 0.8f );
-    b.y1 = std::clamp( split / depth_rows, b.y0 + 0.2f, 1.0f );
+    b.y0 = 0.0f;
+    b.y1 = std::clamp( ( split - oy0 ) / depth_rows, 0.5f, 1.0f );
     b.lid_top = oy0;
     b.lid_bottom = split;
     if( low ) {

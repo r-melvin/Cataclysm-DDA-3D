@@ -522,6 +522,23 @@ Each milestone is independently testable in the game and with the existing tooli
 
 ## 5. Open questions for the user
 
+Decided 2026-10-17 by the user (their friend is the other intended player):
+
+1. Vision stays 360°; no cone option.
+2. Turning keys: the arrow keys. No Q/E binding; examine stays on `e`.
+3. 45° turns; no 90° option.
+4. Step tween: **instant** by default (`R3D_FP_TWEEN_MS = 0`); the tween stays available for
+   trying out later.
+5. Vehicles (FP8) come after the HUD (FP5) and z-levels (FP7); not needed for the first
+   playable.
+6. Minimap: **rotates with the heading**, GTA-style (heading up, map turns under a fixed
+   player marker). The pixel minimap (`pixel_minimap.cpp`) needs a rotated draw mode for this;
+   it is north-up today.
+
+Questions 7-10 below are still open and keep their proposed defaults.
+
+The original questions, for the record:
+
 1. **Rules stay 360°?** This design keeps full-circle vision and compensates with HUD cues. Do
    you ever want a "hardcore" option where the game's vision becomes a cone (that is a rules
    change touching `map::build_seen_cache` and every `you.sees()` caller, and would be a separate

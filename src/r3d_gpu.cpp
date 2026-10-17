@@ -304,7 +304,8 @@ bool gpu::ensure_target( int width, int height )
         return false;
     }
     SDL_SetTextureBlendMode( wrapped_, SDL_BLENDMODE_NONE );
-    SDL_SetTextureScaleMode( wrapped_, SDL_SCALEMODE_NEAREST );
+    // Linear, so a supersampled target (see r3d::draw) is averaged down instead of aliasing.
+    SDL_SetTextureScaleMode( wrapped_, SDL_SCALEMODE_LINEAR );
     target_w_ = width;
     target_h_ = height;
     return true;

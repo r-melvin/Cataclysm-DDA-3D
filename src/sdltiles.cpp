@@ -5793,6 +5793,9 @@ static void focus_aware_stop_text_input()
 }
 
 //Check for any window messages (keypress, paint, mousemove, etc)
+// A middle-button drag that started over the 3D view moves its camera.
+static bool r3d_dragging = false;
+
 static void CheckMessages()
 {
     SDL_Event ev;
@@ -6402,6 +6405,20 @@ static void CheckMessages()
                     if( ! mouse.enabled ) {
                         break;
                     }
+                    if( r3d_dragging ) {
+                        // Free 3D camera: middle-drag orbits, shift+middle-drag slides it.
+                        if( ( SDL_GetModState() & SDL_KMOD_SHIFT ) != 0 ) {
+                            r3d::drag_pan( ev.motion.xrel, ev.motion.yrel );
+                        } else {
+                            r3d::drag_orbit( ev.motion.xrel, ev.motion.yrel );
+                        }
+                        if( g ) {
+                            g->invalidate_main_ui_adaptor();
+                        }
+                        ui_manager::redraw_invalidated();
+                        needupdate = true;
+                        break;
+                    }
                     if( get_option<std::string>( "HIDE_CURSOR" ) == "show" ||
                         get_option<std::string>( "HIDE_CURSOR" ) == "hidekb" ) {
                         // Cursor visibility must run even when ImGui owns
@@ -6426,6 +6443,11 @@ static void CheckMessages()
                         break;
                     }
                     switch( ev.button.button ) {
+                        case SDL_BUTTON_MIDDLE: {
+                            const int scale = get_scaling_factor();
+                            r3d_dragging = r3d::contains( ev.button.x / scale, ev.button.y / scale );
+                            break;
+                        }
                         case SDL_BUTTON_LEFT:
                             last_input = input_event( MouseInput::LeftButtonPressed, input_event_t::mouse );
                             break;
@@ -6442,6 +6464,9 @@ static void CheckMessages()
                     break;
 
                 case CATA_MOUSEBUTTONUP:
+                    if( ev.button.button == SDL_BUTTON_MIDDLE ) {
+                        r3d_dragging = false; // even when ImGui now has the mouse
+                    }
                     if( ! mouse.enabled ) {
                         break;
                     }

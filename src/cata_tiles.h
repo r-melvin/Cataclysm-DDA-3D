@@ -712,6 +712,12 @@ struct texture_draw_data {
     std::pair<float, float> uv1;
     // keeps the sheet alive for callers that hold on to texture (the 3D renderer's caches)
     std::shared_ptr<SDL_Texture> owner;
+    // sprite size in tiles of the tileset (tall sprites overflow upwards)
+    float size_x = 1.0f;
+    float size_y = 1.0f;
+    // how the flat view would turn this sprite: clockwise quarter turns, or a horizontal flip
+    int quarter_turns = 0;
+    bool flip = false;
 };
 
 /** type used for color blocks overlays.
@@ -778,9 +784,22 @@ class cata_tiles
          * many tilesets keep there, under sparse foreground decals) and never the foreground.
          */
         std::optional<texture_draw_data> get_sprite_draw_data( const std::string &id,
-                TILE_CATEGORY category, const tripoint_bub_ms &p, bool background = false );
+                TILE_CATEGORY category, const tripoint_bub_ms &p, bool background = false,
+                int subtile = -1, int rota = 0 );
+        /**
+         * The multitile subtile (-1 for none) and rotation the flat view uses for the terrain or
+         * furniture at p, from its connections to its neighbours (walls, benches, counters).
+         */
+        void get_orientation( const tripoint_bub_ms &p, bool furniture, int &subtile, int &rota );
 
         std::unordered_set<std::string> get_all_portrait_tile_ids( bool male ) const;
+
+        /** Sprite layers of a character, bottom to top, as draw_entity_with_overlays draws them. */
+        struct character_layers {
+            std::vector<std::pair<std::string, TILE_CATEGORY>> ids; // body (or look), then overlays
+            bool mirrored = false;                                  // facing left
+        };
+        character_layers get_character_layers( const Character &ch );
 
         /** One-frame markers queued by the game for the map view (see get_frame_markers). */
         struct frame_markers {

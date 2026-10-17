@@ -35,6 +35,14 @@ struct entity_view {
         bool box = false;           // also draw the sprite on the sides of a box above the tile
     };
     std::vector<marker> markers;
+
+    /** Upright sprites of the visible chunks (trees, lockers), at a tile of the map. */
+    struct standing {
+        tripoint_bub_ms pos;
+        float z_base = 0.0f; // above the tile's level
+        const tile_info *info = nullptr;
+    };
+    std::vector<standing> uprights;
 };
 
 /**

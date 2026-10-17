@@ -301,13 +301,20 @@ TEST_CASE( "r3d_terrain_shapes", "[r3d]" )
 
     t = {};
     t.tree = true;
-    CHECK( r3d::classify_terrain( t ).kind == r3d::shape_kind::cross );
+    CHECK( r3d::classify_terrain( t ).kind == r3d::shape_kind::upright );
 
     t = {};
     t.shrub = true;
     const r3d::shape shrub = r3d::classify_terrain( t );
-    CHECK( shrub.kind == r3d::shape_kind::cross );
+    CHECK( shrub.kind == r3d::shape_kind::upright );
     CHECK( shrub.height < 1.0f );
+
+    // An empty or broken window frame is passable and stands as a pane; an intact one blocks.
+    t = {};
+    t.window = true;
+    CHECK( r3d::classify_terrain( t ).kind == r3d::shape_kind::pane );
+    t.move_cost = 0;
+    CHECK( r3d::classify_terrain( t ).kind == r3d::shape_kind::block );
 }
 
 TEST_CASE( "r3d_furniture_shapes", "[r3d]" )
@@ -323,11 +330,11 @@ TEST_CASE( "r3d_furniture_shapes", "[r3d]" )
     t.tiny = true;
     CHECK( r3d::classify_furniture( t ).height < ordinary.height );
 
-    // Solid impassable furniture (lockers, fridges) gets sides and is taller than the default.
+    // Tall impassable furniture (lockers, fridges) stands upright and is taller than the default.
     t = {};
     t.move_cost = 0;
     const r3d::shape locker = r3d::classify_furniture( t );
-    CHECK( locker.kind == r3d::shape_kind::prism );
+    CHECK( locker.kind == r3d::shape_kind::upright );
     CHECK( locker.height > ordinary.height );
 
     // Impassable but low or flat-topped things (counters, low walls) stay top-only.
@@ -374,9 +381,10 @@ TEST_CASE( "r3d_face_visibility", "[r3d]" )
     roofed.up = block;
     CHECK( r3d::visible_faces( floor, roofed ) == 0 );
 
-    // Air and crossed quads emit nothing through this path.
+    // Air, upright sprites and panes emit nothing through this path.
     CHECK( r3d::visible_faces( air, open ) == 0 );
-    CHECK( r3d::visible_faces( { r3d::shape_kind::cross, 1.4f }, open ) == 0 );
+    CHECK( r3d::visible_faces( { r3d::shape_kind::upright, 1.4f }, open ) == 0 );
+    CHECK( r3d::visible_faces( { r3d::shape_kind::pane, 1.0f }, open ) == 0 );
 
     // A tall prism next to a short one shows its side; the short one's side is hidden.
     const r3d::shape tall{ r3d::shape_kind::prism, 0.9f };

@@ -36,6 +36,10 @@ struct sprite_ref {
     float v0 = 0.0f;
     float u1 = 0.0f;
     float v1 = 0.0f;
+    float size_x = 1.0f; // sprite size in tiles; tall sprites (size_y > size_x) overflow upwards
+    float size_y = 1.0f;
+    int quarter_turns = 0; // clockwise, applied to top faces like the flat view turns the sprite
+    bool flip = false;     // mirrored horizontally
     bool valid = false;
 };
 
@@ -43,6 +47,20 @@ struct tile_info {
     shape sh;
     sprite_ref backdrop; // opaque background layer, drawn first when the tileset has one
     sprite_ref sprite;   // foreground layer (alpha tested, may be sparse)
+    bool tree = false;   // the level above holds its treetop, which this sprite already shows
+
+    /** The layer that represents the tile when only one can be drawn (upright sprites). */
+    const sprite_ref &main() const {
+        return sprite.valid ? sprite : backdrop;
+    }
+};
+
+/** A sprite that stands on a tile and turns towards the camera; emitted per frame. */
+struct upright_sprite {
+    uint8_t lx = 0; // chunk-local tile
+    uint8_t ly = 0;
+    float z_base = 0.0f;
+    const tile_info *info = nullptr; // owned by the tile_info_cache, like the chunk's sheets
 };
 
 /**
@@ -53,8 +71,12 @@ class tile_info_cache
 {
     public:
         void clear();
-        const tile_info &terrain( ter_id id, cata_tiles &tiles );
-        const tile_info &furniture( furn_id id, cata_tiles &tiles );
+        /**
+         * With subtile/rota (see cata_tiles::get_orientation) the sprites are those the flat view
+         * draws for that connection; the shape never depends on them.
+         */
+        const tile_info &terrain( ter_id id, cata_tiles &tiles, int subtile = -1, int rota = 0 );
+        const tile_info &furniture( furn_id id, cata_tiles &tiles, int subtile = -1, int rota = 0 );
         /** Sprite layers by tileset id, e.g. a monster type or "player_male". */
         const tile_info &named( TILE_CATEGORY category, const std::string &id, cata_tiles &tiles );
         /** Ground drawn under trees and bushes, which are terrain with a transparent background. */
@@ -91,9 +113,10 @@ struct chunk_mesh {
     std::vector<light_ref> light_refs; // parallel to vertices
     std::vector<uint32_t> indices;
     std::vector<mesh_batch> batches;
+    std::vector<upright_sprite> uprights;
 
     bool empty() const {
-        return indices.empty();
+        return indices.empty() && uprights.empty();
     }
 };
 

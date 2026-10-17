@@ -2935,11 +2935,51 @@ std::optional<texture_draw_data> cata_tiles::get_texture_draw_data( const std::s
     std::pair<float, float> uv0{ rect.x / static_cast<float>( buf_w ), rect.y / static_cast<float>( buf_h ) };
     std::pair<float, float> uv1{ ( rect.x + rect.w ) / static_cast<float>( buf_w ), ( rect.y + rect.h ) / static_cast<float>( buf_h ) };
 
-    return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1, texture_ptr };
+    return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1, texture_ptr, 1.0f, 1.0f, 0, false };
+}
+
+void cata_tiles::get_orientation( const tripoint_bub_ms &p, bool furniture, int &subtile,
+                                  int &rota )
+{
+    // as draw_terrain / draw_furniture do for tiles without overrides
+    map &here = get_map();
+    subtile = 0;
+    rota = 0;
+    if( furniture ) {
+        const furn_id &f = here.furn( p );
+        if( !f ) {
+            return;
+        }
+        const std::bitset<NUM_TERCONN> &connect_group = f.obj().connect_to_groups;
+        const std::bitset<NUM_TERCONN> &rotate_group = f.obj().rotate_to_groups;
+        if( connect_group.any() ) {
+            get_furn_connect_values( p, subtile, rota, connect_group, rotate_group, {} );
+        } else {
+            const std::array<int, 4> neighborhood = {
+                static_cast<int>( here.furn( p + point::south ) ),
+                static_cast<int>( here.furn( p + point::east ) ),
+                static_cast<int>( here.furn( p + point::west ) ),
+                static_cast<int>( here.furn( p + point::north ) )
+            };
+            get_tile_values_with_ter( p, f.to_i(), neighborhood, subtile, rota, rotate_group );
+        }
+        return;
+    }
+    const ter_id &t = here.ter( p );
+    if( !t ) {
+        return;
+    }
+    const std::bitset<NUM_TERCONN> &connect_group = t.obj().connect_to_groups;
+    const std::bitset<NUM_TERCONN> &rotate_group = t.obj().rotate_to_groups;
+    if( connect_group.any() ) {
+        get_connect_values( p, subtile, rota, connect_group, rotate_group, {} );
+    } else {
+        get_terrain_orientation( p, rota, subtile, {}, {}, rotate_group );
+    }
 }
 
 std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::string &id,
-        TILE_CATEGORY category, const tripoint_bub_ms &p, bool background )
+        TILE_CATEGORY category, const tripoint_bub_ms &p, bool background, int subtile, int rota )
 {
     std::optional<tile_lookup_res> lookup_res = find_tile_looks_like( id, category, "" );
     if( !lookup_res ) {
@@ -2956,8 +2996,24 @@ std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::st
         }
     }
 
-    const tile_type &ttype = lookup_res->tile();
-    const unsigned int seed = get_variant_seed( ttype, category, p, lookup_res->id() );
+    // the subtile's own entry, as draw_from_id_string_internal picks it
+    const tile_type *picked = &lookup_res->tile();
+    std::string picked_id = lookup_res->id();
+    if( subtile >= 0 && subtile < static_cast<int>( multitile_keys.size() ) && picked->multitile ) {
+        const std::vector<std::string> &subs = picked->available_subtiles;
+        if( std::find( subs.begin(), subs.end(), multitile_keys[subtile] ) != subs.end() ) {
+            const std::string sub_id = picked_id + "_" + multitile_keys[subtile];
+            if( const tile_type *sub = tileset_ptr->find_tile_type( sub_id ) ) {
+                picked = sub;
+                picked_id = sub_id;
+            }
+        }
+    }
+    if( !picked->rotates && category != TILE_CATEGORY::NONE && category != TILE_CATEGORY::MONSTER ) {
+        rota = 0;
+    }
+    const tile_type &ttype = *picked;
+    const unsigned int seed = get_variant_seed( ttype, category, p, picked_id );
     const std::vector<int> *indices = background ? ttype.bg.pick( seed ) : ttype.fg.pick( seed );
     if( !indices && !background && ttype.multitile ) {
         // The base entry of a multitile tile can be empty; its sprites live in "<id>_<subtile>".
@@ -2974,7 +3030,18 @@ std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::st
     if( !indices || indices->empty() ) {
         return std::nullopt;
     }
-    const texture *tile = tileset_ptr->get_tile( indices->front() );
+    // as draw_sprite_at: several sprites are pre-rotated variants, a single one is turned (only
+    // foregrounds), and rota -1 is a horizontal flip
+    size_t sprite_num = 0;
+    int quarter_turns = 0;
+    bool flip = false;
+    if( indices->size() > 1 ) {
+        sprite_num = static_cast<size_t>( std::max( rota, 0 ) ) % indices->size();
+    } else if( !background ) {
+        flip = rota == -1;
+        quarter_turns = rota > 0 ? rota % 4 : 0;
+    }
+    const texture *tile = tileset_ptr->get_tile( ( *indices )[sprite_num] );
     if( !tile ) {
         return std::nullopt;
     }
@@ -2988,7 +3055,10 @@ std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::st
     }
     const std::pair<float, float> uv0{ rect.x / buf_w, rect.y / buf_h };
     const std::pair<float, float> uv1{ ( rect.x + rect.w ) / buf_w, ( rect.y + rect.h ) / buf_h };
-    return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1, texture_ptr };
+    const float base_w = static_cast<float>( std::max( 1, tileset_ptr->get_tile_width() ) );
+    const float base_h = static_cast<float>( std::max( 1, tileset_ptr->get_tile_height() ) );
+    return texture_draw_data{ texture_ptr.get(), rect, uv0, uv1, texture_ptr, rect.w / base_w,
+                              rect.h / base_h, quarter_turns, flip };
 }
 
 std::unordered_set<std::string> cata_tiles::get_all_portrait_tile_ids( bool male ) const
@@ -4821,6 +4891,36 @@ void cata_tiles::draw_entity_with_overlays( const Character &ch, const tripoint_
             height_3d = std::max( height_3d, overlay_height_3d );
         }
     }
+}
+
+cata_tiles::character_layers cata_tiles::get_character_layers( const Character &ch )
+{
+    character_layers out;
+    out.mirrored = ch.facing == FacingDirection::LEFT;
+    const std::vector<trait_id> override_look_muts = ch.get_functioning_mutations( true,
+    false, []( const mutation_branch & mut ) {
+        return mut.override_look.has_value();
+    } );
+    if( override_look_muts.empty() ) {
+        const std::string ent_name = ch.is_npc() ? ( ch.male ? "npc_male" : "npc_female" ) :
+                                     ( ch.male ? "player_male" : "player_female" );
+        out.ids.emplace_back( ent_name, TILE_CATEGORY::NONE );
+    } else {
+        const mutation_branch::OverrideLook override_look = override_look_muts.at(
+                    0 ).obj().override_look.value();
+        const auto it = to_TILE_CATEGORY.find( override_look.tile_category );
+        out.ids.emplace_back( override_look.id, it != to_TILE_CATEGORY.end() ? it->second :
+                              TILE_CATEGORY::NONE );
+    }
+    const std::vector<std::pair<std::string, std::string>> overlays = override_look_muts.empty() ?
+            ch.get_overlay_ids() : ch.get_overlay_ids_when_override_look();
+    for( const std::pair<std::string, std::string> &overlay : overlays ) {
+        std::string draw_id = overlay.first;
+        if( find_overlay_looks_like( ch.male, overlay.first, overlay.second, draw_id ) ) {
+            out.ids.emplace_back( draw_id, TILE_CATEGORY::NONE );
+        }
+    }
+    return out;
 }
 
 void cata_tiles::draw_entity_with_overlays( const monster &mon, const tripoint_bub_ms &p,

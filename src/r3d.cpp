@@ -40,8 +40,8 @@ namespace
 
 constexpr int max_chunk_builds_per_frame = 8;
 constexpr uint64_t chunk_idle_frames = 600;
-// Tallest geometry in a chunk: trees are 1.4 above a 0.1 floor.
-constexpr float chunk_max_height = 1.6f;
+// Tallest geometry in a chunk: upright sprites (big trees) can stand several tiles tall.
+constexpr float chunk_max_height = 4.0f;
 
 struct chunk_key {
     int x = 0;
@@ -67,6 +67,7 @@ struct chunk_gpu {
     SDL_GPUBuffer *lights = nullptr;
     SDL_GPUBuffer *indices = nullptr;
     std::vector<mesh_batch> batches;
+    std::vector<upright_sprite> uprights; // drawn as billboards every frame
     std::vector<light_ref> refs; // where each vertex samples its light
     std::vector<uint32_t> light; // current RGBA8 light per vertex
     uint64_t light_key = 0;      // light_key() the stream was last computed for
@@ -108,6 +109,7 @@ struct state {
     uint32_t dyn_light_bytes = 0;
     uint32_t dyn_index_bytes = 0;
     shown_view shown;
+    vec3 pan; // free camera: offset of the camera target from the viewed tile, world space
 };
 
 state &st()
@@ -155,6 +157,7 @@ void release_chunk( state &s, chunk_gpu &c )
     c.lights = nullptr;
     c.indices = nullptr;
     c.batches.clear();
+    c.uprights.clear();
     c.refs.clear();
     c.light.clear();
     c.light_key = 0;
@@ -176,7 +179,8 @@ bool rebuild_chunk( state &s, chunk_gpu &c, const tripoint_abs_sm &pos, uint64_t
     release_chunk( s, c );
     c.stamp = stamp;
     c.built = true;
-    if( mesh.empty() ) {
+    c.uprights = std::move( mesh.uprights );
+    if( mesh.indices.empty() ) {
         return true;
     }
     const uint32_t vertex_bytes = static_cast<uint32_t>( mesh.vertices.size() * sizeof( vertex ) );
@@ -391,7 +395,38 @@ void reset()
 {
     state &s = st();
     s.cam = camera();
+    s.pan = vec3{};
     s.env_camera_applied = false;
+}
+
+bool contains( float x, float y )
+{
+    const shown_view &v = st().shown;
+    return active() && v.valid && x >= v.x && y >= v.y && x < v.x + v.w && y < v.y + v.h;
+}
+
+void drag_orbit( float dx, float dy )
+{
+    camera &cam = st().cam;
+    constexpr float yaw_per_pixel = 0.008f;
+    constexpr float pitch_per_pixel = 0.006f;
+    constexpr float two_pi = 6.2831853f;
+    cam.yaw = std::fmod( cam.yaw - dx * yaw_per_pixel, two_pi );
+    cam.pitch = std::clamp( cam.pitch + dy * pitch_per_pixel, camera::min_pitch, camera::max_pitch );
+}
+
+void drag_pan( float dx, float dy )
+{
+    state &s = st();
+    // The ground under the cursor follows the mouse: farther cameras move faster.
+    const float units_per_pixel = s.cam.distance * 0.0016f;
+    const vec3 right = s.cam.ground_right();
+    const vec3 ahead{ -right.y, right.x, 0.0f }; // away from the camera, along the ground
+    s.pan = s.pan + right * ( -dx * units_per_pixel ) + ahead * ( dy * units_per_pixel );
+    // Stay over the loaded map around the view.
+    constexpr float max_pan = 48.0f;
+    s.pan.x = std::clamp( s.pan.x, -max_pan, max_pan );
+    s.pan.y = std::clamp( s.pan.y, -max_pan, max_pan );
 }
 
 std::optional<tripoint_bub_ms> pick( float x, float y )
@@ -514,8 +549,15 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         s.env_camera_applied = true;
     }
 
-    const int target_w = std::max( 1, static_cast<int>( w ) );
-    const int target_h = std::max( 1, static_cast<int>( h ) );
+    // The scene is rendered at a multiple of the window size and averaged down when composited,
+    // which keeps distant textures from turning to grainy noise. CATA_R3D_SUPERSAMPLE=1 turns
+    // it off (it costs fill rate), larger values go up to 3.
+    static const int supersample = []() {
+        const char *env = std::getenv( "CATA_R3D_SUPERSAMPLE" );
+        return env ? std::clamp( std::atoi( env ), 1, 3 ) : 2;
+    }();
+    const int target_w = std::max( 1, static_cast<int>( w ) ) * supersample;
+    const int target_h = std::max( 1, static_cast<int>( h ) ) * supersample;
     if( !s.device.ensure_target( target_w, target_h ) ) {
         return false;
     }
@@ -552,7 +594,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     const uint64_t frame_light_key = light_key( here, origin, z_lo, z_hi );
 
     // The scene is drawn in a frame whose origin is the viewed tile, which keeps floats small.
-    s.cam.target = tile_to_world( { 0.5f, 0.5f, 0.5f } );
+    s.cam.target = tile_to_world( { 0.5f, 0.5f, 0.5f } ) + s.pan;
     const float aspect = static_cast<float>( target_w ) / static_cast<float>( target_h );
     const mat4 view_proj = s.cam.view_projection( aspect );
     const frustum fr = s.cam.view_frustum( aspect );
@@ -566,6 +608,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         float offset[3];
     };
     std::vector<visible_chunk> visible;
+    std::vector<entity_view::standing> upright_list;
     int builds_left = max_chunk_builds_per_frame;
     for( int z = z_lo; z <= z_hi; ++z ) {
         for( int gy = 0; gy < MAPSIZE; ++gy ) {
@@ -595,6 +638,14 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
                     }
                     visible.push_back( { &c, { ox, oy, oz } } );
                 }
+                if( c.built ) {
+                    const tripoint_bub_ms chunk_base( center.x() + ( chunk_origin.x() - origin.x() ),
+                                                      center.y() + ( chunk_origin.y() - origin.y() ), z );
+                    for( const upright_sprite &u : c.uprights ) {
+                        upright_list.push_back( { chunk_base + tripoint_rel_ms( static_cast<int>( u.lx ), static_cast<int>( u.ly ), 0 ), u.z_base,
+                                                  u.info } );
+                    }
+                }
             }
         }
     }
@@ -603,7 +654,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     entity_view entities_view{ *tilecontext, s.cache, s.cam, center, z_lo, z_hi,
                                      [&sampler]( const tripoint_bub_ms & p ) {
         return sampler.color_at( p );
-    }, {} };
+    }, {}, std::move( upright_list ) };
     // The game queues its cursors and highlights for cata_tiles::draw, which is skipped here.
     {
         const cata_tiles::frame_markers queued = tilecontext->get_frame_markers();

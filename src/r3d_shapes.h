@@ -13,7 +13,8 @@ enum class shape_kind : uint8_t {
     floor,  // thin slab: only a top face
     block,  // full-height cube
     prism,  // box of a given height
-    cross,  // two crossed upright quads (trees, bushes)
+    upright, // sprite standing on the floor, turned towards the camera (trees, lockers)
+    pane,   // upright panel through the middle of the cell along a wall line (broken windows)
 };
 
 struct shape {
@@ -38,6 +39,7 @@ struct tile_traits {
     bool tiny = false;
     bool low = false;       // TFLAG_SHORT
     bool flat_surface = false;
+    bool window = false;
     int move_cost = 100;    // <= 0: cannot be walked through
 };
 

@@ -3451,13 +3451,13 @@
     "type": "keybinding",
     "name": "3D view: move camera closer",
     "id": "r3d_zoom_in",
-    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "PAGE_UP" } ]
+    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "PAGE_UP" }, { "input_method": "mouse", "key": "SCROLL_UP" } ]
   },
   {
     "type": "keybinding",
     "name": "3D view: move camera away",
     "id": "r3d_zoom_out",
-    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "PAGE_DOWN" } ]
+    "bindings": [ { "input_method": "keyboard_code", "mod": [ "ctrl" ], "key": "PAGE_DOWN" }, { "input_method": "mouse", "key": "SCROLL_DOWN" } ]
   },
   {
     "type": "keybinding",

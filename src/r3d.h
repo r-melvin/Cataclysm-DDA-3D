@@ -50,8 +50,13 @@ void rotate( int dir );
 void pitch( int dir );
 /** Move the camera closer (dir > 0) or away (dir < 0). */
 void zoom( int dir );
-/** Restore the default camera. */
+/** Restore the default camera, centred on the view again. */
 void reset();
+/** True when (x, y), in the logical pixels given to draw(), lies on the last drawn 3D frame. */
+bool contains( float x, float y );
+/** Free camera from a mouse drag of (dx, dy) pixels: orbit and tilt, or slide over the ground. */
+void drag_orbit( float dx, float dy );
+void drag_pan( float dx, float dy );
 
 #else
 
@@ -64,6 +69,12 @@ inline void rotate( int ) {}
 inline void pitch( int ) {}
 inline void zoom( int ) {}
 inline void reset() {}
+inline bool contains( float, float )
+{
+    return false;
+}
+inline void drag_orbit( float, float ) {}
+inline void drag_pan( float, float ) {}
 
 #endif
 

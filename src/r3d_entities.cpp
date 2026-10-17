@@ -6,6 +6,8 @@
 #include <array>
 #include <cstdlib>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "avatar.h"
 #include "cata_tiles.h"
@@ -27,36 +29,57 @@ namespace
 
 constexpr int creature_radius = 45; // tiles around the view that are searched for creatures
 constexpr int item_radius = 20;     // and for items (every tile costs a map lookup)
-constexpr float billboard_height = 1.0f;
-constexpr float billboard_width = 1.0f;
+constexpr float marker_box_height = 1.0f;
 constexpr float item_size = 0.6f;
 
-// Camera-facing upright quad standing on the tile centre. Corners are in scene-frame tile space.
-void emit_billboard( quad_sink &sink, const tile_info &sprite, const vec3 &right_world,
-                     float cx, float cy, float z_base, uint32_t color )
+// Camera-facing upright quads standing on the tile centre, sized like the first layer's sprite
+// is in the flat view (big trees are several tiles tall). Later layers (clothing over a body) sit
+// slightly closer to the camera. Corners are in scene-frame tile space.
+void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &layers,
+                     const vec3 &right_world, const vec3 &up_world, const vec3 &toward_world, float cx,
+                     float cy, float z_base, uint32_t color, bool mirrored = false )
 {
-    // The camera's right vector is in the right-handed world frame; tile space has y flipped.
-    const float rx = right_world.x * billboard_width * 0.5f;
-    const float ry = -right_world.y * billboard_width * 0.5f;
-    const float z_top = z_base + billboard_height;
-    const corners_t c = {{ { cx - rx, cy - ry, z_top }, { cx + rx, cy + ry, z_top },
-            { cx + rx, cy + ry, z_base }, { cx - rx, cy - ry, z_base }
-        }
-    };
-    auto layer = [&]( const sprite_ref & s, float lift ) {
+    if( layers.empty() || !layers.front() ) {
+        return;
+    }
+    const sprite_ref &main = layers.front()->main();
+    const float width = std::clamp( main.size_x, 0.25f, 4.0f );
+    const float height = std::clamp( main.size_y, 0.25f, 6.0f );
+    // The camera vectors are in the right-handed world frame; tile space has y flipped.
+    const float rx = right_world.x * width * 0.5f;
+    const float ry = -right_world.y * width * 0.5f;
+    const float tx = toward_world.x;
+    const float ty = -toward_world.y;
+    const float tz = toward_world.z;
+    // The quad faces the camera squarely (leaning back with its up vector), so sprites keep the
+    // full size and detail they have in the flat view instead of being squashed by the pitch.
+    const float ux = up_world.x * height;
+    const float uy = -up_world.y * height;
+    const float uz = up_world.z * height;
+    int depth = 0;
+    auto layer = [&]( const sprite_ref & s ) {
         if( !s.valid ) {
             return;
         }
-        const uvs_t uv = {{ { s.u0, s.v0 }, { s.u1, s.v0 }, { s.u1, s.v1 }, { s.u0, s.v1 } }};
-        // Nudge the foreground towards the viewer (opposite the right-vector's normal) via z only.
-        corners_t lifted = c;
-        for( auto &corner : lifted ) {
-            corner[2] += lift;
-        }
-        sink.add_colored( s, lifted, uv, light_ref{}, color );
+        const float lift = 0.01f * static_cast<float>( depth++ );
+        const float ox = cx + tx * lift;
+        const float oy = cy + ty * lift;
+        const float oz = z_base + tz * lift;
+        const float ul = mirrored ? s.u1 : s.u0;
+        const float ur = mirrored ? s.u0 : s.u1;
+        const uvs_t uv = {{ { ul, s.v0 }, { ur, s.v0 }, { ur, s.v1 }, { ul, s.v1 } }};
+        const corners_t c = {{ { ox - rx + ux, oy - ry + uy, oz + uz }, { ox + rx + ux, oy + ry + uy, oz + uz },
+                { ox + rx, oy + ry, oz }, { ox - rx, oy - ry, oz }
+            }
+        };
+        sink.add_colored( s, c, uv, light_ref{}, color );
     };
-    layer( sprite.backdrop, 0.0f );
-    layer( sprite.sprite, sprite.backdrop.valid ? 0.004f : 0.0f );
+    for( const tile_info *t : layers ) {
+        if( t ) {
+            layer( t->backdrop );
+            layer( t->sprite );
+        }
+    }
 }
 
 // Sprite lying flat at height z, size tiles wide.
@@ -105,6 +128,8 @@ chunk_mesh build_entity_mesh( const entity_view &view )
     const avatar &you = get_avatar();
     quad_sink sink;
     const vec3 right = view.cam.ground_right();
+    const vec3 toward = normalize( view.cam.eye() - view.cam.target );
+    const vec3 up = cross( right, vec3{ 0.0f, 0.0f, 0.0f } - toward );
     const uint32_t white = pack_light( 255, 255, 255 );
 
     auto in_range = [&]( const tripoint_bub_ms & p, int radius ) {
@@ -146,6 +171,15 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         }
     }
 
+    // Trees and tall furniture of the visible chunks; unseen ones are drawn like their tile.
+    for( const entity_view::standing &u : view.uprights ) {
+        if( !u.info ) {
+            continue;
+        }
+        emit_billboard( sink, { u.info }, right, up, toward, frame_x( u.pos ), frame_y( u.pos ),
+                        frame_z( u.pos ) + u.z_base, view.light( u.pos ) );
+    }
+
     // Creatures: the player, NPCs and monsters that the player can see.
     for( Creature &critter : g->all_creatures() ) {
         const tripoint_bub_ms p = critter.pos_bub();
@@ -155,21 +189,24 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         if( !critter.is_avatar() && !you.sees( here, critter ) ) {
             continue;
         }
-        std::string id;
-        TILE_CATEGORY category = TILE_CATEGORY::MONSTER;
+        // Characters are their body plus worn and wielded overlays, like the flat view.
+        std::vector<const tile_info *> layers;
+        bool mirrored = false;
         if( const monster *m = critter.as_monster() ) {
-            id = m->type->id.str();
+            layers.push_back( &view.cache.named( TILE_CATEGORY::MONSTER, m->type->id.str(), view.tiles ) );
         } else if( const Character *ch = critter.as_character() ) {
-            category = TILE_CATEGORY::NONE;
-            id = critter.is_avatar() ? ( ch->male ? "player_male" : "player_female" ) :
-                 ( ch->male ? "npc_male" : "npc_female" );
+            const cata_tiles::character_layers looks = view.tiles.get_character_layers( *ch );
+            mirrored = looks.mirrored;
+            for( const std::pair<std::string, TILE_CATEGORY> &id : looks.ids ) {
+                layers.push_back( &view.cache.named( id.second, id.first, view.tiles ) );
+            }
         } else {
             continue;
         }
-        const tile_info &sprite = view.cache.named( category, id, view.tiles );
         const uint32_t color = critter.is_avatar() ? white : view.light( p );
-        emit_billboard( sink, sprite, right, frame_x( p ), frame_y( p ), frame_z( p ) + floor_height,
-                        color == pack_light( 0, 0, 0 ) ? white : color );
+        emit_billboard( sink, layers, right, up, toward, frame_x( p ), frame_y( p ),
+                        frame_z( p ) + floor_height, color == pack_light( 0, 0, 0 ) ? white : color,
+                        mirrored );
     }
     // Markers last; they sit just above the surface so the depth test keeps them in front of it.
     for( const entity_view::marker &m : view.markers ) {
@@ -183,7 +220,7 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         if( m.box ) {
             const sprite_ref &s = m.sprite->sprite.valid ? m.sprite->sprite : m.sprite->backdrop;
             if( s.valid ) {
-                emit_marker_box( sink, s, x0, y0, z, z + billboard_height, white );
+                emit_marker_box( sink, s, x0, y0, z, z + marker_box_height, white );
             }
         }
     }

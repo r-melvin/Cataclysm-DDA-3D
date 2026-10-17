@@ -9,6 +9,7 @@
 #include <string>
 
 #include "cata_tiles.h"
+#include "map.h"
 #include "map_scale_constants.h"
 #include "mapdata.h"
 #include "point.h"
@@ -35,6 +36,7 @@ tile_traits traits_of( const map_data_common_t &d )
     t.tiny = d.has_flag( ter_furn_flag::TFLAG_TINY );
     t.low = d.has_flag( ter_furn_flag::TFLAG_SHORT );
     t.flat_surface = d.has_flag( ter_furn_flag::TFLAG_FLAT_SURF );
+    t.window = d.has_flag( ter_furn_flag::TFLAG_WINDOW );
     t.move_cost = d.movecost;
     return t;
 }
@@ -59,20 +61,25 @@ sprite_ref to_sprite_ref( const texture_draw_data &data )
     ref.v0 = data.uv0.second + half_v;
     ref.u1 = data.uv1.first - half_u;
     ref.v1 = data.uv1.second - half_v;
+    ref.size_x = data.size_x;
+    ref.size_y = data.size_y;
+    ref.quarter_turns = data.quarter_turns;
+    ref.flip = data.flip;
     ref.valid = true;
     return ref;
 }
 
 // Looks up both layers of a tile. A tile with neither falls back to the tileset's "unknown" sprite.
 void resolve_layers( cata_tiles &tiles, const std::string &id, TILE_CATEGORY category,
-                     tile_info &out )
+                     tile_info &out, int subtile = -1, int rota = 0 )
 {
     const tripoint_bub_ms origin( 0, 0, 0 );
     if( const std::optional<texture_draw_data> bg = tiles.get_sprite_draw_data( id, category, origin,
-            true ) ) {
+            true, subtile, rota ) ) {
         out.backdrop = to_sprite_ref( *bg );
     }
-    if( const std::optional<texture_draw_data> fg = tiles.get_sprite_draw_data( id, category, origin ) ) {
+    if( const std::optional<texture_draw_data> fg = tiles.get_sprite_draw_data( id, category, origin,
+            false, subtile, rota ) ) {
         out.sprite = to_sprite_ref( *fg );
     }
     if( !out.backdrop.valid && !out.sprite.valid ) {
@@ -103,8 +110,23 @@ void emit_top( quad_sink &sink, const sprite_ref &s, int x, int y, float z, cons
     const float x0 = static_cast<float>( x );
     const float y0 = static_cast<float>( y );
     const corners_t c = {{ { x0, y0, z }, { x0 + 1, y0, z }, { x0 + 1, y0 + 1, z }, { x0, y0 + 1, z } }};
-    const uvs_t uv = {{ { s.u0, s.v0 }, { s.u1, s.v0 }, { s.u1, s.v1 }, { s.u0, s.v1 } }};
+    // A tall sprite stands on its bottom square and overflows upwards; only that square is the
+    // tile seen from above.
+    const float v0 = s.size_y > s.size_x ? s.v1 - ( s.v1 - s.v0 ) * s.size_x / s.size_y : s.v0;
+    const float ul = s.flip ? s.u1 : s.u0;
+    const float ur = s.flip ? s.u0 : s.u1;
+    const uvs_t base = {{ { ul, v0 }, { ur, v0 }, { ur, s.v1 }, { ul, s.v1 } }};
+    // Turning the sprite clockwise shows, at each corner, the sprite corner a quarter turn back.
+    uvs_t uv;
+    for( size_t i = 0; i < 4; ++i ) {
+        uv[i] = base[( i + 4 - static_cast<size_t>( s.quarter_turns & 3 ) ) % 4];
+    }
     sink.add( s, c, uv, ref );
+}
+
+bool is_tall( const sprite_ref &s )
+{
+    return s.valid && s.size_y > s.size_x;
 }
 
 void emit_side( quad_sink &sink, const sprite_ref &s, int x, int y, face_bit face, float z_base,
@@ -153,24 +175,18 @@ void emit_side( quad_sink &sink, const sprite_ref &s, int x, int y, face_bit fac
     sink.add( s, c, uv, ref );
 }
 
-void emit_cross( quad_sink &sink, const sprite_ref &s, int x, int y, float z_base, float height,
-                 const light_ref &ref )
+// Upright panel through the middle of the cell, along x (along_x) or along y, one tile high.
+void emit_pane( quad_sink &sink, const sprite_ref &s, int x, int y, bool along_x, float z_base,
+                float height, const light_ref &ref )
 {
     const float cx = static_cast<float>( x ) + 0.5f;
     const float cy = static_cast<float>( y ) + 0.5f;
-    const float half = height * 0.5f * 0.70710678f; // half width along a diagonal, in x and y
     const float z_top = z_base + height;
     const uvs_t uv = {{ { s.u0, s.v0 }, { s.u1, s.v0 }, { s.u1, s.v1 }, { s.u0, s.v1 } }};
-    const corners_t a = {{ { cx - half, cy - half, z_top }, { cx + half, cy + half, z_top },
-            { cx + half, cy + half, z_base }, { cx - half, cy - half, z_base }
-        }
-    };
-    const corners_t b = {{ { cx + half, cy - half, z_top }, { cx - half, cy + half, z_top },
-            { cx - half, cy + half, z_base }, { cx + half, cy - half, z_base }
-        }
-    };
-    sink.add( s, a, uv, ref );
-    sink.add( s, b, uv, ref );
+    const corners_t c = along_x ?
+    corners_t{{ { cx - 0.5f, cy, z_top }, { cx + 0.5f, cy, z_top }, { cx + 0.5f, cy, z_base }, { cx - 0.5f, cy, z_base } }} :
+    corners_t{{ { cx, cy + 0.5f, z_top }, { cx, cy - 0.5f, z_top }, { cx, cy - 0.5f, z_base }, { cx, cy + 0.5f, z_base } }};
+    sink.add( s, c, uv, ref );
 }
 
 // Foreground decals sit this far in front of the backdrop so the depth test lets them through.
@@ -285,19 +301,31 @@ void tile_info_cache::clear()
     ground_loaded_ = false;
 }
 
-const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles )
+namespace
 {
-    auto it = terrain_.find( id.to_i() );
+// One cache entry per id and orientation; subtile is -1..7 and rota -1..3.
+int orientation_key( int id, int subtile, int rota )
+{
+    return id * 128 + ( subtile + 1 ) * 8 + ( rota + 1 );
+}
+} // namespace
+
+const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int subtile, int rota )
+{
+    const int key = orientation_key( id.to_i(), subtile, rota );
+    auto it = terrain_.find( key );
     if( it != terrain_.end() ) {
         return it->second;
     }
     tile_info info;
     const ter_t &t = id.obj();
-    info.sh = classify_terrain( traits_of( t ) );
+    const tile_traits traits = traits_of( t );
+    info.sh = classify_terrain( traits );
+    info.tree = traits.tree;
     if( info.sh.kind != shape_kind::empty ) {
-        resolve_layers( tiles, t.id.str(), TILE_CATEGORY::TERRAIN, info );
+        resolve_layers( tiles, t.id.str(), TILE_CATEGORY::TERRAIN, info, subtile, rota );
     }
-    return terrain_.emplace( id.to_i(), info ).first->second;
+    return terrain_.emplace( key, info ).first->second;
 }
 
 const tile_info &tile_info_cache::named( TILE_CATEGORY category, const std::string &id,
@@ -313,9 +341,10 @@ const tile_info &tile_info_cache::named( TILE_CATEGORY category, const std::stri
     return named_.emplace( key, info ).first->second;
 }
 
-const tile_info &tile_info_cache::furniture( furn_id id, cata_tiles &tiles )
+const tile_info &tile_info_cache::furniture( furn_id id, cata_tiles &tiles, int subtile, int rota )
 {
-    auto it = furniture_.find( id.to_i() );
+    const int key = orientation_key( id.to_i(), subtile, rota );
+    auto it = furniture_.find( key );
     if( it != furniture_.end() ) {
         return it->second;
     }
@@ -326,9 +355,9 @@ const tile_info &tile_info_cache::furniture( furn_id id, cata_tiles &tiles )
         // Furniture has a "move cost mod": negative means impassable, anything else walkable.
         traits.move_cost = f.movecost < 0 ? 0 : 100;
         info.sh = classify_furniture( traits );
-        resolve_layers( tiles, f.id.str(), TILE_CATEGORY::FURNITURE, info );
+        resolve_layers( tiles, f.id.str(), TILE_CATEGORY::FURNITURE, info, subtile, rota );
     }
-    return furniture_.emplace( id.to_i(), info ).first->second;
+    return furniture_.emplace( key, info ).first->second;
 }
 
 const tile_info &tile_info_cache::ground( cata_tiles &tiles )
@@ -347,7 +376,7 @@ uint64_t chunk_stamp( const tripoint_abs_sm &pos, const submap_lookup &lookup )
         return 0;
     }
     uint64_t stamp = self->render_stamp();
-    const tripoint_rel_sm neighbours[] = { { 0, -1, 0 }, { 0, 1, 0 }, { -1, 0, 0 }, { 1, 0, 0 }, { 0, 0, 1 } };
+    const tripoint_rel_sm neighbours[] = { { 0, -1, 0 }, { 0, 1, 0 }, { -1, 0, 0 }, { 1, 0, 0 }, { 0, 0, 1 }, { 0, 0, -1 } };
     for( const tripoint_rel_sm &d : neighbours ) {
         const submap *n = lookup( pos + d );
         stamp = stamp * 1099511628211ull ^ ( n ? n->render_stamp() : 0ull );
@@ -367,6 +396,30 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
     const submap *west = lookup( pos + tripoint_rel_sm( -1, 0, 0 ) );
     const submap *east = lookup( pos + tripoint_rel_sm( 1, 0, 0 ) );
     const submap *above = lookup( pos + tripoint_rel_sm( 0, 0, 1 ) );
+    const submap *below = lookup( pos + tripoint_rel_sm( 0, 0, -1 ) );
+
+    // Terrain of a tile of this level, which may lie in a horizontal neighbour (one tile out).
+    auto terrain_at = [&]( int lx, int ly ) -> const tile_info * {
+        const submap *sm = self;
+        if( lx < 0 )
+        {
+            sm = west;
+            lx = side - 1;
+        } else if( lx >= side )
+        {
+            sm = east;
+            lx = 0;
+        } else if( ly < 0 )
+        {
+            sm = north;
+            ly = side - 1;
+        } else if( ly >= side )
+        {
+            sm = south;
+            ly = 0;
+        }
+        return sm ? &cache.terrain( sm->get_ter( point_sm_ms( lx, ly ) ), tiles ) : nullptr;
+    };
 
     auto occupancy_at = [&]( const submap * sm, int sx, int sy ) -> shape {
         if( !sm )
@@ -421,12 +474,26 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
         return level[static_cast<size_t>( ( ly + 1 ) * border + ( lx + 1 ) )];
     };
 
+    // Chunks are only built for submaps in the reality bubble, so the map knows every tile here.
+    const map &here = get_map();
+    const tripoint_abs_ms chunk_origin = project_to<coords::ms>( pos );
     quad_sink sink;
+    std::vector<upright_sprite> mesh_uprights;
     for( int ly = 0; ly < side; ++ly ) {
         for( int lx = 0; lx < side; ++lx ) {
             const point_sm_ms p( lx, ly );
-            const tile_info &terrain = cache.terrain( self->get_ter( p ), tiles );
-            const tile_info &furn = cache.furniture( self->get_furn( p ), tiles );
+            // Connected sprites (walls, benches, counters) as the flat view orients them.
+            const tripoint_bub_ms bub = here.get_bub( chunk_origin + tripoint_rel_ms( lx, ly, 0 ) );
+            int ter_subtile = -1;
+            int ter_rota = 0;
+            int furn_subtile = -1;
+            int furn_rota = 0;
+            tiles.get_orientation( bub, false, ter_subtile, ter_rota );
+            if( self->get_furn( p ) != furn_str_id::NULL_ID() ) {
+                tiles.get_orientation( bub, true, furn_subtile, furn_rota );
+            }
+            const tile_info &terrain = cache.terrain( self->get_ter( p ), tiles, ter_subtile, ter_rota );
+            const tile_info &furn = cache.furniture( self->get_furn( p ), tiles, furn_subtile, furn_rota );
             neighbourhood nb;
             nb.up = up[static_cast<size_t>( ly * side + lx )];
             nb.north = level_at( lx, ly - 1 );
@@ -435,12 +502,26 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             nb.east = level_at( lx + 1, ly );
 
             const shape &ts = terrain.sh;
+            // A treetop is drawn by the tree's own sprite on the level below.
+            if( ts.kind == shape_kind::floor && below &&
+                cache.terrain( below->get_ter( p ), tiles ).tree ) {
+                continue;
+            }
             const uint8_t faces = visible_faces( ts, nb );
             switch( ts.kind ) {
                 case shape_kind::floor:
                     if( ( faces & face_top ) != 0 ) {
-                        emit_top_layers( sink, terrain, lx, ly, ts.height,
-                                        make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                        // Tall sprites (long grass) are often transparent around what stands on
+                        // the tile, so the ground goes underneath unless they bring a backdrop.
+                        if( is_tall( terrain.sprite ) && !terrain.backdrop.valid ) {
+                            emit_top_layers( sink, cache.ground( tiles ), lx, ly, ts.height,
+                                             make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                            emit_top( sink, terrain.sprite, lx, ly, ts.height + layer_lift,
+                                      make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                        } else {
+                            emit_top_layers( sink, terrain, lx, ly, ts.height,
+                                             make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                        }
                     }
                     break;
                 case shape_kind::block:
@@ -465,12 +546,39 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                                          make_ref( lx, ly, 1, 0, 0, face_shade[4] ) );
                     }
                     break;
-                case shape_kind::cross:
+                case shape_kind::upright:
+                    // Trees and shrubs: ground here, the sprite itself is drawn per frame.
                     emit_top_layers( sink, cache.ground( tiles ), lx, ly, floor_height,
                                      make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
-                    emit_cross( sink, terrain.sprite, lx, ly, floor_height, ts.height,
-                                make_ref( lx, ly, 0, 0, 0, 230 ) );
+                    mesh_uprights.push_back( { static_cast<uint8_t>( lx ), static_cast<uint8_t>( ly ),
+                                               floor_height, &terrain } );
                     break;
+                case shape_kind::pane: {
+                    // The frame stands along the wall line; the floor under it is a neighbour's
+                    // floor on the open side (inside or out), else the ground.
+                    const bool wall_along_y = nb.north.kind == shape_kind::block ||
+                                              nb.south.kind == shape_kind::block;
+                    const tile_info *under = nullptr;
+                    const std::array<point, 2> sides_open = wall_along_y ?
+                            std::array<point, 2> { point( -1, 0 ), point( 1, 0 ) } :
+                            std::array<point, 2> { point( 0, -1 ), point( 0, 1 ) };
+                    for( const point &d : sides_open ) {
+                        const tile_info *n = terrain_at( lx + d.x, ly + d.y );
+                        if( n && n->sh.kind == shape_kind::floor && !is_tall( n->sprite ) ) {
+                            under = n;
+                            break;
+                        }
+                    }
+                    emit_top_layers( sink, under ? *under : cache.ground( tiles ), lx, ly,
+                                     floor_height, make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                    if( terrain.backdrop.valid ) {
+                        emit_pane( sink, terrain.backdrop, lx, ly, !wall_along_y, floor_height,
+                                   ts.height - floor_height, make_ref( lx, ly, 0, 0, 0, 230 ) );
+                    }
+                    emit_pane( sink, terrain.sprite, lx, ly, !wall_along_y, floor_height,
+                               ts.height - floor_height, make_ref( lx, ly, 0, 0, 0, 230 ) );
+                    break;
+                }
                 case shape_kind::empty:
                 case shape_kind::prism:
                     break;
@@ -479,6 +587,11 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             // Furniture stands on the floor; it is skipped inside walls and under trees.
             const shape &fs = furn.sh;
             if( ts.kind != shape_kind::floor || fs.kind == shape_kind::empty ) {
+                continue;
+            }
+            if( fs.kind == shape_kind::upright ) {
+                mesh_uprights.push_back( { static_cast<uint8_t>( lx ), static_cast<uint8_t>( ly ),
+                                           ts.height, &furn } );
                 continue;
             }
             if( fs.kind == shape_kind::floor ) {
@@ -508,7 +621,9 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             }
         }
     }
-    return sink.finish();
+    chunk_mesh mesh = sink.finish();
+    mesh.uprights = std::move( mesh_uprights );
+    return mesh;
 }
 
 } // namespace r3d

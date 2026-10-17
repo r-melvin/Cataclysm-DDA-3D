@@ -7258,6 +7258,7 @@ input_event input_manager::get_input_event( const keyboard_mode preferred_keyboa
 
     // CATA_R3D_COMPARE debug capture, while the game waits for input (no turn passes).
     r3d::compare_capture();
+    r3d::fp_shots_capture();
 
     if( needupdate ) {
         refresh_display();

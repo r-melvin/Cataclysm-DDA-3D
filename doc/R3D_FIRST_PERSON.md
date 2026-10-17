@@ -74,6 +74,21 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
   display only) and shows "Looking: N level(s) up/down" under the compass. Not done: holes and
   stairwells were not checked, the eye on ramps uses the floor height.
 
+Testing without playing: `tools/r3d_spike/fp_shots.sh [world] [out_prefix]` (default: the
+newest world, prefix `r3d_fp` in the checkout) loads the save and, before any input, saves
+`<prefix>_fp_n.png` ... `<prefix>_fp_nw.png` (the whole window in first person facing each of
+the eight headings, HUD included), `<prefix>_orbit.png` for reference, `<prefix>_map.txt`
+(player, orbit and first-person camera: heading, eye, yaw, pitch, fov; tiles and visibility
+around the view) and, with ImageMagick, a labelled 4x2 contact sheet `<prefix>_fp.png`, then
+exits. `LOOK=up|down` takes the set tilted 45 degrees; `TILESET_3D` picks the tileset (default
+UltimateCataclysm, built if missing). Underneath it is `CATA_R3D_FP_SHOTS=<prefix>` (with
+`CATA_R3D_FP_TILESET`, `CATA_R3D_FP_LOOK`, `CATA_R3D_QUIT_AFTER_SHOT`), handled by
+`r3d::fp_shots_capture()` from the input loop like `CATA_R3D_COMPARE`: it switches the 3D view
+and the camera mode itself, draws 40 frames per shot so the chunks are built, presents a frame
+after a tileset change before the first shot, and without `CATA_R3D_QUIT_AFTER_SHOT` restores
+the tileset, the 3D view, the camera and the saved heading afterwards. The options file is never
+written. The map dump is this branch's own copy of the renderer branch's (`dump_view`).
+
 What to test locally (FP0): toggle with ctrl+F in a house; the picture is a perspective view from
 eye height; left/right arrows (with `R3D_WASD` on, the default) or ctrl+left/right turn by 45
 degrees without spending game time; W/numpad 8 walk the way you face; middle-mouse drag glances

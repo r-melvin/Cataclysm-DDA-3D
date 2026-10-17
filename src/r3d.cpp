@@ -795,6 +795,96 @@ bool capture( const std::string &path )
             path;
     return ok;
 }
+// Writes what the shots show as text: the player and the camera (orbit and first person), and
+// the tiles around the view (furniture symbol over terrain symbol, and whether each is seen,
+// remembered or unknown), so something odd in a picture can be traced to a map tile.
+void dump_view( const std::string &path, const tripoint_bub_ms &center )
+{
+    std::ofstream out( path );
+    if( !out ) {
+        return;
+    }
+    constexpr float deg = 57.29578f;
+    const map &here = get_map();
+    const avatar &you = get_avatar();
+    const state &s = st();
+    const camera &cam = s.cam;
+    out << "player bub " << you.pos_bub().to_string() << " abs " << you.pos_abs().to_string()
+        << "\nview center bub " << center.to_string()
+        << "\ncamera mode " << ( cam.first_person() ? "first_person" : "orbit" )
+        << "\norbit yaw " << cam.yaw << " pitch " << cam.pitch << " distance " << cam.distance
+        << " ortho " << cam.orthographic << " pan " << s.pan.x << "," << s.pan.y << "," << s.pan.z
+        << " z_scale " << cam.z_scale << "\n";
+    if( cam.first_person() ) {
+        static const char *const names[8] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
+        const vec3 eye = cam.eye();
+        const float aspect = s.shown.valid && s.shown.h > 0.0f ? s.shown.w / s.shown.h : 1.0f;
+        out << "first person heading " << cam.heading << " (" << names[( cam.heading % 8 + 8 ) % 8]
+            << ")\n  eye (stretched world, scene frame: x east, y north, z up) " << eye.x << ","
+            << eye.y << "," << eye.z << "\n  eye height " << cam.eye_height << " yaw "
+            << cam.fp_yaw() * deg << " deg, look pitch " << cam.look_pitch * deg << " + tilt "
+            << cam.tilt_pitch * deg << " + glance " << cam.glance_pitch * deg << " deg\n  fov x "
+            << cam.fovx * deg << " deg, fov y " << cam.fp_fovy( aspect ) * deg << " deg at aspect "
+            << aspect << "\n";
+    }
+    constexpr int half_w = 16;
+    constexpr int half_h = 12;
+    const visibility_variables &vvc = here.get_visibility_variables_cache();
+    std::map<std::string, std::string> legend;
+    out << "\nmap (x " << center.x() - half_w << ".." << center.x() + half_w << ", y "
+        << center.y() - half_h << ".." << center.y() + half_h << ", north up, @ = player):\n";
+    for( int dy = -half_h; dy <= half_h; ++dy ) {
+        for( int dx = -half_w; dx <= half_w; ++dx ) {
+            const tripoint_bub_ms p = center + tripoint_rel_ms( dx, dy, 0 );
+            if( !here.inbounds( p ) ) {
+                out << ' ';
+                continue;
+            }
+            if( p == you.pos_bub() ) {
+                out << '@';
+                continue;
+            }
+            const furn_id f = here.furn( p );
+            const ter_id t = here.ter( p );
+            const int sym = f != furn_str_id::NULL_ID() ? f->symbol() : t->symbol();
+            const std::string id = f != furn_str_id::NULL_ID() ? f.id().str() : t.id().str();
+            legend[std::string( 1, static_cast<char>( sym ) )] = id;
+            out << static_cast<char>( sym );
+        }
+        out << '\n';
+    }
+    out << "\nvisibility (S seen, M remembered, . unknown):\n";
+    for( int dy = -half_h; dy <= half_h; ++dy ) {
+        for( int dx = -half_w; dx <= half_w; ++dx ) {
+            const tripoint_bub_ms p = center + tripoint_rel_ms( dx, dy, 0 );
+            if( !here.inbounds( p ) ) {
+                out << ' ';
+                continue;
+            }
+            const lit_level ll = here.access_cache( p.z() ).visibility_cache[p.x()][p.y()];
+            const visibility_type vis = here.get_visibility( ll, vvc );
+            const bool seen = vis == visibility_type::CLEAR || vis == visibility_type::LIT;
+            out << ( seen ? 'S' : you.has_memory_at( here.get_abs( p ) ) ? 'M' : '.' );
+        }
+        out << '\n';
+    }
+    out << "\nlegend (last id drawn with each symbol):\n";
+    for( const auto &e : legend ) {
+        out << "  " << e.first << "  " << e.second << '\n';
+    }
+}
+
+// Draws frames until the chunks around the view are built (a few per frame). The game is
+// waiting for input and draws nothing by itself.
+void settle_frames()
+{
+    constexpr int frames = 40;
+    for( int i = 0; i < frames; ++i ) {
+        g->invalidate_main_ui_adaptor();
+        ui_manager::redraw();
+    }
+}
+
 } // namespace
 
 void compare_capture()
@@ -882,6 +972,93 @@ void set_hud_font( int cell_width, int cell_height )
 const std::vector<hud_text> &hud_texts()
 {
     return st().hud;
+}
+
+void fp_shots_capture()
+{
+    // CATA_R3D_FP_SHOTS=<prefix> saves, once, as soon as a game is on screen, with no input
+    // handled in between (so no turn passes):
+    //  - <prefix>_orbit.png: the 3D view through the orbit camera, for reference;
+    //  - <prefix>_fp_<n|ne|e|se|s|sw|w|nw>.png: the whole window in first person facing each of
+    //    the eight headings, HUD included;
+    //  - <prefix>_map.txt: the player, both cameras and the tiles around them (see dump_view).
+    // CATA_R3D_FP_TILESET picks the tileset (default: the current one), CATA_R3D_FP_LOOK=up,
+    // down or level (default) tilts the first-person shots by 45 degrees. Afterwards the
+    // tileset, the 3D view, the camera mode and the heading come back (the options file is
+    // never written), or with CATA_R3D_QUIT_AFTER_SHOT the game exits (0 when every shot saved).
+    static const char *const prefix = std::getenv( "CATA_R3D_FP_SHOTS" );
+    static bool done = false;
+    if( !prefix || done || !g || !closetilecontext || !st().map_drawn ) {
+        return;
+    }
+    done = true;
+    const std::string base = prefix;
+    options_manager::cOpt &tiles = get_options().get_option( "TILES" );
+    options_manager::cOpt &view_3d = get_options().get_option( "RENDERER_3D" );
+    options_manager::cOpt &mode = get_options().get_option( "R3D_CAMERA_MODE" );
+    const std::string old_tiles = tiles.getValue();
+    const std::string old_view_3d = view_3d.getValue();
+    const std::string old_mode = mode.getValue();
+    state &s = st();
+    // The whole camera: switching modes turns the orbit camera to the heading and back.
+    const camera old_cam = s.cam;
+    const int old_saved_heading = uistate.r3d_fp_heading;
+
+    bool ok = true;
+    const char *const tileset = std::getenv( "CATA_R3D_FP_TILESET" );
+    const bool swap_tileset = tileset && old_tiles != tileset;
+    view_3d.setValue( "true" );
+    mode.setValue( "orbit" );
+    if( swap_tileset ) {
+        tiles.setValue( tileset );
+        ok = reload_map_tileset();
+    }
+    settle_frames();
+    // The renderer only uploads a new tileset's textures when it presents, and a capture reads
+    // the 3D pass before any present: show one frame so the sheets are on the GPU.
+    if( const SDL_Renderer_Ptr &r = get_sdl_renderer() ) {
+        SDL_RenderPresent( r.get() );
+    }
+    // Every shot is attempted even after one failed, so the files show what went wrong.
+    ok = active() && capture( base + "_orbit.png" ) && ok;
+
+    mode.setValue( "first_person" );
+    // The first frame switches the camera (which levels the view); the tilt is set after it.
+    settle_frames();
+    const std::string look = std::getenv( "CATA_R3D_FP_LOOK" ) ? std::getenv( "CATA_R3D_FP_LOOK" ) :
+                             "level";
+    constexpr float level_tilt = 0.7854f;
+    s.cam.look_pitch = look == "up" ? level_tilt : look == "down" ? -level_tilt : 0.0f;
+    static const char *const names[8] = { "n", "ne", "e", "se", "s", "sw", "w", "nw" };
+    for( int h = 0; h < 8; ++h ) {
+        s.cam.heading = h;
+        end_glance();
+        // No easing between the shots, whatever R3D_FP_TWEEN_MS says.
+        s.fp_prev_valid = false;
+        s.fp_ease_ms = 0;
+        settle_frames();
+        ok = first_person() && capture( base + "_fp_" + names[h] + ".png" ) && ok;
+        if( h == 0 ) {
+            dump_view( base + "_map.txt", g->ter_view_p );
+        }
+    }
+    DebugLog( ok ? D_INFO : D_ERROR, DC_ALL ) << "r3d fp shots: " << ( ok ? "all saved" :
+            "some shots failed" );
+
+    if( std::getenv( "CATA_R3D_QUIT_AFTER_SHOT" ) ) {
+        std::_Exit( ok ? 0 : 1 );
+    }
+    s.cam = old_cam;
+    uistate.r3d_fp_heading = old_saved_heading;
+    s.fp_heading_saved = ( old_saved_heading % 8 + 8 ) % 8;
+    s.fp_prev_valid = false;
+    mode.setValue( old_mode );
+    view_3d.setValue( old_view_3d );
+    if( swap_tileset ) {
+        tiles.setValue( old_tiles );
+        reload_map_tileset();
+    }
+    g->invalidate_main_ui_adaptor();
 }
 
 bool active()

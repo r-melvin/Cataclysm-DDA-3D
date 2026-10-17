@@ -74,6 +74,12 @@ bool wasd_controls();
  * view of the same turn once. Called from the input loop while waiting for input.
  */
 void compare_capture();
+/**
+ * Debug capture for CATA_R3D_FP_SHOTS (see r3d.cpp): saves the first-person view facing each of
+ * the eight headings, an orbit shot and a map dump once. Called from the input loop like
+ * compare_capture.
+ */
+void fp_shots_capture();
 
 /** Flips the RENDERER_3D option. */
 void toggle();

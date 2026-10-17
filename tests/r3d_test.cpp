@@ -186,11 +186,13 @@ TEST_CASE( "r3d_pick_finds_tile_drawn_under_cursor", "[r3d]" )
         return x == 2 && y == -3 ? 1.0f : 0.1f;
     };
     for( float yaw : { 0.0f, 0.9f, 2.6f, 4.4f } ) {
-        for( bool ortho : { false, true } ) {
+        for( int variant = 0; variant < 3; ++variant ) {
+            const bool ortho = variant == 1;
             r3d::camera cam;
             cam.target = r3d::tile_to_world( { 0.5f, 0.5f, 0.5f } ); // as r3d::draw sets it
             cam.yaw = yaw;
             cam.orthographic = ortho;
+            cam.z_scale = variant == 2 ? 1.6f : 1.0f; // taller storeys must not change picks
             const float aspect = 1.5f;
             const r3d::mat4 vp = cam.view_projection( aspect );
             // The middle of the screen is the viewed tile.

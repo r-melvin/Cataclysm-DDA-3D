@@ -595,6 +595,7 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
 
     // The scene is drawn in a frame whose origin is the viewed tile, which keeps floats small.
     s.cam.target = tile_to_world( { 0.5f, 0.5f, 0.5f } ) + s.pan;
+    s.cam.z_scale = static_cast<float>( get_option<int>( "R3D_LEVEL_HEIGHT" ) ) / 100.0f;
     const float aspect = static_cast<float>( target_w ) / static_cast<float>( target_h );
     const mat4 view_proj = s.cam.view_projection( aspect );
     const frustum fr = s.cam.view_frustum( aspect );

@@ -37,8 +37,8 @@ constexpr float item_size = 0.6f;
 // is in the flat view (big trees are several tiles tall). Later layers (clothing over a body) sit
 // slightly closer to the camera. Corners are in scene-frame tile space.
 void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &layers,
-                     const vec3 &right_world, const vec3 &up_world, const vec3 &toward_world, float cx,
-                     float cy, float z_base, uint32_t color, bool mirrored = false )
+                     const vec3 &right_world, const vec3 &up_world, const vec3 &toward_world, float z_scale,
+                     float cx, float cy, float z_base, uint32_t color, bool mirrored = false )
 {
     if( layers.empty() || !layers.front() ) {
         return;
@@ -51,7 +51,9 @@ void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &laye
     const float ry = -right_world.y * width * 0.5f;
     const float tx = toward_world.x;
     const float ty = -toward_world.y;
-    const float tz = toward_world.z;
+    // The camera vectors are in stretched space, where sprites keep their flat-view proportions;
+    // their vertical parts shrink back into world space, where a z-level is 1 high.
+    const float tz = toward_world.z / z_scale;
     // Facing the camera squarely leans the top away from it, into whatever stands behind the
     // tile (a wall). Sliding the quad towards the camera along the line of sight keeps it where
     // it is on screen but brings the top back inside the tile's own footprint.
@@ -65,7 +67,7 @@ void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &laye
     // full size and detail they have in the flat view instead of being squashed by the pitch.
     const float ux = up_world.x * height;
     const float uy = -up_world.y * height;
-    const float uz = up_world.z * height;
+    const float uz = up_world.z * height / z_scale;
     int depth = 0;
     auto layer = [&]( const sprite_ref & s ) {
         if( !s.valid ) {
@@ -138,7 +140,8 @@ chunk_mesh build_entity_mesh( const entity_view &view )
     const avatar &you = get_avatar();
     quad_sink sink;
     const vec3 right = view.cam.ground_right();
-    const vec3 toward = normalize( view.cam.eye() - view.cam.target );
+    // Camera vectors in the stretched space the picture is in (see camera::z_scale).
+    const vec3 toward = normalize( view.cam.eye() - view.cam.stretched_target() );
     const vec3 up = cross( right, vec3{ 0.0f, 0.0f, 0.0f } - toward );
     const uint32_t white = pack_light( 255, 255, 255 );
 
@@ -186,7 +189,7 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         if( !u.info ) {
             continue;
         }
-        emit_billboard( sink, { u.info }, right, up, toward, frame_x( u.pos ), frame_y( u.pos ),
+        emit_billboard( sink, { u.info }, right, up, toward, view.cam.z_scale, frame_x( u.pos ), frame_y( u.pos ),
                         frame_z( u.pos ) + u.z_base, view.light( u.pos ) );
     }
 
@@ -214,7 +217,7 @@ chunk_mesh build_entity_mesh( const entity_view &view )
             continue;
         }
         const uint32_t color = critter.is_avatar() ? white : view.light( p );
-        emit_billboard( sink, layers, right, up, toward, frame_x( p ), frame_y( p ),
+        emit_billboard( sink, layers, right, up, toward, view.cam.z_scale, frame_x( p ), frame_y( p ),
                         frame_z( p ) + floor_height, color == pack_light( 0, 0, 0 ) ? white : color,
                         mirrored );
     }

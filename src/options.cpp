@@ -2613,6 +2613,13 @@ void options_manager::add_options_graphics()
 
         get_option( "R3D_VIEW_DEPTH" ).setPrerequisite( "RENDERER_3D" );
 
+        add( "R3D_LEVEL_HEIGHT", page_id, to_translation( "3D storey height" ),
+             to_translation( "Height of one z-level in the 3D view, in percent of a tile's width.  Higher values make walls taller next to characters." ),
+             100, 300, 160, COPT_CURSES_HIDE
+           );
+
+        get_option( "R3D_LEVEL_HEIGHT" ).setPrerequisite( "RENDERER_3D" );
+
         std::vector<options_manager::id_and_option> om_tilesets = build_tilesets_list();
         // filter out iso tilesets from overmap tilesets
         om_tilesets.erase( std::remove_if( om_tilesets.begin(), om_tilesets.end(), []( const auto & it ) {

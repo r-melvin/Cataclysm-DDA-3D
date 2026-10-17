@@ -30,15 +30,23 @@ bool frustum::intersects( const aabb &box ) const
     return true;
 }
 
+vec3 camera::stretched_target() const
+{
+    return { target.x, target.y, target.z * z_scale };
+}
+
 vec3 camera::eye() const
 {
     const float cp = std::cos( pitch );
-    return target + vec3{ std::sin( yaw ) * cp, -std::cos( yaw ) * cp, std::sin( pitch ) } *distance;
+    return stretched_target() + vec3{ std::sin( yaw ) * cp, -std::cos( yaw ) * cp, std::sin( pitch ) } *
+           distance;
 }
 
 mat4 camera::view() const
 {
-    return look_at( eye(), target, { 0.0f, 0.0f, 1.0f } );
+    mat4 stretch;
+    stretch.at( 2, 2 ) = z_scale;
+    return look_at( eye(), stretched_target(), { 0.0f, 0.0f, 1.0f } ) * stretch;
 }
 
 mat4 camera::projection( float aspect ) const
@@ -63,15 +71,13 @@ ray camera::screen_ray( float ndc_x, float ndc_y, float aspect ) const
 {
     mat4 inverse;
     if( !invert( view_projection( aspect ), inverse ) ) {
-        return { eye(), normalize( target - eye() ) };
+        return { target, { 0.0f, 0.0f, -1.0f } };
     }
     // Depth range is [0, 1]: z = 0 is the near plane, z = 1 the far plane.
     const vec3 near_pt = transform_point( inverse, { ndc_x, ndc_y, 0.0f } );
     const vec3 far_pt = transform_point( inverse, { ndc_x, ndc_y, 1.0f } );
-    if( orthographic ) {
-        return { near_pt, normalize( far_pt - near_pt ) };
-    }
-    return { eye(), normalize( far_pt - eye() ) };
+    // Both points come back in world space (the stretch is part of the matrix).
+    return { near_pt, normalize( far_pt - near_pt ) };
 }
 
 vec3 camera::ground_right() const

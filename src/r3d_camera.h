@@ -54,13 +54,21 @@ struct camera {
     static constexpr float max_distance = 120.0f;
 
     vec3 target;               // world space, normally the centre of the viewed tile
+    // Height of one z-level in tile widths. World space counts z in levels (a wall is 1 high);
+    // the view stretches it by this so storeys look taller than a tile is wide. Everything the
+    // camera returns in "stretched" space below has z multiplied by it; rays and matrices map
+    // straight to and from (unstretched) world space.
+    float z_scale = 1.0f;
     float yaw = 0.0f;
     float pitch = 0.96f;       // ~55 degrees
     float distance = 24.0f;
     float fovy = 0.785f;       // 45 degrees
     bool orthographic = false;
 
+    /** Camera position in stretched space (see z_scale). */
     vec3 eye() const;
+    /** target in stretched space. */
+    vec3 stretched_target() const;
     mat4 view() const;
     mat4 projection( float aspect ) const;
     mat4 view_projection( float aspect ) const;

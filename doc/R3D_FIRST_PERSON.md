@@ -29,8 +29,16 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
   `R3D_FP_OCCLUDE_UNSEEN` (default on): in first person never-seen places are drawn solid black
   and write depth (uniform `flags.x`, `block_uniforms` is now 144 bytes), so an unexplored wall
   hides the explored room behind it. Creatures, items and trees keep being left out when unseen.
-  Not done from FP6: the linear-min sampler for distant floors, front-to-back chunk order, the
-  item frustum pre-filter.
+  Not done from FP6: front-to-back chunk order, the item frustum pre-filter, and the linear-min
+  sampler for distant floors. That last one was left out on purpose: the floors sample tileset
+  atlases, so linear filtering without padding bleeds the neighbouring sprites into every tile
+  edge, and without mipmaps it only averages 2x2 texels, which the 2x supersampling
+  (`CATA_R3D_SUPERSAMPLE`) already does for the whole picture. Doing it right needs padded or
+  per-sprite textures with mipmaps.
+* Near-eye sprites: done. Creatures whose screen-facing quad would come closer than 0.35 tiles
+  to the eye along the view are slid back along it (`slide_from_eye` in `r3d_hud`, tested). From
+  the middle of a tile no neighbour is that close at any heading, so this only acts when the
+  eye is off its tile centre; it is a safety net.
 * Sound markers: done (not yet seen in the game). The markers the game queues for the turn
   (`sounds::get_footstep_markers`, what `cata_tiles::draw_footsteps_frame` draws in 2D) are
   posts on their tile in first person, using the tileset's `footstep`/`footstep_above`/

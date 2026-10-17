@@ -64,6 +64,14 @@ float minimap_turn( int heading );
 /** Turns the screen point (x, y) by radians clockwise (y down) about (cx, cy), in place. */
 void turn_on_screen( float &x, float &y, float cx, float cy, float radians );
 
+/**
+ * First person: how far to slide an upright sprite standing at (x, y) along the view direction
+ * (fx, fy), a unit vector on the ground, so that its quad (which faces the screen) lies at least
+ * min_depth in front of the eye at (ex, ey). 0 when it already does or when it is behind the eye
+ * (out of the picture anyway). Any 2D frame works as long as all points use the same one.
+ */
+float slide_from_eye( float x, float y, float ex, float ey, float fx, float fy, float min_depth );
+
 } // namespace r3d
 
 #endif // CATA_SRC_R3D_HUD_H

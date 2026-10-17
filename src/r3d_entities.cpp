@@ -21,6 +21,7 @@
 #include "monster.h"
 #include "mtype.h"
 #include "npc.h"
+#include "r3d_hud.h"
 #include "r3d_shapes.h"
 
 namespace r3d
@@ -38,6 +39,8 @@ constexpr float post_width = 0.3f;       // first person: markers along a line o
 constexpr float post_height = 0.6f;
 constexpr float heard_post_width = 0.35f; // first person: a sound heard there this turn
 constexpr float heard_post_height = 0.8f;
+// First person: the nearest an upright sprite's quad comes to the eye along the view.
+constexpr float min_sprite_depth = 0.35f;
 
 // Light colour with a zero alpha: no depth pull (see r3d_block.vert), for everything in the
 // entity mesh that is not the top of a billboard.
@@ -208,6 +211,14 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         up = { 0.0f, 0.0f, 1.0f };
     }
     const uint32_t white = pack_light( 255, 255, 255 );
+    // First person: the eye and the view direction on the ground, in the scene's tile space
+    // (y south), for sliding sprites away from the eye.
+    const vec3 eye_world = view.cam.eye();
+    const vec3 eye_tile{ eye_world.x, -eye_world.y, 0.0f };
+    const vec3 ahead_world = view.cam.fp_forward();
+    const float ahead_len = std::sqrt( ahead_world.x * ahead_world.x + ahead_world.y * ahead_world.y );
+    const float ahead_x = ahead_len > 0.0f ? ahead_world.x / ahead_len : 0.0f;
+    const float ahead_y = ahead_len > 0.0f ? -ahead_world.y / ahead_len : 1.0f;
 
     auto in_range = [&]( const tripoint_bub_ms & p, int radius ) {
         return p.z() >= view.z_lo && p.z() <= view.z_hi &&
@@ -307,7 +318,19 @@ chunk_mesh build_entity_mesh( const entity_view &view )
                                            << " backdrop=" << layers[i]->backdrop.valid;
             }
         }
-        emit_billboard( sink, layers, right, up, toward, view.cam.z_scale, frame_x( p ), frame_y( p ),
+        float cx = frame_x( p );
+        float cy = frame_y( p );
+        if( upright ) {
+            // A creature next to the eye (while a step is eased in, the eye passes close to
+            // tiles) is slid back along the view direction rather than cut by the near plane or
+            // filling the screen. Its depth against walls behind it is not an issue: those are
+            // at least half a tile further on.
+            const float slide = slide_from_eye( cx, cy, eye_tile.x, eye_tile.y, ahead_x, ahead_y,
+                                                min_sprite_depth );
+            cx += ahead_x * slide;
+            cy += ahead_y * slide;
+        }
+        emit_billboard( sink, layers, right, up, toward, view.cam.z_scale, cx, cy,
                         frame_z( p ) + view.surface( p ), color == pack_light( 0, 0, 0 ) ? white : color,
                         mirrored );
     }

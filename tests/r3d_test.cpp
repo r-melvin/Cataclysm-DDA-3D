@@ -948,3 +948,25 @@ TEST_CASE( "r3d_clear_line_is_blocked_by_walls_but_not_by_the_target", "[r3d]" )
     // The same point as the eye is trivially seen.
     CHECK( r3d::clear_line( eye, eye, world ) );
 }
+
+TEST_CASE( "r3d_sprites_slide_away_from_the_eye", "[r3d]" )
+{
+    // Eye at (0, 0) looking +x.
+    // A sprite 0.2 ahead slides to 0.35.
+    CHECK( approx( r3d::slide_from_eye( 0.2f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.35f ), 0.15f ) );
+    // Off to the side, its depth along the view counts, not its distance.
+    CHECK( approx( r3d::slide_from_eye( 0.1f, 0.4f, 0.0f, 0.0f, 1.0f, 0.0f, 0.35f ), 0.25f ) );
+    // Far enough already, or behind the eye: left alone.
+    CHECK( approx( r3d::slide_from_eye( 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.35f ), 0.0f ) );
+    CHECK( approx( r3d::slide_from_eye( -0.2f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.35f ), 0.0f ) );
+    // A neighbour seen from the tile centre (a whole tile away) never slides, at any heading.
+    for( int h = 0; h < 8; ++h ) {
+        const float a = static_cast<float>( h ) * 0.78539816f;
+        const float fx = std::sin( a );
+        const float fy = -std::cos( a );
+        CHECK( approx( r3d::slide_from_eye( 0.5f + fx * 1.0f, 0.5f + fy * 1.0f, 0.5f, 0.5f, fx, fy,
+                                            0.35f ), 0.0f ) );
+    }
+    // An eye off its tile centre and close to a sprite (any frame): it slides.
+    CHECK( r3d::slide_from_eye( 1.5f, 0.5f, 1.3f, 0.5f, 1.0f, 0.0f, 0.35f ) > 0.0f );
+}

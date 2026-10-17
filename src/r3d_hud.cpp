@@ -74,6 +74,15 @@ float minimap_turn( int heading )
     return -heading_bearing( heading );
 }
 
+float slide_from_eye( float x, float y, float ex, float ey, float fx, float fy, float min_depth )
+{
+    const float depth = ( x - ex ) * fx + ( y - ey ) * fy;
+    if( depth <= 0.0f || depth >= min_depth ) {
+        return 0.0f;
+    }
+    return min_depth - depth;
+}
+
 void turn_on_screen( float &x, float &y, float cx, float cy, float radians )
 {
     // With y pointing down, the usual rotation matrix turns clockwise as seen on screen.

@@ -74,8 +74,8 @@ if [ -n "$im" ]; then
     labelled=()
     for h in "${headings[@]}"; do
         label="$(echo "$h" | tr '[:lower:]' '[:upper:]')"
-        "$im" "${out}_fp_${h}.png" -gravity north -background black -fill white -pointsize 28 \
-            -splice 0x40 -annotate +0+4 "$label" +repage "${out}_fp_${h}_labelled.png"
+        "$im" "${out}_fp_${h}.png" -gravity northwest -background black -fill white -pointsize 28 \
+            -splice 0x40 -annotate +10+4 "$label" +repage "${out}_fp_${h}_labelled.png"
         labelled+=( "${out}_fp_${h}_labelled.png" )
     done
     # Two rows of four: N NE E SE / S SW W NW.

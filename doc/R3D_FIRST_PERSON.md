@@ -96,6 +96,14 @@ and the camera mode itself, draws 40 frames per shot so the chunks are built, pr
 after a tileset change before the first shot, and without `CATA_R3D_QUIT_AFTER_SHOT` restores
 the tileset, the 3D view, the camera and the saved heading afterwards. The options file is never
 written. The map dump is this branch's own copy of the renderer branch's (`dump_view`).
+Every settling frame is presented, as the game does: an earlier version drew 80 frames without a
+present between two shots and lavapipe crashed (SIGSEGV in its rasterizer thread) reading the
+second shot back; it happened in orbit mode too, so it was the capture, not first person. Seen
+working on the user's world under Xvfb with lavapipe (8 headings, orbit shot, map dump, sheet).
+Those shots showed one real problem: in a tall, narrow terrain window (aspect 0.75) the 90
+degree horizontal field of view was 106 degrees high. `R3D_FP_FOV` now applies to the narrower
+side of the picture (`camera::fp_fovx`/`fp_fovy`, tested), and the edge alert and sound ticks
+use the width actually shown.
 
 What to test locally (FP0): toggle with ctrl+F in a house; the picture is a perspective view from
 eye height; left/right arrows (with `R3D_WASD` on, the default) or ctrl+left/right turn by 45

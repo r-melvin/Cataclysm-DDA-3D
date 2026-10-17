@@ -52,7 +52,18 @@ vec3 camera::fp_forward() const
 
 float camera::fp_fovy( float aspect ) const
 {
-    return 2.0f * std::atan( std::tan( fovx * 0.5f ) / std::max( aspect, 0.01f ) );
+    if( aspect < 1.0f ) {
+        return fovx;
+    }
+    return 2.0f * std::atan( std::tan( fovx * 0.5f ) / aspect );
+}
+
+float camera::fp_fovx( float aspect ) const
+{
+    if( aspect >= 1.0f ) {
+        return fovx;
+    }
+    return 2.0f * std::atan( std::tan( fovx * 0.5f ) * std::max( aspect, 0.01f ) );
 }
 
 vec3 camera::eye() const

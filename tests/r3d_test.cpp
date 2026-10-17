@@ -615,11 +615,26 @@ TEST_CASE( "r3d_first_person_projection_keeps_the_horizontal_field_of_view", "[r
 {
     r3d::camera cam = first_person_camera( 0 );
     cam.fovx = 1.5708f;
-    for( float aspect : { 0.8f, 1.0f, 2.4f } ) {
+    for( float aspect : { 1.0f, 1.6f, 2.4f } ) {
         // A point 5 ahead and 5 to the right sits at the right edge of a 90 degree view.
         const r3d::vec3 point = cam.eye() + r3d::vec3{ 5.0f, 5.0f, 0.0f };
         const r3d::vec3 ndc = r3d::transform_point( cam.view_projection( aspect ), point );
         CHECK( approx( ndc.x, 1.0f, 1e-2f ) );
+        CHECK( approx( cam.fp_fovx( aspect ), 1.5708f ) );
+    }
+    // A tall, narrow picture keeps 90 degrees up and down instead (5 ahead, 5 up: the top
+    // edge; z is stretched by z_scale in the view), and is narrower across.
+    for( float aspect : { 0.5f, 0.75f } ) {
+        const r3d::vec3 point = cam.eye() + r3d::vec3{ 0.0f, 5.0f, 5.0f };
+        const r3d::vec3 world{ point.x, point.y, point.z / cam.z_scale };
+        const r3d::vec3 ndc = r3d::transform_point( cam.view_projection( aspect ), world );
+        CHECK( approx( ndc.y, 1.0f, 1e-2f ) );
+        CHECK( approx( cam.fp_fovy( aspect ), 1.5708f ) );
+        CHECK( cam.fp_fovx( aspect ) < 1.5708f );
+        const r3d::vec3 side = cam.eye() + r3d::vec3{ 5.0f * std::tan( cam.fp_fovx( aspect ) * 0.5f ),
+                               5.0f, 0.0f };
+        const r3d::vec3 side_world{ side.x, side.y, side.z / cam.z_scale };
+        CHECK( approx( r3d::transform_point( cam.view_projection( aspect ), side_world ).x, 1.0f, 1e-2f ) );
     }
     // The orbit camera is untouched by first-person fields.
     r3d::camera orbit;

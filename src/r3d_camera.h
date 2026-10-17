@@ -97,8 +97,15 @@ struct camera {
     float fp_yaw() const;
     /** First person: unit view direction in stretched space. */
     vec3 fp_forward() const;
-    /** Vertical field of view that gives fovx at the aspect ratio (width / height). */
+    /**
+     * Vertical field of view at the aspect ratio (width / height). fovx is the field of view of
+     * the narrower side: across a wide picture (so a wide terrain window does not become a
+     * fisheye vertically), and up and down a tall, narrow one (a 90 degree width there would be
+     * more than 100 degrees high).
+     */
     float fp_fovy( float aspect ) const;
+    /** Horizontal field of view actually shown at the aspect ratio (see fp_fovy). */
+    float fp_fovx( float aspect ) const;
 
     /** Camera position in stretched space (see z_scale). */
     vec3 eye() const;

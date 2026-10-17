@@ -824,7 +824,8 @@ void dump_view( const std::string &path, const tripoint_bub_ms &center )
             << eye.y << "," << eye.z << "\n  eye height " << cam.eye_height << " yaw "
             << cam.fp_yaw() * deg << " deg, look pitch " << cam.look_pitch * deg << " + tilt "
             << cam.tilt_pitch * deg << " + glance " << cam.glance_pitch * deg << " deg\n  fov x "
-            << cam.fovx * deg << " deg, fov y " << cam.fp_fovy( aspect ) * deg << " deg at aspect "
+            << cam.fp_fovx( aspect ) * deg << " deg, fov y " << cam.fp_fovy( aspect ) * deg
+            << " deg at aspect "
             << aspect << "\n";
     }
     constexpr int half_w = 16;
@@ -875,14 +876,21 @@ void dump_view( const std::string &path, const tripoint_bub_ms &center )
 }
 
 // Draws frames until the chunks around the view are built (a few per frame). The game is
-// waiting for input and draws nothing by itself.
+// waiting for input and draws nothing by itself. Each frame is presented, as the game always
+// does: frames drawn without a present pile up in the renderer, and after about eighty of them
+// lavapipe crashed reading the next shot back.
 void settle_frames()
 {
     constexpr int frames = 40;
+    const SDL_Renderer_Ptr &r = get_sdl_renderer();
     for( int i = 0; i < frames; ++i ) {
         g->invalidate_main_ui_adaptor();
         ui_manager::redraw();
+        if( r ) {
+            SDL_RenderPresent( r.get() );
+        }
     }
+    // The shot is read back from the next frame, drawn by capture().
 }
 
 } // namespace
@@ -1013,12 +1021,9 @@ void fp_shots_capture()
         tiles.setValue( tileset );
         ok = reload_map_tileset();
     }
+    // The settling frames are presented, which also puts a new tileset's textures on the GPU
+    // (the renderer only uploads them when it presents) before the shot reads the 3D pass.
     settle_frames();
-    // The renderer only uploads a new tileset's textures when it presents, and a capture reads
-    // the 3D pass before any present: show one frame so the sheets are on the GPU.
-    if( const SDL_Renderer_Ptr &r = get_sdl_renderer() ) {
-        SDL_RenderPresent( r.get() );
-    }
     // Every shot is attempted even after one failed, so the files show what went wrong.
     ok = active() && capture( base + "_orbit.png" ) && ok;
 
@@ -1037,7 +1042,7 @@ void fp_shots_capture()
         s.fp_prev_valid = false;
         s.fp_ease_ms = 0;
         settle_frames();
-        ok = first_person() && capture( base + "_fp_" + names[h] + ".png" ) && ok;
+        ok = capture( base + "_fp_" + names[h] + ".png" ) && first_person() && ok;
         if( h == 0 ) {
             dump_view( base + "_map.txt", g->ter_view_p );
         }
@@ -1376,7 +1381,7 @@ void draw_fp_hud( state &s, SDL_Renderer *renderer, float x, float y, float w, f
             if( critter->posz() != you.posz() ) {
                 continue;
             }
-            switch( edge_alert_side( bearing_to( critter->pos_bub() ), cam.fovx ) ) {
+            switch( edge_alert_side( bearing_to( critter->pos_bub() ), cam.fp_fovx( w / h ) ) ) {
                 case edge_side::none:
                     break;
                 case edge_side::behind:
@@ -1698,7 +1703,8 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
                 const vec3 post{ static_cast<float>( p.x() - center.x() ) + 0.5f,
                                  static_cast<float>( p.y() - center.y() ) + 0.5f,
                                  static_cast<float>( p.z() - center.z() ) + column_height( s, here, p ) + 0.4f };
-                if( std::abs( rel ) > s.cam.fovx * 0.5f || !clear_line( eye_tile, post, solid ) ) {
+                if( std::abs( rel ) > s.cam.fp_fovx( aspect ) * 0.5f ||
+                    !clear_line( eye_tile, post, solid ) ) {
                     s.heard_ticks.push_back( p );
                 }
                 const char *const id = p.z() > player_z ? "footstep_above" :

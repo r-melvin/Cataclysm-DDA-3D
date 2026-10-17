@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -29,6 +31,7 @@
 #include "map.h"
 #include "map_scale_constants.h"
 #include "mapbuffer.h"
+#include "mapdata.h"
 #include "options.h"
 #include "path_info.h"
 #include "r3d_camera.h"
@@ -513,6 +516,70 @@ bool reload_map_tileset()
 }
 
 // Draws the whole screen into the renderer and saves it before it is presented.
+// Writes what the comparison shots show as text: the player and camera, and the tiles around
+// the view (furniture symbol over terrain symbol, and whether each is seen, remembered or
+// unknown), so a difference between the two pictures can be traced to a map tile.
+void dump_view( const std::string &path, const tripoint_bub_ms &center )
+{
+    std::ofstream out( path );
+    if( !out ) {
+        return;
+    }
+    const map &here = get_map();
+    const avatar &you = get_avatar();
+    const state &s = st();
+    out << "player bub " << you.pos_bub().to_string() << " abs " << you.pos_abs().to_string()
+        << "\nview center bub " << center.to_string()
+        << "\ncamera yaw " << s.cam.yaw << " pitch " << s.cam.pitch << " distance " << s.cam.distance
+        << " ortho " << s.cam.orthographic << " pan " << s.pan.x << "," << s.pan.y << "," << s.pan.z
+        << " z_scale " << s.cam.z_scale << "\n";
+    constexpr int half_w = 16;
+    constexpr int half_h = 12;
+    const visibility_variables &vvc = here.get_visibility_variables_cache();
+    std::map<std::string, std::string> legend;
+    out << "\nmap (x " << center.x() - half_w << ".." << center.x() + half_w << ", y "
+        << center.y() - half_h << ".." << center.y() + half_h << ", @ = player):\n";
+    for( int dy = -half_h; dy <= half_h; ++dy ) {
+        for( int dx = -half_w; dx <= half_w; ++dx ) {
+            const tripoint_bub_ms p = center + tripoint_rel_ms( dx, dy, 0 );
+            if( !here.inbounds( p ) ) {
+                out << ' ';
+                continue;
+            }
+            if( p == you.pos_bub() ) {
+                out << '@';
+                continue;
+            }
+            const furn_id f = here.furn( p );
+            const ter_id t = here.ter( p );
+            const int sym = f != furn_str_id::NULL_ID() ? f->symbol() : t->symbol();
+            const std::string id = f != furn_str_id::NULL_ID() ? f.id().str() : t.id().str();
+            legend[std::string( 1, static_cast<char>( sym ) )] = id;
+            out << static_cast<char>( sym );
+        }
+        out << '\n';
+    }
+    out << "\nvisibility (S seen, M remembered, . unknown):\n";
+    for( int dy = -half_h; dy <= half_h; ++dy ) {
+        for( int dx = -half_w; dx <= half_w; ++dx ) {
+            const tripoint_bub_ms p = center + tripoint_rel_ms( dx, dy, 0 );
+            if( !here.inbounds( p ) ) {
+                out << ' ';
+                continue;
+            }
+            const lit_level ll = here.access_cache( p.z() ).visibility_cache[p.x()][p.y()];
+            const visibility_type vis = here.get_visibility( ll, vvc );
+            const bool seen = vis == visibility_type::CLEAR || vis == visibility_type::LIT;
+            out << ( seen ? 'S' : you.has_memory_at( here.get_abs( p ) ) ? 'M' : '.' );
+        }
+        out << '\n';
+    }
+    out << "\nlegend (last id drawn with each symbol):\n";
+    for( const auto &e : legend ) {
+        out << "  " << e.first << "  " << e.second << '\n';
+    }
+}
+
 bool capture( const std::string &path )
 {
     g->invalidate_main_ui_adaptor();
@@ -581,6 +648,7 @@ void compare_capture()
             redraw();
         }
         ok_3d = active() && capture( base + "_3d.png" );
+        dump_view( base + "_map.txt", g->ter_view_p );
     }
 
     if( std::getenv( "CATA_R3D_QUIT_AFTER_SHOT" ) ) {

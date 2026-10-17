@@ -27,6 +27,17 @@ constexpr int border = side + 2;
 // Light multiplier that turns a grey wall texture cell (whose average is about grey_mean, see
 // make_wall_textures.py) into the given colour: the tileset's (0xAARRGGBB, alpha 0 when unknown)
 // or else the preset (0xRRGGBB).
+// A packed colour scaled by factor, each channel clamped to 255.
+uint32_t lighten( uint32_t rgb, float factor )
+{
+    uint32_t out = 0;
+    for( int shift = 0; shift <= 16; shift += 8 ) {
+        const float c = static_cast<float>( ( rgb >> shift ) & 255u ) * factor;
+        out |= static_cast<uint32_t>( std::clamp( c, 0.0f, 255.0f ) + 0.5f ) << shift;
+    }
+    return out;
+}
+
 uint32_t wall_tint( uint32_t tileset_color, uint32_t preset )
 {
     constexpr float grey_mean = 200.0f;
@@ -399,7 +410,7 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
 
     // Legs: every tile of a bench or table stands on a pair of legs at the sides across its
     // row (the row runs along x before the turn), set in from the slab's ends.
-    constexpr float leg = 0.09f;
+    constexpr float leg = 0.12f;
     constexpr float inset = 0.05f;
     const bool across_y = ( facing & 1 ) == 0;
     const float a0 = ( across_y ? fx0 : fy0 ) + 0.22f;
@@ -425,7 +436,10 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
                     { post[i][2], post[i][3], z0 }, { post[i][0], post[i][1], z0 }
                 }
             };
-            sink.add( s, c, side_uv, refs[i + 1] );
+            // Legs stand in the seat's shadow: darker than the sides above them.
+            light_ref leg_ref = refs[i + 1];
+            leg_ref.shade = static_cast<uint8_t>( leg_ref.shade * 2 / 3 );
+            sink.add( s, c, side_uv, leg_ref );
         }
     }
 }
@@ -650,7 +664,9 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int sub
                 const uint32_t preset = fallback != wall_sides_->colors.end() ? fallback->second :
                                         0xb4b4b4u;
                 info.side_tint = wall_tint( art.body_color, preset );
-                info.cap_tint = wall_tint( art.top_color, preset );
+                // The cap a shade lighter than the sides, so the top of a wall reads as a top
+                // even where the paint is one colour.
+                info.cap_tint = lighten( wall_tint( art.top_color, preset ), 1.18f );
             }
         }
     }
@@ -992,7 +1008,7 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                 // A bench or table runs along its row (x before the turn): a seat about 0.6 tile
                 // wide across the middle of the tile, the length of the tile when it continues
                 // next door, a little shorter when it stands alone.
-                constexpr float seat = 0.62f;
+                constexpr float seat = 0.5f;
                 constexpr float lone = 0.7f;
                 const bool continues = ( joined & ( face_west | face_east | face_north | face_south ) ) != 0;
                 layout.y0 = ( 1.0f - seat ) * 0.5f;

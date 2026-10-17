@@ -153,8 +153,9 @@ void pixel_minimap::reset()
     screen_rect = SDL_Rect{ 0, 0, 0, 0 };
 }
 
-void pixel_minimap::build_batches( const tripoint_bub_ms &center )
+void pixel_minimap::build_batches( const tripoint_bub_ms &center, const float disc_radius )
 {
+    const SDL_FPoint pivot = player_pivot();
     terrain_batch_.clear();
     beacon_batch_.clear();
     has_blinking_beacons_ = false;
@@ -231,6 +232,14 @@ void pixel_minimap::build_batches( const tripoint_bub_ms &center )
                 fills_cell ? std::max( 1, snap_to_pixel( tf_.origin_y, tf_.scale_y,
                                        pos.y + pixel_size.y ) - origin_px.y )
                 : fixed_h );
+            if( disc_radius > 0.0f ) {
+                // Heading-up: a round map, which stays whole however it is turned.
+                const float dx = static_cast<float>( origin_px.x ) + extent_px.x * 0.5f - pivot.x;
+                const float dy = static_cast<float>( origin_px.y ) + extent_px.y * 0.5f - pivot.y;
+                if( dx * dx + dy * dy > disc_radius * disc_radius ) {
+                    continue;
+                }
+            }
             terrain_batch_.append_quad( origin_px.x, origin_px.y,
                                         extent_px.x, extent_px.y, to_fcolor( color ) );
 
@@ -291,35 +300,69 @@ void pixel_minimap::draw( const SDL_Rect &screen_rect, const tripoint_bub_ms &ce
     }
 
     set_screen_rect( screen_rect );
-    build_batches( center );
-    turn_to_heading();
+    const int heading = heading_up();
+    float disc_radius = 0.0f;
+    if( heading >= 0 ) {
+        // The largest disc around the player inside the drawn rectangle. The map covers that
+        // rectangle, so it covers the disc at every heading: no empty corners while turning.
+        const SDL_FPoint c = player_pivot();
+        const SDL_Rect &r = tf_.dest_rect;
+        disc_radius = std::max( 1.0f, std::min( { c.x - r.x, r.x + r.w - c.x, c.y - r.y,
+                                                  r.y + r.h - c.y
+                                                } ) );
+    }
+    build_batches( center, disc_radius );
+    if( heading >= 0 ) {
+        turn_to_heading( heading );
+    }
     present();
 }
 
-void pixel_minimap::turn_to_heading()
+int pixel_minimap::heading_up() const
 {
     // The first-person 3D view shows the minimap heading-up: the map turns under the player,
     // who stays where they are. Orbit mode, the flat view and the isometric layout stay north-up.
     if( type != pixel_minimap_type::ortho || !r3d::first_person() ||
         !get_option<bool>( "R3D_FP_MINIMAP_ROTATE" ) ) {
-        return;
+        return -1;
     }
-    const int heading = r3d::view_eighths();
-    if( heading == 0 ) {
-        return;
-    }
+    return r3d::view_eighths();
+}
+
+SDL_FPoint pixel_minimap::player_pivot() const
+{
     // The player's beacon is centred on the corner of their cell (see build_batches): turning
     // about that point keeps it exactly in place.
     const point mid = projector->get_tile_pos( { total_tiles_count.x / 2, total_tiles_count.y / 2 },
                       total_tiles_count );
-    const float cx = static_cast<float>( snap_to_pixel( tf_.origin_x, tf_.scale_x, mid.x ) );
-    const float cy = static_cast<float>( snap_to_pixel( tf_.origin_y, tf_.scale_y, mid.y ) );
-    const float turn = r3d::minimap_turn( heading );
-    const auto rotate = [cx, cy, turn]( float & x, float & y ) {
-        r3d::turn_on_screen( x, y, cx, cy, turn );
-    };
-    terrain_batch_.transform_positions( rotate );
-    beacon_batch_.transform_positions( rotate );
+    return { static_cast<float>( snap_to_pixel( tf_.origin_x, tf_.scale_x, mid.x ) ),
+             static_cast<float>( snap_to_pixel( tf_.origin_y, tf_.scale_y, mid.y ) ) };
+}
+
+void pixel_minimap::turn_to_heading( const int heading )
+{
+    const SDL_FPoint c = player_pivot();
+    if( heading != 0 ) {
+        const float turn = r3d::minimap_turn( heading );
+        const auto rotate = [c, turn]( float & x, float & y ) {
+            r3d::turn_on_screen( x, y, c.x, c.y, turn );
+        };
+        terrain_batch_.transform_positions( rotate );
+        beacon_batch_.transform_positions( rotate );
+    }
+    // A white arrow above the player's beacon pointing the way they face, which is always up.
+    const int beacon_h = std::max( static_cast<int>( projector->get_tile_size().y * tf_.scale_y *
+                                   settings.beacon_size / 2 ), 2 );
+    const int rows = std::max( 3, beacon_h );
+    const float tip_y = c.y - static_cast<float>( beacon_h + 2 + rows );
+    const SDL_FColor white = to_fcolor( SDL_Color{ 0xFF, 0xFF, 0xFF, 0xFF } );
+    const SDL_FColor outline = to_fcolor( SDL_Color{ 0x20, 0x20, 0x20, 0xFF } );
+    for( int row = 0; row < rows; ++row ) {
+        const float half = static_cast<float>( row );
+        const float y = tip_y + static_cast<float>( row );
+        beacon_batch_.append_quad( c.x - half - 1.0f, y, half * 2.0f + 3.0f, 1.0f, outline );
+        beacon_batch_.append_quad( c.x - half, y, half * 2.0f + 1.0f, 1.0f, white );
+    }
 }
 
 std::unique_ptr<pixel_minimap_projector> pixel_minimap::create_projector(

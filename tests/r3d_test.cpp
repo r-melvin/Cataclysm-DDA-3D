@@ -899,3 +899,25 @@ TEST_CASE( "r3d_first_person_level_tilt_adds_to_the_look_pitch", "[r3d]" )
     CHECK( cam.fp_forward().z < 0.0f );
     CHECK( cam.forward_eighths() == 2 );
 }
+
+TEST_CASE( "r3d_minimap_disc_stays_whole_when_turned", "[r3d]" )
+{
+    // The heading-up minimap keeps only cells within a disc around the player that fits in the
+    // drawn square; turning keeps distances, so every kept cell stays inside the square at every
+    // heading and the square is never left with an empty corner inside the disc.
+    const float cx = 50.0f;
+    const float cy = 60.0f;
+    const float radius = 40.0f;
+    for( int h = 0; h < 8; ++h ) {
+        for( float a = 0.0f; a < 6.28f; a += 0.3f ) {
+            for( float d = 0.0f; d <= radius; d += 7.5f ) {
+                float x = cx + d * std::cos( a );
+                float y = cy + d * std::sin( a );
+                r3d::turn_on_screen( x, y, cx, cy, r3d::minimap_turn( h ) );
+                CHECK( approx( std::hypot( x - cx, y - cy ), d ) );
+                CHECK( std::fabs( x - cx ) <= radius + 1e-3f );
+                CHECK( std::fabs( y - cy ) <= radius + 1e-3f );
+            }
+        }
+    }
+}

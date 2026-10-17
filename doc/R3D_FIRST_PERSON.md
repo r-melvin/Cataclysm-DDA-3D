@@ -17,8 +17,10 @@ must be on. Orbit mode is unchanged when the option is `orbit`.
 * Minimap heading-up: done (not yet seen in the game). With `PIXEL_MINIMAP` on and option
   `R3D_FP_MINIMAP_ROTATE` (default on), the pixel minimap turns in first person so the way you
   face points up; your beacon stays put and the map turns under it. North-up in orbit mode, in
-  the flat view and with an isometric tileset. At 45 degree headings the square map leaves its
-  corners empty (the minimap background shows there).
+  the flat view and with an isometric tileset. Heading-up, the map is round: only the largest
+  disc around you that fits the minimap is drawn, so turning never leaves empty corners (the
+  plain minimap background is outside the disc at every heading). A small white arrow above your
+  beacon points the way you face (always up).
 * Heading saved with the game: done (not yet seen in the game). `uistate.r3d_fp_heading` is
   written whenever the first-person heading changes and read back on load, so you load facing
   the way you saved. Loading in orbit mode keeps the orbit camera; switching to first person

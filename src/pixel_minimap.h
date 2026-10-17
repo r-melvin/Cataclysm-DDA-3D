@@ -54,9 +54,14 @@ class pixel_minimap
 
     private:
         void set_screen_rect( const SDL_Rect &screen_rect );
-        void build_batches( const tripoint_bub_ms &center );
-        // First person: turns the built batches so the 3D view's heading points up.
-        void turn_to_heading();
+        // disc_radius > 0 keeps only cells within that many pixels of the player (heading-up).
+        void build_batches( const tripoint_bub_ms &center, float disc_radius );
+        // First person heading-up minimap: the 3D view's heading (0..7), or -1 for north-up.
+        int heading_up() const;
+        // Where the player's beacon is centred on screen.
+        SDL_FPoint player_pivot() const;
+        // Turns the built batches so the heading points up and adds the heading arrow.
+        void turn_to_heading( int heading );
         void present();
 
         std::unique_ptr<pixel_minimap_projector> create_projector(

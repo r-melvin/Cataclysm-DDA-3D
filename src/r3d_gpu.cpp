@@ -153,7 +153,9 @@ bool gpu::init( SDL_Renderer *renderer )
     pci.vertex_input_state.num_vertex_attributes = 3;
     pci.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     pci.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
-    pci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    // Block faces are wound counter-clockwise seen from outside, so their backs can go: the
+    // cutaway then shows the floor and wall ends rather than the insides of what it cut.
+    pci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
     pci.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
     pci.depth_stencil_state.enable_depth_test = true;
     pci.depth_stencil_state.enable_depth_write = true;
@@ -163,22 +165,12 @@ bool gpu::init( SDL_Renderer *renderer )
     pci.target_info.depth_stencil_format = depth_format_;
     pci.target_info.has_depth_stencil_target = true;
     block_pipeline_ = SDL_CreateGPUGraphicsPipeline( device_, &pci );
-    // The ghost pass blends over the finished opaque picture and leaves the depth alone.
-    SDL_GPUColorTargetDescription ghost_target = color_target;
-    ghost_target.blend_state.enable_blend = true;
-    ghost_target.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
-    ghost_target.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
-    ghost_target.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
-    ghost_target.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
-    ghost_target.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
-    ghost_target.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
-    // Depth is still written, so of a ghosted tile's several faces only the nearest one or two
-    // blend: without it every face of the tile would pile up into a near-opaque block.
-    pci.target_info.color_target_descriptions = &ghost_target;
-    ghost_pipeline_ = SDL_CreateGPUGraphicsPipeline( device_, &pci );
+    // Billboards and flat sprites are seen from either side.
+    pci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    entity_pipeline_ = SDL_CreateGPUGraphicsPipeline( device_, &pci );
     SDL_ReleaseGPUShader( device_, vs );
     SDL_ReleaseGPUShader( device_, fs );
-    if( !block_pipeline_ || !ghost_pipeline_ ) {
+    if( !block_pipeline_ || !entity_pipeline_ ) {
         DebugLog( D_ERROR, DC_ALL ) << "r3d: SDL_CreateGPUGraphicsPipeline failed: " << SDL_GetError();
         shutdown();
         return false;
@@ -259,15 +251,15 @@ void gpu::shutdown()
         if( block_pipeline_ ) {
             SDL_ReleaseGPUGraphicsPipeline( device_, block_pipeline_ );
         }
-        if( ghost_pipeline_ ) {
-            SDL_ReleaseGPUGraphicsPipeline( device_, ghost_pipeline_ );
+        if( entity_pipeline_ ) {
+            SDL_ReleaseGPUGraphicsPipeline( device_, entity_pipeline_ );
         }
         if( sampler_ ) {
             SDL_ReleaseGPUSampler( device_, sampler_ );
         }
     }
     block_pipeline_ = nullptr;
-    ghost_pipeline_ = nullptr;
+    entity_pipeline_ = nullptr;
     sampler_ = nullptr;
     device_ = nullptr;
     renderer_ = nullptr;
@@ -524,10 +516,10 @@ void gpu::bind_block_pipeline()
     }
 }
 
-void gpu::bind_ghost_pipeline()
+void gpu::bind_entity_pipeline()
 {
-    if( pass_ && ghost_pipeline_ ) {
-        SDL_BindGPUGraphicsPipeline( pass_, ghost_pipeline_ );
+    if( pass_ && entity_pipeline_ ) {
+        SDL_BindGPUGraphicsPipeline( pass_, entity_pipeline_ );
     }
 }
 

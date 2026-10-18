@@ -439,11 +439,6 @@ void update_chunk_light( state &s, chunk_gpu &c, const tripoint_abs_sm &pos,
                          static_cast<uint8_t>( ( ( tile >> 0 ) & 255u ) * shade / 255u * r.tint_r / 255u ),
                          static_cast<uint8_t>( ( ( tile >> 8 ) & 255u ) * shade / 255u * r.tint_g / 255u ),
                          static_cast<uint8_t>( ( ( tile >> 16 ) & 255u ) * shade / 255u * r.tint_b / 255u ) );
-        // The light's alpha carries the vertex's tile within the chunk, so the cutaway can judge
-        // a face by the tile it belongs to rather than by where it lies (a face on a tile's
-        // edge would otherwise count for the neighbour). See r3d_block.vert.
-        c.light[i] = ( c.light[i] & 0x00ffffffu ) |
-                     ( static_cast<uint32_t>( r.ly * SEEX + r.lx ) << 24 );
     }
     s.device.upload( c.lights, c.light.data(),
                      static_cast<uint32_t>( c.light.size() * sizeof( uint32_t ) ), true );
@@ -458,26 +453,22 @@ void set_cutaway( block_uniforms &u, const mat4 &view_proj, float aspect, const 
     if( !get_option<bool>( "R3D_CUTAWAY" ) || p.z() != center.z() ) {
         return;
     }
-    ( void )view_proj;
-    ( void )aspect;
-    // Half-width in tiles of the cutaway across the view and, stretched by the pitch, its reach
-    // along the view towards the camera: a box of tiles in front of the player. Below the stub height nothing is cut, so the floor and
-    // low furniture around the player stay; what is cut is drawn again see-through by the ghost
-    // pass. See r3d_block.frag.
-    constexpr float radius = 1.6f;
+    // Radius in tiles around the player's middle, and the height (above their floor) below which
+    // nothing is cut, so the floor and low furniture around them stay.
+    constexpr float radius = 1.3f;
+    constexpr float keep_below = 0.3f;
+    const float base = floor_height;
     const vec3 middle = tile_to_world( { static_cast<float>( p.x() - center.x() ) + 0.5f,
-                                         static_cast<float>( p.y() - center.y() ) + 0.5f, 0.0f } );
-    const vec3 eye = cam.eye();
-    const vec3 target = cam.stretched_target();
-    const vec3 forward = normalize( vec3{ target.x - eye.x, target.y - eye.y, 0.0f } );
-    u.cut[0] = middle.x;
-    u.cut[1] = middle.y;
-    u.cut[2] = cutaway_stub_height;
-    u.cut[3] = radius;
-    u.cut2[0] = forward.x;
-    u.cut2[1] = forward.y;
-    u.cut2[2] = std::clamp( radius / std::max( std::sin( cam.pitch ), 0.25f ), radius, 3.0f );
-    u.cut2[3] = 0.0f;
+                                         static_cast<float>( p.y() - center.y() ) + 0.5f,
+                                         base + cutaway_stub_height } );
+    const vec3 at = transform_point( view_proj, middle );
+    const vec3 side = transform_point( view_proj, middle + cam.ground_right() * radius );
+    u.cut[0] = at.x;
+    u.cut[1] = at.y;
+    u.cut[2] = at.z;
+    u.cut[3] = std::abs( side.x - at.x );
+    u.cut2[0] = 1.0f / std::max( aspect, 0.01f );
+    u.cut2[1] = base + keep_below;
 }
 
 void apply_env_camera( camera &cam )
@@ -1064,8 +1055,8 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
                                  b.first_index, b.index_count, b.sheet, uniforms );
         }
     }
-    const float cut_radius = uniforms.cut[3];
     if( draw_entities ) {
+        s.device.bind_entity_pipeline();
         uniforms.cut[3] = 0.0f; // creatures in front of the player stay
         uniforms.offset[0] = 0.0f;
         uniforms.offset[1] = 0.0f;
@@ -1080,24 +1071,6 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
         for( const mesh_batch &b : entities.batches ) {
             s.device.draw_block( s.dyn_positions, s.dyn_lights, s.dyn_indices, b.first_index, b.index_count,
                                  b.sheet, uniforms );
-        }
-    }
-    // Ghost pass: what the cutaway removed from the opaque pass is drawn again, see-through and
-    // without depth writes, over the finished picture, so a wall in front of the player reads as
-    // a wall you look through rather than a wall with a hole.
-    uniforms.cut[3] = cut_radius;
-    if( uniforms.cut[3] > 0.0f ) {
-        s.device.bind_ghost_pipeline();
-        uniforms.pull[3] = 0.0f;
-        uniforms.cut2[3] = 1.0f;
-        for( const visible_chunk &vc : visible ) {
-            uniforms.offset[0] = vc.offset[0];
-            uniforms.offset[1] = vc.offset[1];
-            uniforms.offset[2] = vc.offset[2];
-            for( const mesh_batch &b : vc.chunk->batches ) {
-                s.device.draw_block( vc.chunk->positions, vc.chunk->lights, vc.chunk->indices,
-                                     b.first_index, b.index_count, b.sheet, uniforms );
-            }
         }
     }
     SDL_Texture *const result = s.device.end_frame();

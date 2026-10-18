@@ -163,6 +163,16 @@ struct point_f {
 
 constexpr std::array<uint8_t, 5> face_shade = { 255, 165, 212, 150, 185 };
 
+// Faces are wound counter-clockwise as seen from outside, so the pipeline can leave their backs
+// out. Tops and undersides are written in the sides' order below and turned with this.
+template<typename T>
+T reversed_winding( const T &quad )
+{
+    T out = quad;
+    std::swap( out[1], out[3] );
+    return out;
+}
+
 // All faces use the full sprite horizontally. Vertically the sprite spans one tile height starting
 // at z_base, so a shorter box shows only the lower part of it.
 // front: for a 3/4-view furniture sprite, the fraction at its bottom that shows the front; the
@@ -189,7 +199,7 @@ void emit_top( quad_sink &sink, const sprite_ref &s, int x, int y, float z, cons
     for( size_t i = 0; i < 4; ++i ) {
         uv[i] = base[( i + 4 - static_cast<size_t>( s.quarter_turns & 3 ) ) % 4];
     }
-    sink.add( s, c, uv, ref );
+    sink.add( s, reversed_winding( c ), reversed_winding( uv ), ref );
 }
 
 bool is_tall( const sprite_ref &s )
@@ -267,7 +277,9 @@ void emit_pane( quad_sink &sink, const sprite_ref &s, int x, int y, bool along_x
         const corners_t c = along_x ?
         corners_t{{ { cx - 0.5f, cy + side, z_top }, { cx + 0.5f, cy + side, z_top }, { cx + 0.5f, cy + side, z_base }, { cx - 0.5f, cy + side, z_base } }} :
         corners_t{{ { cx + side, cy + 0.5f, z_top }, { cx + side, cy - 0.5f, z_top }, { cx + side, cy - 0.5f, z_base }, { cx + side, cy + 0.5f, z_base } }};
+        // Seen from either side of the wall line.
         sink.add( s, c, uv, ref );
+        sink.add( s, reversed_winding( c ), reversed_winding( uv ), ref );
     }
     // The top edge, in the colour of the sprite's top rows.
     const float v_edge = s.v0 + ( s.v1 - s.v0 ) * 0.08f;
@@ -275,7 +287,7 @@ void emit_pane( quad_sink &sink, const sprite_ref &s, int x, int y, bool along_x
     const corners_t top = along_x ?
     corners_t{{ { cx - 0.5f, cy - half_thickness, z_top }, { cx + 0.5f, cy - half_thickness, z_top }, { cx + 0.5f, cy + half_thickness, z_top }, { cx - 0.5f, cy + half_thickness, z_top } }} :
     corners_t{{ { cx - half_thickness, cy - 0.5f, z_top }, { cx + half_thickness, cy - 0.5f, z_top }, { cx + half_thickness, cy + 0.5f, z_top }, { cx - half_thickness, cy + 0.5f, z_top } }};
-    sink.add( s, top, edge_uv, ref );
+    sink.add( s, reversed_winding( top ), reversed_winding( edge_uv ), ref );
 }
 
 // Quarter turns (front from south, clockwise) for a piece with its back to a wall: of the sides
@@ -371,7 +383,7 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
                 { ox + fx1, oy + fy1, z1 }, { ox + fx0, oy + fy1, z1 }
             }
         };
-        sink.add( s, c, uv, refs[0] );
+        sink.add( s, reversed_winding( c ), reversed_winding( uv ), refs[0] );
     }
 
     // A slab (bench seat, table top) only has sides as thick as itself, an underside, and legs.
@@ -426,7 +438,7 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
             { ox + fx1, oy + fy0, zs }, { ox + fx0, oy + fy0, zs }
         }
     };
-    sink.add( s, under, side_uv, refs[3] );
+    sink.add( s, reversed_winding( under ), reversed_winding( side_uv ), refs[3] );
 
     // Legs: every tile of a bench or table stands on one pair of legs, one at each side
     // across its row (the row runs along x before the turn), in the middle of the tile.
@@ -993,10 +1005,21 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                             emit_top( sink, terrain.cap, lx, ly, ts.height,
                                       tinted( make_ref( lx, ly, 0, 0, 0, face_shade[0] ), terrain.cap_tint ) );
                         } else if( terrain.elevation_split >= 0.0f ) {
-                            // The framing band at the top of the elevation tops the wall.
-                            emit_top_layers( sink, terrain, lx, ly, ts.height,
-                                             make_ref( lx, ly, 0, 0, 0, face_shade[0] ),
-                                             1.0f - terrain.elevation_split );
+                            // A plain cap in the paint: a patch from the middle of the
+                            // elevation's painted rows, scaled over the top.
+                            sprite_ref patch = terrain.sprite;
+                            const float dv = patch.v1 - patch.v0;
+                            const float du = patch.u1 - patch.u0;
+                            const float paint0 = terrain.elevation_split;
+                            patch.v0 = terrain.sprite.v0 + dv * ( paint0 + ( 1.0f - paint0 ) * 0.35f );
+                            patch.v1 = terrain.sprite.v0 + dv * ( paint0 + ( 1.0f - paint0 ) * 0.6f );
+                            patch.u0 += du * 0.2f;
+                            patch.u1 -= du * 0.2f;
+                            patch.size_y = patch.size_x;
+                            patch.quarter_turns = 0;
+                            patch.flip = false;
+                            emit_top( sink, patch, lx, ly, ts.height,
+                                      make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
                         } else {
                             emit_top_layers( sink, terrain, lx, ly, ts.height,
                                              make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );

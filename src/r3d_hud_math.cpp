@@ -67,14 +67,14 @@ vec3 sky_direction( float azimuth, float altitude )
 {
     // Azimuth 0 is south, positive towards the west (see sunlight_angle in calendar.cpp).
     const float ca = std::cos( altitude );
-    return { -std::sin( azimuth ) * ca, -std::cos( azimuth ) * ca, std::sin( altitude ) };
+    return { -std::sin( azimuth ) *ca, -std::cos( azimuth ) *ca, std::sin( altitude ) };
 }
 
 vec3 wind_velocity( int direction_deg, float speed )
 {
     // The wind comes from direction_deg, so it blows the opposite way.
     const float a = static_cast<float>( direction_deg ) * pi / 180.0f;
-    return { -std::sin( a ) * speed, -std::cos( a ) * speed, 0.0f };
+    return { -std::sin( a ) *speed, -std::cos( a ) *speed, 0.0f };
 }
 
 vec3 particle_position( uint32_t index, float seconds, const particle_field &field,

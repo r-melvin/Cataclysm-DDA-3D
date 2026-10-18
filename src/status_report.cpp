@@ -117,7 +117,8 @@ std::string status_report( const avatar &you )
             continue;
         }
         const int dist = rl_dist( you.pos_bub(), critter.pos_bub() );
-        std::string where = direction_name( direction_from( you.pos_bub().raw(), critter.pos_bub().raw() ) );
+        std::string where = direction_name( direction_from( you.pos_bub().raw(),
+                                            critter.pos_bub().raw() ) );
         hostiles.emplace_back( dist, string_format( _( "%1$s %2$d tiles %3$s" ), critter.get_name(), dist,
                                where ) );
     }

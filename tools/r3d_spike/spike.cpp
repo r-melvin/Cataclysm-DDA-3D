@@ -183,7 +183,7 @@ int main( int argc, char **argv )
 
     // Spot checks: centre of the near quad, spinning quad region, background, overlay.
     SDL_Surface *rgba = SDL_ConvertSurface( shot, SDL_PIXELFORMAT_RGBA32 );
-    auto px = [&]( int x, int y, const char *what ) {
+    auto px = [ &rgba ]( int x, int y, const char *what ) {
         const Uint8 *p = static_cast<const Uint8 *>( rgba->pixels ) + y * rgba->pitch + x * 4;
         std::printf( "%-28s (%3d,%3d) = %3d %3d %3d\n", what, x, y, p[0], p[1], p[2] );
     };

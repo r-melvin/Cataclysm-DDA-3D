@@ -56,8 +56,8 @@ void paint_sun( painter &p, int ox )
             const float r2 = x * x + y * y;
             if( r2 <= 1.0f ) {
                 // Brighter in the middle, warm at the rim.
-                const auto g = static_cast<uint8_t>( 255.0f - 60.0f * r2 );
-                const auto b = static_cast<uint8_t>( 200.0f - 120.0f * r2 );
+                const uint8_t g = static_cast<uint8_t>( 255.0f - 60.0f * r2 );
+                const uint8_t b = static_cast<uint8_t>( 200.0f - 120.0f * r2 );
                 p.put( ox + px, py, 255, g, b );
             }
         }
@@ -84,7 +84,7 @@ void paint_moon( painter &p, int ox, int phase )
             const bool lit = waxing ? x >= edge : -x >= std::cos( 6.2831853f - angle ) *
                              std::sqrt( std::max( 0.0f, 1.0f - y * y ) );
             if( lit ) {
-                const auto v = static_cast<uint8_t>( 235.0f - 30.0f * r2 );
+                const uint8_t v = static_cast<uint8_t>( 235.0f - 30.0f * r2 );
                 p.put( ox + px, py, v, v, static_cast<uint8_t>( v * 0.92f ) );
             } else {
                 // The dark part stays faintly visible, so a new moon is still a disc.
@@ -169,7 +169,8 @@ time_point sky_time()
     static const int shift = []() {
         const char *env = std::getenv( "CATA_R3D_TIME_SHIFT" );
         return env ? std::atoi( env ) : 0;
-    }();
+    }
+    ();
     return calendar::turn + time_duration::from_hours( shift );
 }
 

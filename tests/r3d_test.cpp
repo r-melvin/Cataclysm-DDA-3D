@@ -39,7 +39,9 @@ TEST_CASE( "r3d_matrix_inverse_round_trips", "[r3d]" )
 
 TEST_CASE( "r3d_camera_looks_at_target", "[r3d]" )
 {
-    for( bool ortho : { false, true } ) {
+    for( bool ortho : {
+             false, true
+         } ) {
         r3d::camera cam;
         cam.orthographic = ortho;
         cam.target = { 10.5f, -4.5f, 1.5f };
@@ -70,8 +72,12 @@ TEST_CASE( "r3d_camera_screen_ray_round_trips_projection", "[r3d]" )
     cam.yaw = -0.4f;
     const float aspect = 1.78f;
     const r3d::mat4 vp = cam.view_projection( aspect );
-    for( float nx : { -0.8f, 0.0f, 0.5f } ) {
-        for( float ny : { -0.6f, 0.2f, 0.9f } ) {
+    for( float nx : {
+             -0.8f, 0.0f, 0.5f
+             } ) {
+        for( float ny : {
+                 -0.6f, 0.2f, 0.9f
+                 } ) {
             const r3d::ray r = cam.screen_ray( nx, ny, aspect );
             // Any point along the ray must project back to the same screen position.
             const r3d::vec3 p = r.origin + r.dir * 20.0f;
@@ -208,7 +214,9 @@ TEST_CASE( "r3d_pick_finds_tile_drawn_under_cursor", "[r3d]" )
         }
         return x == 2 && y == -3 ? 1.0f : 0.1f;
     };
-    for( float yaw : { 0.0f, 0.9f, 2.6f, 4.4f } ) {
+    for( float yaw : {
+             0.0f, 0.9f, 2.6f, 4.4f
+         } ) {
         for( int variant = 0; variant < 3; ++variant ) {
             const bool ortho = variant == 1;
             r3d::camera cam;
@@ -275,14 +283,14 @@ TEST_CASE( "r3d_raycast_matches_reference", "[r3d]" )
             const int k = kind( rng );
             h = k < 5 ? 0.0f : ( k < 7 ? 0.1f : ( k < 9 ? 0.5f : 1.0f ) );
         }
-        const r3d::column_height_fn fn = [&]( int x, int y, int z ) {
+        const r3d::column_height_fn fn = [ &heights ]( int x, int y, int z ) {
             if( x < 0 || y < 0 || z < 0 || x >= size || y >= size || z >= layers ) {
                 return 0.0f;
             }
             return heights[( z * size + y ) * size + x];
         };
         for( int ray_idx = 0; ray_idx < 200; ++ray_idx ) {
-            const r3d::vec3 o{ unit( rng ) * size, unit( rng ) * size, unit( rng ) * layers + 0.5f };
+            const r3d::vec3 o{ unit( rng ) *size, unit( rng ) *size, unit( rng ) *layers + 0.5f };
             const r3d::vec3 d = r3d::normalize( { unit( rng ) - 0.5f, unit( rng ) - 0.5f, unit( rng ) - 0.7f } );
             if( r3d::length( d ) < 0.5f ) {
                 continue;
@@ -565,7 +573,9 @@ TEST_CASE( "r3d_particles_drift_with_the_wind_and_stay_in_their_box", "[r3d]" )
     double sum_dx = 0.0;
     double sum_dz = 0.0;
     for( uint32_t i = 0; i < 200; ++i ) {
-        for( float t : { 0.0f, 0.37f, 5.0f, 123.4f } ) {
+        for( float t : {
+                 0.0f, 0.37f, 5.0f, 123.4f
+             } ) {
             const r3d::vec3 p = r3d::particle_position( i, t, f, { 3.5f, -2.0f, 0.0f } );
             CHECK( p.x >= -10.0f );
             CHECK( p.x < 10.0f + 1e-3f );

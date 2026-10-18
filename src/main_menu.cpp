@@ -529,7 +529,8 @@ void main_menu::init_strings()
     vSettingsSubItems.emplace_back( pgettext( "Main Menu|Settings", "Sa<f|F>emode" ) );
     vSettingsSubItems.emplace_back( pgettext( "Main Menu|Settings", "Colo<r|R>s" ) );
     vSettingsSubItems.emplace_back( pgettext( "Main Menu|Settings", "Menu <S|s>tyle" ) );
-    vSettingsSubItems.emplace_back( pgettext( "Main Menu|Settings", "Menu style prev<i|I>ew (ImGui demo)" ) );
+    vSettingsSubItems.emplace_back( pgettext( "Main Menu|Settings",
+                                    "Menu style prev<i|I>ew (ImGui demo)" ) );
 
     vSettingsHotkeys.clear();
     for( const std::string &item : vSettingsSubItems ) {

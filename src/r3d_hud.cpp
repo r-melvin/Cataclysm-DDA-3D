@@ -51,7 +51,7 @@ std::optional<vec3> hud_frame::screen( const vec3 &tile ) const
     if( w_clip <= 1e-4f ) {
         return std::nullopt;
     }
-    return vec3{ x + ( ndc.x * 0.5f + 0.5f ) * w, y + ( 0.5f - ndc.y * 0.5f ) * h, ndc.z };
+    return vec3{ x + ( ndc.x * 0.5f + 0.5f ) *w, y + ( 0.5f - ndc.y * 0.5f ) *h, ndc.z };
 }
 
 vec3 hud_frame::tile_point( const tripoint_bub_ms &p, float height ) const
@@ -154,21 +154,24 @@ void fill_triangles( SDL_Renderer *renderer, const std::vector<SDL_FPoint> &poin
     SDL_RenderGeometry( renderer, nullptr, v.data(), static_cast<int>( v.size() ), nullptr, 0 );
 }
 
+void draw_arrow_head( SDL_Renderer *renderer, float x, float y, float angle, float s, rgba8 col )
+{
+    const float ca = std::cos( angle );
+    const float sa = std::sin( angle );
+    const auto at = [ x, y, ca, sa ]( float fx, float fy ) {
+        return SDL_FPoint{ x + fx *ca - fy * sa, y + fx *sa + fy * ca };
+    };
+    fill_triangles( renderer, { at( s, 0.0f ), at( -s * 0.6f, s * 0.7f ), at( -s * 0.6f, -s * 0.7f ) },
+                    col );
+}
+
 // An arrowhead at (x, y) pointing along angle (screen radians, y down), with a dark outline so
 // it reads on any picture.
 void draw_arrow( SDL_Renderer *renderer, float x, float y, float angle, float size, rgba8 c )
 {
-    const auto head = [&]( float s, rgba8 col ) {
-        const float ca = std::cos( angle );
-        const float sa = std::sin( angle );
-        const auto at = [&]( float fx, float fy ) {
-            return SDL_FPoint{ x + fx * ca - fy * sa, y + fx * sa + fy * ca };
-        };
-        fill_triangles( renderer, { at( s, 0.0f ), at( -s * 0.6f, s * 0.7f ), at( -s * 0.6f, -s * 0.7f ) },
-                        col );
-    };
-    head( size + 2.0f, rgba8{ 0, 0, 0, 200 } );
-    head( size, c );
+
+    draw_arrow_head( renderer, x, y, angle, size + 2.0f, rgba8{ 0, 0, 0, 200 } );
+    draw_arrow_head( renderer, x, y, angle, size, c );
 }
 
 // Pointers at the edge of the view towards hostiles the player sees and sounds the player heard
@@ -187,7 +190,8 @@ void draw_edge_arrows( SDL_Renderer *renderer, const hud_frame &frame )
     // Margins: the arrows sit a little inside the picture.
     const float margin_x = 24.0f / std::max( frame.w, 1.0f ) * 2.0f;
     const float margin_y = 24.0f / std::max( frame.h, 1.0f ) * 2.0f;
-    const auto consider = [&]( const tripoint_bub_ms & p, bool hostile ) {
+    const auto consider = [ &frame, margin_x, margin_y, &marks, &you ]( const tripoint_bub_ms & p,
+    bool hostile ) {
         float w_clip = 0.0f;
         const vec3 c = frame.clip( frame.tile_point( p, 0.5f ), w_clip );
         const edge_mark m = place_edge_mark( c.x, c.y, w_clip, margin_x, margin_y );
@@ -225,7 +229,8 @@ void draw_edge_arrows( SDL_Renderer *renderer, const hud_frame &frame )
         const float sy = frame.y + ( 0.5f - k.m.y * 0.5f ) * frame.h;
         // Closer things get bigger arrows; another level dims the arrow.
         const float size = std::clamp( 14.0f - static_cast<float>( k.dist ) * 0.15f, 7.0f, 14.0f );
-        rgba8 c = k.hostile ? rgba8{ 235, 50, 40, 255 } : rgba8{ 250, 210, 60, 255 };
+        rgba8 c = k.hostile ? rgba8{ 235, 50, 40, 255 } :
+                  rgba8{ 250, 210, 60, 255 };
         if( k.dz != 0 ) {
             c.a = 170;
         }
@@ -288,7 +293,8 @@ float bearing_to( const tripoint_abs_omt &target )
 {
     const tripoint_abs_ms from = get_avatar().pos_abs();
     const tripoint_abs_ms to = project_to<coords::ms>( target ) + tripoint_rel_ms( SEEX, SEEY, 0 );
-    return map_bearing( static_cast<float>( to.x() - from.x() ), static_cast<float>( to.y() - from.y() ) );
+    return map_bearing( static_cast<float>( to.x() - from.x() ),
+                        static_cast<float>( to.y() - from.y() ) );
 }
 
 // A compass tape along the top of the view, centred on where the camera looks: the cardinal
@@ -304,7 +310,7 @@ void draw_compass( SDL_Renderer *renderer, const hud_frame &frame, const atmosph
     const float top = frame.y + 4.0f;
     const float height = 18.0f;
     const float forward = camera_forward_bearing( frame.cam.yaw );
-    const auto x_of = [&]( float bearing ) {
+    const auto x_of = [ cx, forward, half_w ]( float bearing ) {
         return cx + bearing_delta( forward, bearing ) / pi * half_w;
     };
     SDL_SetRenderDrawBlendMode( renderer, SDL_BLENDMODE_BLEND );
@@ -335,7 +341,7 @@ void draw_compass( SDL_Renderer *renderer, const hud_frame &frame, const atmosph
             float tw = 0.0f;
             float th = 0.0f;
             SDL_GetTextureSize( frame.sky->sheet.get(), &tw, &th );
-            const SDL_FRect src{ s.u0 * tw, s.v0 * th, ( s.u1 - s.u0 ) * tw, ( s.v1 - s.v0 ) * th };
+            const SDL_FRect src{ s.u0 * tw, s.v0 * th, ( s.u1 - s.u0 ) *tw, ( s.v1 - s.v0 ) *th };
             const SDL_FRect dst{ x - 6.0f, top + height + 1.0f, 12.0f, 12.0f };
             SDL_RenderTexture( renderer, frame.sky->sheet.get(), &src, &dst );
         }
@@ -424,7 +430,8 @@ class hud_events : public event_subscriber
                 hit_ticks = SDL_GetTicks();
                 hit_from = guess_attacker( you );
             } else if( e.type() == event_type::avatar_enters_omt ) {
-                const std::string name = display::current_position_text( tripoint_abs_omt( e.get<tripoint>( "pos" ) ) );
+                const std::string name = display::current_position_text( tripoint_abs_omt(
+                                             e.get<tripoint>( "pos" ) ) );
                 if( name != place ) {
                     place = name;
                     place_ticks = SDL_GetTicks();
@@ -486,7 +493,8 @@ void draw_hit_direction( SDL_Renderer *renderer, const hud_frame &frame )
     const float strength = 1.0f - static_cast<float>( now - ev.hit_ticks ) / fade_ms;
     const SDL_FColor outer{ 0.9f, 0.05f, 0.05f, 0.75f * strength };
     const SDL_FColor inner{ 0.9f, 0.05f, 0.05f, 0.0f };
-    const auto quad = [&]( SDL_FPoint a, SDL_FPoint b, SDL_FPoint c, SDL_FPoint d ) {
+    const auto quad = [ &outer, &inner, renderer ]( SDL_FPoint a, SDL_FPoint b, SDL_FPoint c,
+    SDL_FPoint d ) {
         // a-b on the edge (opaque), c-d inside (clear).
         const SDL_Vertex v[6] = {
             { a, outer, {} }, { b, outer, {} }, { c, inner, {} },

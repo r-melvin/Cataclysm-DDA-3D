@@ -39,7 +39,9 @@ TEST_CASE( "r3d_matrix_inverse_round_trips", "[r3d]" )
 
 TEST_CASE( "r3d_camera_looks_at_target", "[r3d]" )
 {
-    for( bool ortho : { false, true } ) {
+    for( bool ortho : {
+             false, true
+         } ) {
         r3d::camera cam;
         cam.orthographic = ortho;
         cam.target = { 10.5f, -4.5f, 1.5f };
@@ -70,8 +72,12 @@ TEST_CASE( "r3d_camera_screen_ray_round_trips_projection", "[r3d]" )
     cam.yaw = -0.4f;
     const float aspect = 1.78f;
     const r3d::mat4 vp = cam.view_projection( aspect );
-    for( float nx : { -0.8f, 0.0f, 0.5f } ) {
-        for( float ny : { -0.6f, 0.2f, 0.9f } ) {
+    for( float nx : {
+             -0.8f, 0.0f, 0.5f
+             } ) {
+        for( float ny : {
+                 -0.6f, 0.2f, 0.9f
+                 } ) {
             const r3d::ray r = cam.screen_ray( nx, ny, aspect );
             // Any point along the ray must project back to the same screen position.
             const r3d::vec3 p = r.origin + r.dir * 20.0f;
@@ -208,7 +214,9 @@ TEST_CASE( "r3d_pick_finds_tile_drawn_under_cursor", "[r3d]" )
         }
         return x == 2 && y == -3 ? 1.0f : 0.1f;
     };
-    for( float yaw : { 0.0f, 0.9f, 2.6f, 4.4f } ) {
+    for( float yaw : {
+             0.0f, 0.9f, 2.6f, 4.4f
+         } ) {
         for( int variant = 0; variant < 3; ++variant ) {
             const bool ortho = variant == 1;
             r3d::camera cam;
@@ -275,14 +283,14 @@ TEST_CASE( "r3d_raycast_matches_reference", "[r3d]" )
             const int k = kind( rng );
             h = k < 5 ? 0.0f : ( k < 7 ? 0.1f : ( k < 9 ? 0.5f : 1.0f ) );
         }
-        const r3d::column_height_fn fn = [&]( int x, int y, int z ) {
+        const r3d::column_height_fn fn = [ &heights ]( int x, int y, int z ) {
             if( x < 0 || y < 0 || z < 0 || x >= size || y >= size || z >= layers ) {
                 return 0.0f;
             }
             return heights[( z * size + y ) * size + x];
         };
         for( int ray_idx = 0; ray_idx < 200; ++ray_idx ) {
-            const r3d::vec3 o{ unit( rng ) * size, unit( rng ) * size, unit( rng ) * layers + 0.5f };
+            const r3d::vec3 o{ unit( rng ) *size, unit( rng ) *size, unit( rng ) *layers + 0.5f };
             const r3d::vec3 d = r3d::normalize( { unit( rng ) - 0.5f, unit( rng ) - 0.5f, unit( rng ) - 0.7f } );
             if( r3d::length( d ) < 0.5f ) {
                 continue;
@@ -598,7 +606,7 @@ TEST_CASE( "r3d_first_person_frustum_sees_ahead_not_behind", "[r3d]" )
     const r3d::frustum f = cam.view_frustum( 1.5f );
     const r3d::vec3 stretched_eye = cam.eye();
     const r3d::vec3 eye{ stretched_eye.x, stretched_eye.y, stretched_eye.z / cam.z_scale };
-    const auto box_at = [&]( float dx, float dy ) {
+    const auto box_at = [ &eye ]( float dx, float dy ) {
         return r3d::aabb{ { eye.x + dx - 0.4f, eye.y + dy - 0.4f, eye.z - 0.4f },
             { eye.x + dx + 0.4f, eye.y + dy + 0.4f, eye.z + 0.4f } };
     };
@@ -615,7 +623,9 @@ TEST_CASE( "r3d_first_person_projection_keeps_the_horizontal_field_of_view", "[r
 {
     r3d::camera cam = first_person_camera( 0 );
     cam.fovx = 1.5708f;
-    for( float aspect : { 1.0f, 1.6f, 2.4f } ) {
+    for( float aspect : {
+             1.0f, 1.6f, 2.4f
+         } ) {
         // A point 5 ahead and 5 to the right sits at the right edge of a 90 degree view.
         const r3d::vec3 point = cam.eye() + r3d::vec3{ 5.0f, 5.0f, 0.0f };
         const r3d::vec3 ndc = r3d::transform_point( cam.view_projection( aspect ), point );
@@ -624,7 +634,9 @@ TEST_CASE( "r3d_first_person_projection_keeps_the_horizontal_field_of_view", "[r
     }
     // A tall, narrow picture keeps 90 degrees up and down instead (5 ahead, 5 up: the top
     // edge; z is stretched by z_scale in the view), and is narrower across.
-    for( float aspect : { 0.5f, 0.75f } ) {
+    for( float aspect : {
+             0.5f, 0.75f
+         } ) {
         const r3d::vec3 point = cam.eye() + r3d::vec3{ 0.0f, 5.0f, 5.0f };
         const r3d::vec3 world{ point.x, point.y, point.z / cam.z_scale };
         const r3d::vec3 ndc = r3d::transform_point( cam.view_projection( aspect ), world );
@@ -632,7 +644,7 @@ TEST_CASE( "r3d_first_person_projection_keeps_the_horizontal_field_of_view", "[r
         CHECK( approx( cam.fp_fovy( aspect ), 1.5708f ) );
         CHECK( cam.fp_fovx( aspect ) < 1.5708f );
         const r3d::vec3 side = cam.eye() + r3d::vec3{ 5.0f * std::tan( cam.fp_fovx( aspect ) * 0.5f ),
-                               5.0f, 0.0f };
+                        5.0f, 0.0f };
         const r3d::vec3 side_world{ side.x, side.y, side.z / cam.z_scale };
         CHECK( approx( r3d::transform_point( cam.view_projection( aspect ), side_world ).x, 1.0f, 1e-2f ) );
     }
@@ -882,7 +894,9 @@ TEST_CASE( "r3d_ceilings_close_everything_but_open_air", "[r3d]" )
     // It has no other faces: the mesher draws the frame itself.
     CHECK( ( r3d::visible_faces( pane, nb ) & ~r3d::face_ceiling ) == 0 );
     // A window pane, a table or a shrub upstairs leaves no hole in the ceiling below.
-    for( const r3d::shape &up : { pane, table, upright } ) {
+    for( const r3d::shape &up : {
+             pane, table, upright
+         } ) {
         nb.up = up;
         CHECK( ( r3d::visible_faces( floor, nb ) & r3d::face_ceiling ) != 0 );
     }

@@ -308,7 +308,7 @@ void pixel_minimap::draw( const SDL_Rect &screen_rect, const tripoint_bub_ms &ce
         const SDL_FPoint c = player_pivot();
         const SDL_Rect &r = tf_.dest_rect;
         disc_radius = std::max( 1.0f, std::min( { c.x - r.x, r.x + r.w - c.x, c.y - r.y,
-                                                  r.y + r.h - c.y
+                                                r.y + r.h - c.y
                                                 } ) );
     }
     build_batches( center, disc_radius );

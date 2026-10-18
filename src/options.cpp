@@ -2713,7 +2713,8 @@ void options_manager::add_options_graphics()
 
         get_option( "R3D_FP_MINIMAP_ROTATE" ).setPrerequisite( "RENDERER_3D" );
 
-        add( "R3D_FP_OCCLUDE_UNSEEN", page_id, to_translation( "3D first-person: unexplored places are solid" ),
+        add( "R3D_FP_OCCLUDE_UNSEEN", page_id,
+             to_translation( "3D first-person: unexplored places are solid" ),
              to_translation( "In first person, places you have never seen are drawn solid black, so an unexplored wall hides the rooms behind it as it would in reality.  Off leaves them out, so you can see known rooms through unknown walls." ),
              true, COPT_CURSES_HIDE
            );

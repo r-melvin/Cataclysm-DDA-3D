@@ -49,6 +49,54 @@ uint32_t no_pull( uint32_t color )
     return color & 0x00ffffffu;
 }
 
+// Geometry and depth shared by the sprite layers of one billboard.
+struct billboard_geometry {
+    quad_sink &sink;
+    const vec3 &right_world;
+    const vec3 &up_world;
+    float scale;
+    float z_scale;
+    float tx;
+    float ty;
+    float tz;
+    float cx;
+    float cy;
+    float z_base;
+    bool mirrored;
+    int depth;
+    const std::array<uint32_t, 4> &colors;
+
+    void emit_layer( const sprite_ref &s ) {
+        if( !s.valid ) {
+            return;
+        }
+        const float lw = std::clamp( s.size_x, 0.25f, 4.0f ) * scale;
+        const float lh = std::clamp( s.size_y, 0.25f, 6.0f ) * scale;
+        const float rx = right_world.x * lw * 0.5f;
+        const float ry = -right_world.y * lw * 0.5f;
+        const float ux = up_world.x * lh;
+        const float uy = -up_world.y * lh;
+        const float uz = up_world.z * lh / z_scale;
+        // The flat view draws a sprite offset_y pixels below its tile's top edge, so its bottom
+        // row lands (offset_y + height - tile) below the tile's bottom: the same shift here,
+        // along the screen's up, keeps a 48-row body and 36-row clothes on the same feet.
+        const float drop = ( s.offset_y + s.size_y - 1.0f ) * scale;
+        const float side = s.offset_x * scale;
+        const float lift = 0.01f * static_cast<float>( depth++ );
+        const float ox = cx + tx * lift - up_world.x * drop + right_world.x * side;
+        const float oy = cy + ty * lift + up_world.y * drop - right_world.y * side;
+        const float oz = z_base + tz * lift - up_world.z * drop / z_scale;
+        const float ul = mirrored ? s.u1 : s.u0;
+        const float ur = mirrored ? s.u0 : s.u1;
+        const uvs_t uv = {{ { ul, s.v0 }, { ur, s.v0 }, { ur, s.v1 }, { ul, s.v1 } }};
+        const corners_t c = {{ { ox - rx + ux, oy - ry + uy, oz + uz }, { ox + rx + ux, oy + ry + uy, oz + uz },
+                { ox + rx, oy + ry, oz }, { ox - rx, oy - ry, oz }
+            }
+        };
+        sink.add_colored( s, c, uv, light_ref{}, colors );
+    }
+};
+
 // Camera-facing upright quads standing on the tile centre, sized like the first layer's sprite
 // is in the flat view (big trees are several tiles tall). Later layers (clothing over a body) sit
 // slightly closer to the camera. Corners are in scene-frame tile space.
@@ -89,46 +137,19 @@ void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &laye
     // full size and detail they have in the flat view instead of being squashed by the pitch.
     // Each layer keeps its own sprite's size, standing on the same feet: a 48-row body under
     // 36-row clothing, as the flat view draws them.
-    int depth = 0;
-    auto layer = [&]( const sprite_ref & s ) {
-        if( !s.valid ) {
-            return;
-        }
-        const float lw = std::clamp( s.size_x, 0.25f, 4.0f ) * scale;
-        const float lh = std::clamp( s.size_y, 0.25f, 6.0f ) * scale;
-        const float rx = right_world.x * lw * 0.5f;
-        const float ry = -right_world.y * lw * 0.5f;
-        const float ux = up_world.x * lh;
-        const float uy = -up_world.y * lh;
-        const float uz = up_world.z * lh / z_scale;
-        // The flat view draws a sprite offset_y pixels below its tile's top edge, so its bottom
-        // row lands (offset_y + height - tile) below the tile's bottom: the same shift here,
-        // along the screen's up, keeps a 48-row body and 36-row clothes on the same feet.
-        const float drop = ( s.offset_y + s.size_y - 1.0f ) * scale;
-        const float side = s.offset_x * scale;
-        const float lift = 0.01f * static_cast<float>( depth++ );
-        const float ox = cx + tx * lift - up_world.x * drop + right_world.x * side;
-        const float oy = cy + ty * lift + up_world.y * drop - right_world.y * side;
-        const float oz = z_base + tz * lift - up_world.z * drop / z_scale;
-        const float ul = mirrored ? s.u1 : s.u0;
-        const float ur = mirrored ? s.u0 : s.u1;
-        const uvs_t uv = {{ { ul, s.v0 }, { ur, s.v0 }, { ur, s.v1 }, { ul, s.v1 } }};
-        const corners_t c = {{ { ox - rx + ux, oy - ry + uy, oz + uz }, { ox + rx + ux, oy + ry + uy, oz + uz },
-                { ox + rx, oy + ry, oz }, { ox - rx, oy - ry, oz }
-            }
-        };
-        sink.add_colored( s, c, uv, light_ref{}, colors );
-    };
+    billboard_geometry geometry{ sink, right_world, up_world, scale, z_scale, tx, ty, tz,
+                                 cx, cy, z_base, mirrored, 0, colors };
     for( const tile_info *t : layers ) {
         if( t ) {
-            layer( t->backdrop );
-            layer( t->sprite );
+            geometry.emit_layer( t->backdrop );
+            geometry.emit_layer( t->sprite );
         }
     }
 }
 
 // Sprite lying flat at height z, size tiles wide.
-void emit_flat( quad_sink &sink, const tile_info &sprite, float cx, float cy, float z, uint32_t color,
+void emit_flat( quad_sink &sink, const tile_info &sprite, float cx, float cy, float z,
+                uint32_t color,
                 float size = item_size )
 {
     const float h = size * 0.5f;
@@ -136,7 +157,9 @@ void emit_flat( quad_sink &sink, const tile_info &sprite, float cx, float cy, fl
             { cx - h, cy + h, z }
         }
     };
-    for( const sprite_ref *s : { &sprite.backdrop, &sprite.sprite } ) {
+    for( const sprite_ref *s : {
+             &sprite.backdrop, &sprite.sprite
+         } ) {
         if( !s->valid ) {
             continue;
         }
@@ -157,7 +180,9 @@ void emit_stand( quad_sink &sink, const tile_info &sprite, const vec3 &right_wor
             { cx - rx, cy - ry, z }
         }
     };
-    for( const sprite_ref *s : { &sprite.backdrop, &sprite.sprite } ) {
+    for( const sprite_ref *s : {
+             &sprite.backdrop, &sprite.sprite
+         } ) {
         if( !s->valid ) {
             continue;
         }
@@ -220,18 +245,18 @@ chunk_mesh build_entity_mesh( const entity_view &view )
     const float ahead_x = ahead_len > 0.0f ? ahead_world.x / ahead_len : 0.0f;
     const float ahead_y = ahead_len > 0.0f ? -ahead_world.y / ahead_len : 1.0f;
 
-    auto in_range = [&]( const tripoint_bub_ms & p, int radius ) {
+    auto in_range = [ &view ]( const tripoint_bub_ms & p, int radius ) {
         return p.z() >= view.z_lo && p.z() <= view.z_hi &&
                std::abs( p.x() - view.center.x() ) <= radius &&
                std::abs( p.y() - view.center.y() ) <= radius;
     };
-    auto frame_x = [&]( const tripoint_bub_ms & p ) {
+    auto frame_x = [ &view ]( const tripoint_bub_ms & p ) {
         return static_cast<float>( p.x() - view.center.x() ) + 0.5f;
     };
-    auto frame_y = [&]( const tripoint_bub_ms & p ) {
+    auto frame_y = [ &view ]( const tripoint_bub_ms & p ) {
         return static_cast<float>( p.y() - view.center.y() ) + 0.5f;
     };
-    auto frame_z = [&]( const tripoint_bub_ms & p ) {
+    auto frame_z = [ &view ]( const tripoint_bub_ms & p ) {
         return static_cast<float>( p.z() - view.center.z() );
     };
 
@@ -279,7 +304,8 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         if( !u.info ) {
             continue;
         }
-        emit_billboard( sink, { u.info }, right, up, toward, view.cam.z_scale, frame_x( u.pos ), frame_y( u.pos ),
+        emit_billboard( sink, { u.info }, right, up, toward, view.cam.z_scale, frame_x( u.pos ),
+                        frame_y( u.pos ),
                         frame_z( u.pos ) + u.z_base, view.light( u.pos ) );
     }
 
@@ -312,7 +338,8 @@ chunk_mesh build_entity_mesh( const entity_view &view )
         static bool logged = false;
         if( debug_layers && critter.is_avatar() && !logged ) {
             logged = true;
-            const cata_tiles::character_layers looks = view.tiles.get_character_layers( *critter.as_character() );
+            const cata_tiles::character_layers looks = view.tiles.get_character_layers(
+                        *critter.as_character() );
             for( size_t i = 0; i < looks.ids.size() && i < layers.size(); ++i ) {
                 const sprite_ref &m = layers[i]->main();
                 DebugLog( D_INFO, DC_ALL ) << "r3d layer " << i << " " << looks.ids[i].first << " valid=" << m.valid

@@ -174,7 +174,8 @@ void release_dynamic( state &s )
 }
 
 // Makes sure a dynamic buffer holds at least bytes, then queues the data for upload.
-bool upload_dynamic( state &s, SDL_GPUBuffer *&buffer, uint32_t &capacity, SDL_GPUBufferUsageFlags usage,
+bool upload_dynamic( state &s, SDL_GPUBuffer *&buffer, uint32_t &capacity,
+                     SDL_GPUBufferUsageFlags usage,
                      const void *data, uint32_t bytes )
 {
     if( !buffer || capacity < bytes ) {
@@ -257,7 +258,7 @@ std::shared_ptr<const wall_sides> load_wall_sides( gpu &device )
         }
         JsonObject jo = *json;
         jo.allow_omitted_members();
-        auto sides = std::make_shared<wall_sides>();
+        std::shared_ptr<wall_sides> sides = std::make_shared<wall_sides>();
         sides->cell = jo.get_int( "cell" );
         for( const std::string name : jo.get_array( "textures" ) ) {
             sides->names.push_back( name );
@@ -590,7 +591,7 @@ void update_fp_ease( state &s, const tripoint_abs_ms &pos, float surface, float 
         length = 0;
     }
     // What is still to be shown of the ease in progress: it fades out cubically.
-    auto remaining = [&]() {
+    auto remaining = [ &s, now ]() {
         if( s.fp_ease_ms == 0 || now - s.fp_ease_start >= s.fp_ease_ms ) {
             return 0.0f;
         }
@@ -685,6 +686,60 @@ void maybe_take_screenshot( state &s )
     }
 }
 
+float picking_column_height( state &s, const shown_view &v, const map &here,
+                             const creature_tracker &creatures, const avatar &you, int dx, int dy, int dz )
+{
+    const tripoint_bub_ms p( v.center.x() + dx, v.center.y() + dy, v.center.z() + dz );
+    if( p.z() < v.z_lo || p.z() > v.z_hi || !here.inbounds( p ) ) {
+        return 0.0f;
+    }
+    const float h = column_height( s, here, p );
+    const Creature *critter = creatures.creature_at( p );
+    // In first person the viewer's own column would block every ray from their eye.
+    if( critter && ( critter->is_avatar() ? !v.cam.first_person() : you.sees( here, *critter ) ) ) {
+        return 1.0f;
+    }
+    return h;
+}
+
+const submap *loaded_submap_at( const tripoint_abs_sm &base, int view_z, bool multi_z,
+                                const tripoint_abs_sm &p )
+{
+    const int dx = p.x() - base.x();
+    const int dy = p.y() - base.y();
+    if( dx < 0 || dy < 0 || dx >= MAPSIZE || dy >= MAPSIZE ||
+        p.z() < -OVERMAP_DEPTH || p.z() > OVERMAP_HEIGHT ) {
+        return nullptr;
+    }
+    if( p.z() != view_z && !multi_z ) {
+        return nullptr;
+    }
+    return MAPBUFFER.lookup_submap( p );
+}
+
+void append_frame_markers( state &s, const map &here, entity_view &entities_view,
+                           const std::vector<tripoint_bub_ms> &where, const std::string &id,
+                           bool box, bool large )
+{
+    const tile_info &sprite = s.cache.named( TILE_CATEGORY::NONE, id, *tilecontext );
+    for( const tripoint_bub_ms &p : where ) {
+        entities_view.markers.push_back( { p, column_height( s, here, p ), &sprite, box, large, false } );
+    }
+}
+
+float occluding_column_height( state &s, const map &here, const light_sampler &sampler,
+                               const tripoint_bub_ms &center, int z_lo, int z_hi, bool occlude_unseen, int dx, int dy, int dz )
+{
+    const tripoint_bub_ms c( center.x() + dx, center.y() + dy, center.z() + dz );
+    if( c.z() < z_lo || c.z() > z_hi || !here.inbounds( c ) ) {
+        return 0.0f;
+    }
+    if( !occlude_unseen && sampler.color_at( c ) == pack_light( 0, 0, 0 ) ) {
+        return 0.0f;
+    }
+    return column_height( s, here, c );
+}
+
 } // namespace
 
 namespace
@@ -743,8 +798,8 @@ void dump_view( const std::string &path, const tripoint_bub_ms &center )
         out << "first person heading " << cam.heading << " (" << names[( cam.heading % 8 + 8 ) % 8]
             << ")\n  eye (stretched world, scene frame: x east, y north, z up) " << eye.x << ","
             << eye.y << "," << eye.z << "\n  eye height " << cam.eye_height << " yaw "
-            << cam.fp_yaw() * deg << " deg, look pitch " << cam.look_pitch * deg << " + tilt "
-            << cam.tilt_pitch * deg << " + glance " << cam.glance_pitch * deg << " deg\n  fov x "
+            << cam.fp_yaw() * deg << " deg, look pitch " << cam.look_pitch *deg << " + tilt "
+            << cam.tilt_pitch *deg << " + glance " << cam.glance_pitch *deg << " deg\n  fov x "
             << cam.fp_fovx( aspect ) * deg << " deg, fov y " << cam.fp_fovy( aspect ) * deg
             << " deg at aspect "
             << aspect << "\n";
@@ -1174,18 +1229,8 @@ std::optional<tripoint_bub_ms> pick( float x, float y )
     const avatar &you = get_avatar();
     const creature_tracker &creatures = get_creature_tracker();
     // Visible creatures count as a full-height column so clicking their sprite picks their tile.
-    const column_height_fn height = [&]( int dx, int dy, int dz ) {
-        const tripoint_bub_ms p( v.center.x() + dx, v.center.y() + dy, v.center.z() + dz );
-        if( p.z() < v.z_lo || p.z() > v.z_hi || !here.inbounds( p ) ) {
-            return 0.0f;
-        }
-        const float h = column_height( s, here, p );
-        const Creature *critter = creatures.creature_at( p );
-        // In first person the viewer's own column would block every ray from their eye.
-        if( critter && ( critter->is_avatar() ? !v.cam.first_person() : you.sees( here, *critter ) ) ) {
-            return 1.0f;
-        }
-        return h;
+    const column_height_fn height = [ &v, &here, &s, &creatures, &you ]( int dx, int dy, int dz ) {
+        return picking_column_height( s, v, here, creatures, you, dx, dy, dz );
     };
     const float ndc_x = ( x - v.x ) / v.w * 2.0f - 1.0f;
     const float ndc_y = 1.0f - ( y - v.y ) / v.h * 2.0f;
@@ -1247,11 +1292,11 @@ void draw_fp_hud( state &s, SDL_Renderer *renderer, float x, float y, float w, f
     const avatar &you = get_avatar();
     map &here = get_map();
     const float view_yaw = cam.fp_yaw();
-    auto bearing_to = [&]( const tripoint_bub_ms & at ) {
+    auto bearing_to = [ &you, view_yaw ]( const tripoint_bub_ms & at ) {
         const tripoint_rel_ms d = at - you.pos_bub();
         return relative_bearing( static_cast<float>( d.x() ), static_cast<float>( d.y() ), view_yaw );
     };
-    auto fill = [&]( float rx, float ry, float rw, float rh, uint8_t r, uint8_t g, uint8_t b,
+    auto fill = [ renderer ]( float rx, float ry, float rw, float rh, uint8_t r, uint8_t g, uint8_t b,
     uint8_t a ) {
         SDL_SetRenderDrawBlendMode( renderer, SDL_BLENDMODE_BLEND );
         SDL_SetRenderDrawColor( renderer, r, g, b, a );
@@ -1259,7 +1304,7 @@ void draw_fp_hud( state &s, SDL_Renderer *renderer, float x, float y, float w, f
         SDL_RenderFillRect( renderer, &rect );
     };
     // Labels are drawn by the caller in the game's font (see hud_texts), centred on tx.
-    auto text = [&]( float tx, float ty, const std::string & str, unsigned char color ) {
+    auto text = [ &s ]( float tx, float ty, const std::string & str, unsigned char color ) {
         s.hud.push_back( { tx, ty, str, color, true } );
     };
     constexpr unsigned char white = 15;
@@ -1273,7 +1318,7 @@ void draw_fp_hud( state &s, SDL_Renderer *renderer, float x, float y, float w, f
         const float left = x + ( w - strip_w ) * 0.5f;
         const float top = y + 6.0f;
         const float mid = left + strip_w * 0.5f;
-        auto strip_x = [&]( float rel ) {
+        auto strip_x = [ mid, strip_w, compass_span ]( float rel ) {
             return mid + compass_offset( rel, strip_w, compass_span );
         };
         fill( left, top, strip_w, strip_h, 0, 0, 0, 110 );
@@ -1339,9 +1384,9 @@ void draw_fp_hud( state &s, SDL_Renderer *renderer, float x, float y, float w, f
         const int levels = std::abs( looking );
         const std::string line = looking > 0 ?
                                  string_format( n_gettext( "Looking: %d level up", "Looking: %d levels up",
-                                         levels ), levels ) :
+                                                levels ), levels ) :
                                  string_format( n_gettext( "Looking: %d level down", "Looking: %d levels down",
-                                         levels ), levels );
+                                                levels ), levels );
         constexpr unsigned char light_cyan = 14;
         text( x + w * 0.5f, y + std::max( 22.0f, cell_h + 8.0f ) + 10.0f, line, light_cyan );
     }
@@ -1448,7 +1493,8 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     static const int supersample = []() {
         const char *env = std::getenv( "CATA_R3D_SUPERSAMPLE" );
         return env ? std::clamp( std::atoi( env ), 1, 3 ) : 2;
-    }();
+    }
+    ();
     const int target_w = std::max( 1, static_cast<int>( w ) ) * supersample;
     const int target_h = std::max( 1, static_cast<int>( h ) ) * supersample;
     if( !s.device.ensure_target( target_w, target_h ) ) {
@@ -1478,19 +1524,8 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     const tripoint_abs_sm base = here.get_abs_sub();
 
     // Only submaps inside the reality bubble: looking anything else up could load it from disk.
-    const submap_lookup lookup = [&]( const tripoint_abs_sm & p ) -> const submap * {
-        const int dx = p.x() - base.x();
-        const int dy = p.y() - base.y();
-        if( dx < 0 || dy < 0 || dx >= MAPSIZE || dy >= MAPSIZE ||
-            p.z() < -OVERMAP_DEPTH || p.z() > OVERMAP_HEIGHT )
-        {
-            return nullptr;
-        }
-        if( p.z() != view_z && !multi_z )
-        {
-            return nullptr;
-        }
-        return MAPBUFFER.lookup_submap( p );
+    const submap_lookup lookup = [ &base, view_z, multi_z ]( const tripoint_abs_sm & p ) {
+        return loaded_submap_at( base, view_z, multi_z, p );
     };
 
     const int vision_floor = std::max( std::min( view_z, get_avatar().posz() - fov_3d_z_range ),
@@ -1584,7 +1619,8 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
 
     // Creatures and items change every frame, so their geometry is rebuilt and re-uploaded.
     entity_view entities_view{ *tilecontext, s.cache, s.cam, center, z_lo, z_hi,
-                                     [&sampler]( const tripoint_bub_ms & p ) {
+                               [&sampler]( const tripoint_bub_ms & p )
+    {
         return sampler.color_at( p );
     }, {}, std::move( upright_list ), [&s, &here]( const tripoint_bub_ms & p )
     {
@@ -1594,12 +1630,10 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     // The game queues its cursors and highlights for cata_tiles::draw, which is skipped here.
     {
         const cata_tiles::frame_markers queued = tilecontext->get_frame_markers();
-        const auto add_markers = [&]( const std::vector<tripoint_bub_ms> &where, const std::string & id,
+        const auto add_markers = [ &s, &here, &entities_view ]( const std::vector<tripoint_bub_ms> &where,
+                                 const std::string & id,
         bool box, bool large ) {
-            const tile_info &sprite = s.cache.named( TILE_CATEGORY::NONE, id, *tilecontext );
-            for( const tripoint_bub_ms &p : where ) {
-                entities_view.markers.push_back( { p, column_height( s, here, p ), &sprite, box, large, false } );
-            }
+            append_frame_markers( s, here, entities_view, where, id, box, large );
         };
         add_markers( queued.line, "animation_line", false, false );
         if( queued.line_end && !queued.line_end_id.empty() ) {
@@ -1617,15 +1651,9 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
             const bool occlude_unseen = get_option<bool>( "R3D_FP_OCCLUDE_UNSEEN" );
             // What hides a post: terrain and furniture as drawn. Unseen places only when they
             // are drawn solid (R3D_FP_OCCLUDE_UNSEEN); creatures never fill a whole tile.
-            const column_height_fn solid = [&]( int dx, int dy, int dz ) {
-                const tripoint_bub_ms c( center.x() + dx, center.y() + dy, center.z() + dz );
-                if( c.z() < z_lo || c.z() > z_hi || !here.inbounds( c ) ) {
-                    return 0.0f;
-                }
-                if( !occlude_unseen && sampler.color_at( c ) == pack_light( 0, 0, 0 ) ) {
-                    return 0.0f;
-                }
-                return column_height( s, here, c );
+            const column_height_fn solid = [ &center, z_lo, z_hi, &here, occlude_unseen, &sampler, &s ]( int dx,
+            int dy, int dz ) {
+                return occluding_column_height( s, here, sampler, center, z_lo, z_hi, occlude_unseen, dx, dy, dz );
             };
             const vec3 eye_world = s.cam.eye();
             const vec3 eye_tile = world_to_tile( { eye_world.x, eye_world.y,

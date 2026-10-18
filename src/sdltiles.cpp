@@ -4098,7 +4098,9 @@ static void draw_r3d_hud_texts()
         const int width = utf8_width( t.text ) * font->width;
         const point origin( static_cast<int>( t.x ) - ( t.centred ? width / 2 : 0 ),
                             static_cast<int>( t.y ) );
-        for( const bool shadow : { true, false } ) {
+        for( const bool shadow : {
+                 true, false
+             } ) {
             curses_text_batch.begin_pass( renderer, !text_atlas_enabled( renderer ) );
             int column = 0;
             for( const char32_t ch : utf8_view( t.text ) ) {

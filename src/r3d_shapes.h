@@ -22,6 +22,7 @@ struct shape {
     shape_kind kind = shape_kind::empty;
     float height = 0.0f; // top of the solid part within the cell, in tile units
     float slab = 0.0f;   // prism only: > 0 is a top this thick on legs (benches, tables)
+    bool ground_backdrop = false; // upright foliage has a separate flat ground layer
 
     bool operator==( const shape &o ) const {
         return kind == o.kind && height == o.height;
@@ -42,6 +43,7 @@ struct tile_traits {
     bool transparent = false;
     bool tree = false;
     bool shrub = false;
+    bool boulder = false;   // natural rock furniture, including volcanic variants
     bool flat = false;
     bool tiny = false;
     bool low = false;       // TFLAG_SHORT

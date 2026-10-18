@@ -153,7 +153,7 @@ shape combine( const shape &terrain, const shape &furniture )
     if( terrain.kind == shape_kind::block ) {
         return terrain;
     }
-    if( furniture.kind == shape_kind::prism ) {
+    if( furniture.kind == shape_kind::prism || furniture.kind == shape_kind::block ) {
         return furniture;
     }
     return terrain;
@@ -914,6 +914,9 @@ const tile_info &tile_info_cache::furniture( furn_id id, cata_tiles &tiles, int 
         // footprint. Follow artwork inheritance so variants keep the same geometry.
         std::string art_id = f.id.str();
         for( int depth = 0; depth < 8 && !art_id.empty(); ++depth ) {
+            if( art_id.compare( 0, 10, "f_boulder_" ) == 0 ) {
+                traits.boulder = true;
+            }
             if( art_id == "f_locker" || art_id == "f_vitrified_locker" ) {
                 info.depth_scale = 0.5f;
             }
@@ -926,6 +929,12 @@ const tile_info &tile_info_cache::furniture( furn_id id, cata_tiles &tiles, int 
         }
         info.sh = classify_furniture( traits );
         resolve_layers( tiles, f.id.str(), TILE_CATEGORY::FURNITURE, info, subtile, rota );
+        if( info.sh.kind == shape_kind::block && !info.backdrop.valid ) {
+            // Fill transparent margins so rocks and vegetation cannot become hollow
+            // furniture silhouettes. Their own sprite remains the visible detail layer.
+            info.backdrop = traits.boulder ?
+                            terrain( ter_str_id( "t_rock" ).id(), tiles ).main() : ground( tiles ).main();
+        }
     }
     return furniture_.emplace( key, info ).first->second;
 }
@@ -1327,6 +1336,10 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                     // Trees and shrubs: ground here, the sprite itself is drawn per frame.
                     emit_top_layers( sink, cache.ground( tiles ), lx, ly, floor_height,
                                      make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                    if( ts.ground_backdrop && terrain.backdrop.valid ) {
+                        emit_top( sink, terrain.backdrop, lx, ly, floor_height + layer_lift,
+                                  make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                    }
                     mesh_uprights.push_back( { static_cast<uint8_t>( lx ), static_cast<uint8_t>( ly ),
                                                floor_height, &terrain } );
                     break;
@@ -1427,6 +1440,23 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             if( fs.kind == shape_kind::floor ) {
                 emit_top_layers( sink, furn, lx, ly, fs.height,
                                  make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                continue;
+            }
+            if( fs.kind == shape_kind::block ) {
+                // Full-volume natural objects keep their complete texture on each face;
+                // there is no cabinet lid split, wall-facing placement or bench underside.
+                emit_top_layers( sink, furn, lx, ly, fs.height,
+                                 make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                const std::array<face_bit, 4> sides = {{ face_north, face_south, face_west, face_east }};
+                const std::array<point, 4> offsets = {{
+                        point( 0, -1 ), point( 0, 1 ), point( -1, 0 ), point( 1, 0 )
+                    }
+                };
+                for( size_t i = 0; i < sides.size(); ++i ) {
+                    emit_side_layers( sink, furn, lx, ly, sides[i], ts.height, fs.height,
+                                      make_ref( lx, ly, offsets[i].x, offsets[i].y, 0, face_shade[i + 1] ),
+                                      sprite_band{ 0.0f, 1.0f } );
+                }
                 continue;
             }
             // A box sized to the sprite's opaque part: lid rows on top, the front rows (tall

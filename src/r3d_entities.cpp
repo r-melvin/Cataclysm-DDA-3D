@@ -133,7 +133,9 @@ void emit_billboard( quad_sink &sink, const std::vector<const tile_info *> &laye
                                  cx, cy, z_base, mirrored, 0, colors };
     for( const tile_info *t : layers ) {
         if( t ) {
-            geometry.emit_layer( t->backdrop );
+            if( !t->sh.ground_backdrop ) {
+                geometry.emit_layer( t->backdrop );
+            }
             geometry.emit_layer( t->sprite );
         }
     }

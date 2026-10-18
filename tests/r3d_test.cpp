@@ -529,6 +529,49 @@ TEST_CASE( "r3d_furniture_box_layout", "[r3d]" )
     CHECK( approx( none.y1, 1.0f ) );
 }
 
+TEST_CASE( "r3d_shrub_ground_is_separate_from_upright_foliage", "[r3d]" )
+{
+    r3d::tile_traits traits;
+    traits.shrub = true;
+    const r3d::shape bush = r3d::classify_terrain( traits );
+    CHECK( bush.kind == r3d::shape_kind::upright );
+    CHECK( bush.ground_backdrop );
+    CHECK( bush.height > r3d::floor_height );
+
+    traits = {};
+    traits.tree = true;
+    CHECK_FALSE( r3d::classify_terrain( traits ).ground_backdrop );
+    CHECK_FALSE( r3d::classify_furniture( {} ).ground_backdrop );
+}
+
+TEST_CASE( "r3d_natural_furniture_is_a_solid_volume", "[r3d]" )
+{
+    // Japanese knotweed is passable, SHORT and SHRUB. It must not become a bench.
+    r3d::tile_traits knotweed;
+    knotweed.shrub = true;
+    knotweed.low = true;
+    const r3d::shape plant = r3d::classify_furniture( knotweed );
+    CHECK( plant.kind == r3d::shape_kind::block );
+    CHECK( plant.slab == 0.0f );
+    CHECK( plant.height > r3d::floor_height );
+
+    // Small, medium and large boulders respectively use TINY, SHORT and impassable.
+    float previous_height = r3d::floor_height;
+    for( int size = 0; size < 3; ++size ) {
+        r3d::tile_traits rock;
+        rock.boulder = true;
+        rock.tiny = size == 0;
+        rock.low = size == 1;
+        rock.move_cost = size == 2 ? 0 : 100;
+        const r3d::shape volume = r3d::classify_furniture( rock );
+        CHECK( volume.kind == r3d::shape_kind::block );
+        CHECK( volume.slab == 0.0f );
+        CHECK( volume.height > previous_height );
+        CHECK( volume.height <= 1.0f );
+        previous_height = volume.height;
+    }
+}
+
 TEST_CASE( "r3d_furniture_shapes", "[r3d]" )
 {
     // Small walkable furniture (chairs) stands up as a sprite.

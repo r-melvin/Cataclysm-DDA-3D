@@ -31,7 +31,7 @@ shape classify_terrain( const tile_traits &t )
         return { shape_kind::upright, tree_height };
     }
     if( t.shrub ) {
-        return { shape_kind::upright, shrub_height };
+        return { shape_kind::upright, shrub_height, 0.0f, true };
     }
     // Windows and closed doors stand in the wall line as panels rather than filling the tile.
     if( !t.wall && ( t.window || ( t.door && !t.flat ) ) ) {
@@ -50,6 +50,12 @@ shape classify_furniture( const tile_traits &t )
     }
     if( t.flat ) {
         return { shape_kind::floor, decal_height };
+    }
+    // Natural obstacles need a filled volume, not the lid/front/legs of manufactured
+    // furniture. Use the same simple box for plants and rocks, with size-based heights.
+    if( t.shrub || t.boulder ) {
+        const float height = t.tiny ? 0.3f : t.low ? 0.55f : tall_furniture_height;
+        return { shape_kind::block, height };
     }
     if( t.tiny ) {
         return { shape_kind::floor, tiny_height };

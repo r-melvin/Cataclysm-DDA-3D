@@ -309,7 +309,8 @@ float surface_height( state &s, const map &here, const tripoint_bub_ms &p )
         return floor_height;
     }
     const shape f = s.cache.furniture( here.furn( p ), *tilecontext ).sh;
-    return f.kind == shape_kind::prism ? std::max( t.height, f.height ) : t.height;
+    return f.kind == shape_kind::prism || f.kind == shape_kind::block ?
+           std::max( t.height, f.height ) : t.height;
 }
 
 // Turns the game's own visibility knowledge into a light colour per tile: lit tiles are shown

@@ -18,10 +18,16 @@ void main()
     // Cutaway: whatever stands between the camera and the player (a wall, a locker) is left out
     // above knee height in a circle around them on screen, so they are never hidden. Back faces
     // are culled, so the hole shows the floor and the cut ends of the walls, not their insides.
+    // A dark rim just outside the hole marks it as a cut rather than a gap in the walls.
+    float rim = 1.0;
     if (v_cut.w > 0.0 && v_height > v_cut2.y && v_ndc.z < v_cut.z) {
         vec2 d = vec2(v_ndc.x - v_cut.x, (v_ndc.y - v_cut.y) * v_cut2.x);
-        if (dot(d, d) < v_cut.w * v_cut.w) {
+        float dist = length(d);
+        if (dist < v_cut.w) {
             discard;
+        }
+        if (dist < v_cut.w * 1.07) {
+            rim = 0.4;
         }
     }
     vec4 texel = texture(u_atlas, v_uv);
@@ -35,5 +41,5 @@ void main()
     if (max(v_light.r, max(v_light.g, v_light.b)) < 0.5 / 255.0) {
         discard;
     }
-    out_color = vec4(texel.rgb * v_light.rgb, 1.0);
+    out_color = vec4(texel.rgb * v_light.rgb * rim, 1.0);
 }

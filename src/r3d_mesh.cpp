@@ -163,8 +163,9 @@ struct point_f {
 
 constexpr std::array<uint8_t, 5> face_shade = { 255, 165, 212, 150, 185 };
 
-// Faces are wound counter-clockwise as seen from outside, so the pipeline can leave their backs
-// out. Tops and undersides are written in the sides' order below and turned with this.
+// Faces are wound clockwise as seen from outside (in the world frame, see quad_sink::add), so
+// the pipeline can leave their backs out. A face meant to be seen from both sides is added
+// twice, the second time turned with this.
 template<typename T>
 T reversed_winding( const T &quad )
 {
@@ -199,7 +200,7 @@ void emit_top( quad_sink &sink, const sprite_ref &s, int x, int y, float z, cons
     for( size_t i = 0; i < 4; ++i ) {
         uv[i] = base[( i + 4 - static_cast<size_t>( s.quarter_turns & 3 ) ) % 4];
     }
-    sink.add( s, reversed_winding( c ), reversed_winding( uv ), ref );
+    sink.add( s, c, uv, ref );
 }
 
 bool is_tall( const sprite_ref &s )
@@ -287,7 +288,7 @@ void emit_pane( quad_sink &sink, const sprite_ref &s, int x, int y, bool along_x
     const corners_t top = along_x ?
     corners_t{{ { cx - 0.5f, cy - half_thickness, z_top }, { cx + 0.5f, cy - half_thickness, z_top }, { cx + 0.5f, cy + half_thickness, z_top }, { cx - 0.5f, cy + half_thickness, z_top } }} :
     corners_t{{ { cx - half_thickness, cy - 0.5f, z_top }, { cx + half_thickness, cy - 0.5f, z_top }, { cx + half_thickness, cy + 0.5f, z_top }, { cx - half_thickness, cy + 0.5f, z_top } }};
-    sink.add( s, reversed_winding( top ), reversed_winding( edge_uv ), ref );
+    sink.add( s, top, edge_uv, ref );
 }
 
 // Quarter turns (front from south, clockwise) for a piece with its back to a wall: of the sides
@@ -383,7 +384,7 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
                 { ox + fx1, oy + fy1, z1 }, { ox + fx0, oy + fy1, z1 }
             }
         };
-        sink.add( s, reversed_winding( c ), reversed_winding( uv ), refs[0] );
+        sink.add( s, c, uv, refs[0] );
     }
 
     // A slab (bench seat, table top) only has sides as thick as itself, an underside, and legs.
@@ -438,7 +439,7 @@ void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, flo
             { ox + fx1, oy + fy0, zs }, { ox + fx0, oy + fy0, zs }
         }
     };
-    sink.add( s, reversed_winding( under ), reversed_winding( side_uv ), refs[3] );
+    sink.add( s, under, side_uv, refs[3] );
 
     // Legs: every tile of a bench or table stands on one pair of legs, one at each side
     // across its row (the row runs along x before the turn), in the middle of the tile.

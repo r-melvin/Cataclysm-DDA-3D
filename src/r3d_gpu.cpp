@@ -153,10 +153,10 @@ bool gpu::init( SDL_Renderer *renderer )
     pci.vertex_input_state.num_vertex_attributes = 3;
     pci.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     pci.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
-    // Block faces are wound counter-clockwise seen from outside, so their backs can go: the
-    // cutaway then shows the floor and wall ends rather than the insides of what it cut.
+    // Block faces are wound clockwise seen from outside (r3d_mesh.cpp), so their backs can go:
+    // the cutaway then shows the floor and wall ends rather than the insides of what it cut.
     pci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
-    pci.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+    pci.rasterizer_state.front_face = SDL_GPU_FRONTFACE_CLOCKWISE;
     pci.depth_stencil_state.enable_depth_test = true;
     pci.depth_stencil_state.enable_depth_write = true;
     pci.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;

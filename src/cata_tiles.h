@@ -818,10 +818,11 @@ class cata_tiles
          * sprite when a tile has no foreground. Returns nullopt if the id has no usable sprite.
          * With background set it returns the tile's background layer instead (the opaque ground
          * many tilesets keep there, under sparse foreground decals) and never the foreground.
+         * Variant selection follows the regular tiles renderer, including vehicle part variants.
          */
         std::optional<texture_draw_data> get_sprite_draw_data( const std::string &id,
                 TILE_CATEGORY category, const tripoint_bub_ms &p, bool background = false,
-                int subtile = -1, int rota = 0 );
+                int subtile = -1, int rota = 0, const std::string &variant = "" );
         /**
          * The multitile subtile (-1 for none) and rotation the flat view uses for the terrain or
          * furniture at p, from its connections to its neighbours (walls, benches, counters).

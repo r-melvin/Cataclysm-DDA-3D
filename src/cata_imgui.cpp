@@ -1,6 +1,8 @@
 #include "cata_imgui.h"
 
+#include <array>
 #include <cmath>
+#include <string>
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui/imgui.h>
@@ -17,6 +19,7 @@
 #include "path_info.h"
 #include "point.h"
 #include "ui_manager.h"
+#include "ui_theme.h"
 #include "input_context.h"
 
 static ImGuiKey cata_key_to_imgui( int cata_key );
@@ -1320,6 +1323,88 @@ static void inherit_base_colors()
     style.Colors[ImGuiCol_NavCursor] = c_blue;
 }
 
+// Sizes a style file may set (its "style" object), with ImGui's defaults restored before each
+// load so switching back to a style without them gives the classic look again.
+static void load_imgui_style_sizes( ImGuiStyle &style, const JsonObject &jo )
+{
+    const ImGuiStyle d;
+    struct float_field {
+        const char *name;
+        float ImGuiStyle::*field;
+    };
+    struct vec_field {
+        const char *name;
+        ImVec2 ImGuiStyle::*field;
+    };
+    static const std::array<float_field, 15> floats = {{
+            { "WindowRounding", &ImGuiStyle::WindowRounding },
+            { "WindowBorderSize", &ImGuiStyle::WindowBorderSize },
+            { "ChildRounding", &ImGuiStyle::ChildRounding },
+            { "ChildBorderSize", &ImGuiStyle::ChildBorderSize },
+            { "PopupRounding", &ImGuiStyle::PopupRounding },
+            { "PopupBorderSize", &ImGuiStyle::PopupBorderSize },
+            { "FrameRounding", &ImGuiStyle::FrameRounding },
+            { "FrameBorderSize", &ImGuiStyle::FrameBorderSize },
+            { "IndentSpacing", &ImGuiStyle::IndentSpacing },
+            { "ScrollbarSize", &ImGuiStyle::ScrollbarSize },
+            { "ScrollbarRounding", &ImGuiStyle::ScrollbarRounding },
+            { "GrabMinSize", &ImGuiStyle::GrabMinSize },
+            { "GrabRounding", &ImGuiStyle::GrabRounding },
+            { "TabRounding", &ImGuiStyle::TabRounding },
+            { "TabBorderSize", &ImGuiStyle::TabBorderSize },
+        }
+    };
+    static const std::array<vec_field, 6> vecs = {{
+            { "WindowPadding", &ImGuiStyle::WindowPadding },
+            { "FramePadding", &ImGuiStyle::FramePadding },
+            { "ItemSpacing", &ImGuiStyle::ItemSpacing },
+            { "ItemInnerSpacing", &ImGuiStyle::ItemInnerSpacing },
+            { "WindowTitleAlign", &ImGuiStyle::WindowTitleAlign },
+            { "SeparatorTextPadding", &ImGuiStyle::SeparatorTextPadding },
+        }
+    };
+    for( const float_field &f : floats ) {
+        style.*f.field = d.*f.field;
+    }
+    for( const vec_field &f : vecs ) {
+        style.*f.field = d.*f.field;
+    }
+    if( !jo.has_object( "style" ) ) {
+        return;
+    }
+    JsonObject jstyle = jo.get_object( "style" );
+    for( const float_field &f : floats ) {
+        if( jstyle.has_number( f.name ) ) {
+            style.*f.field = static_cast<float>( jstyle.get_float( f.name ) );
+        }
+    }
+    for( const vec_field &f : vecs ) {
+        if( jstyle.has_array( f.name ) ) {
+            JsonArray a = jstyle.get_array( f.name );
+            style.*f.field = ImVec2( static_cast<float>( a.get_float( 0 ) ),
+                                     static_cast<float>( a.get_float( 1 ) ) );
+        }
+    }
+}
+
+// The rest of a modern style: curses boxes and key caps (see ui_theme.h).
+static void load_ui_theme( const JsonObject &jo )
+{
+    ui_theme theme;
+    if( jo.has_object( "curses" ) ) {
+        JsonObject jc = jo.get_object( "curses" );
+        theme.modern_borders = true;
+        if( jc.has_string( "border_color" ) ) {
+            theme.border = color_from_string( jc.get_string( "border_color" ) );
+        }
+        if( jc.has_string( "title_color" ) ) {
+            theme.title = color_from_string( jc.get_string( "title_color" ) );
+        }
+    }
+    theme.keycaps = jo.get_bool( "keycaps", false );
+    set_ui_theme( theme );
+}
+
 static void load_imgui_style_file( const cata_path &style_path )
 {
     ImGuiStyle &style = ImGui::GetStyle();
@@ -1330,6 +1415,9 @@ static void load_imgui_style_file( const cata_path &style_path )
 
 
     JsonObject jo = jsin.get_object();
+    jo.allow_omitted_members();
+    load_imgui_style_sizes( style, jo );
+    load_ui_theme( jo );
 
 
     if( jo.has_bool( "inherit_base_colors" ) && jo.get_bool( "inherit_base_colors" ) ) {
@@ -1438,6 +1526,25 @@ void cataimgui::TextKeybinding( const input_context &ctxt,
                                 int max_limit, const nc_color &default_color )
 {
     const nc_color color = active ? ACTIVE_HOTKEY_COLOR : default_color;
+    if( get_ui_theme().keycaps ) {
+        // The key drawn as a key cap: framed, slightly padded, then the description.
+        const std::string key = ( *action == 0 || *( action + 1 ) == 0 ) ? std::string( action ) :
+                                ctxt.get_desc( action, max_limit );
+        const ImVec2 size = ImGui::CalcTextSize( key.c_str() );
+        const ImVec2 pad( 4.0f, 1.0f );
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        ImGui::Dummy( ImVec2( size.x + pad.x * 2.0f, size.y ) );
+        ImDrawList *draw = ImGui::GetWindowDrawList();
+        const ImVec2 lo( at.x, at.y - pad.y );
+        const ImVec2 hi( at.x + size.x + pad.x * 2.0f, at.y + size.y + pad.y );
+        draw->AddRectFilled( lo, hi, ImGui::GetColorU32( ImGuiCol_FrameBg ), 3.0f );
+        draw->AddRect( lo, hi, ImGui::GetColorU32( static_cast<ImVec4>( color ) ), 3.0f );
+        draw->AddText( ImVec2( at.x + pad.x, at.y ), ImGui::GetColorU32( static_cast<ImVec4>( color ) ),
+                       key.c_str() );
+        ImGui::SameLine( 0, 4.0f );
+        ImGui::TextColored( color, "%s", description );
+        return;
+    }
     ImGui::TextColored( default_color, "[" );
     ImGui::SameLine( 0, 0 );
     ImGui::TextColored( color, "%s",

@@ -39,6 +39,7 @@
 #include "string_formatter.h"
 #include "string_input_popup.h"
 #include "uilist.h"
+#include "ui_theme.h"
 #include "ui_manager.h"
 #include "unicode.h"
 #include "units_utility.h"
@@ -710,15 +711,37 @@ void draw_custom_border(
     wattroff( w, FG );
 }
 
+static ui_theme current_ui_theme;
+
+const ui_theme &get_ui_theme()
+{
+    return current_ui_theme;
+}
+
+void set_ui_theme( const ui_theme &theme )
+{
+    current_ui_theme = theme;
+}
+
 void draw_border( const catacurses::window &w, nc_color border_color, const std::string &title,
                   nc_color title_color )
 {
+    const ui_theme &theme = get_ui_theme();
+    // A modern style only replaces the default colours; screens that pick their own keep them.
+    if( theme.modern_borders && border_color == BORDER_COLOR ) {
+        border_color = theme.border;
+    }
     wattron( w, border_color );
     wborder( w, LINE_XOXO, LINE_XOXO, LINE_OXOX, LINE_OXOX,
              LINE_OXXO, LINE_OOXX, LINE_XXOO, LINE_XOOX );
     wattroff( w, border_color );
     if( !title.empty() ) {
-        center_print( w, 0, title_color, title );
+        if( theme.modern_borders ) {
+            center_print( w, 0, title_color == c_light_red ? theme.title : title_color,
+                          " " + title + " " );
+        } else {
+            center_print( w, 0, title_color, title );
+        }
     }
 }
 

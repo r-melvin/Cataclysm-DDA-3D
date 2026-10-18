@@ -59,6 +59,7 @@
 #include "uilist.h"
 #include "ui_manager.h"
 #include "ui_style_picker.h"
+#include "ui_theme.h"
 #include "wcwidth.h"
 #include "worldfactory.h"
 
@@ -270,7 +271,8 @@ void main_menu::display_sub_menu( int sel, const point &bottom_left, int sel_lin
 
     catacurses::window w_sub = catacurses::newwin( height + 2, xlen + 4, top_left );
     werase( w_sub );
-    draw_border( w_sub, c_white );
+    const ui_theme &theme = get_ui_theme();
+    draw_border( w_sub, theme.modern_borders ? theme.border : c_white );
 
     // Print as many options as decided previously, starting from the index sub_opt_offset
     for( int y = 0; y < height; y++ ) {
@@ -304,12 +306,15 @@ void main_menu::print_menu( const catacurses::window &w_open, int iSel, const po
     int window_width = getmaxx( w_open );
     int window_height = getmaxy( w_open );
 
+    const ui_theme &theme = get_ui_theme();
     // Draw horizontal line
-    mvwhline( w_open, point( 1, window_height - 4 ), c_white, LINE_OXOX, window_width - 2 );
+    mvwhline( w_open, point( 1, window_height - 4 ), theme.modern_borders ? theme.border : c_white,
+              LINE_OXOX, window_width - 2 );
 
     if( iSel == getopt( main_menu_opts::NEWCHAR ) ) {
         center_print( w_open, window_height - 2, c_yellow, vNewGameHints[sel2] );
-    } else {
+    } else if( !theme.modern_borders ) {
+        // The modern style keeps the bottom quiet: the bug-report links are also in the MOTD.
         center_print( w_open, window_height - 2, c_red,
                       _( "Bugs?  Suggestions?  Use links in MOTD to report them." ) );
     }
@@ -473,24 +478,25 @@ void main_menu::init_strings()
 
     // new game menu items
     vNewGameSubItems.clear();
-    vNewGameSubItems.emplace_back( pgettext( "Main Menu|New Game", "C<u|U>stom Character" ) );
-    vNewGameSubItems.emplace_back( pgettext( "Main Menu|New Game", "<P|p>reset Character" ) );
-    vNewGameSubItems.emplace_back( pgettext( "Main Menu|New Game", "<R|r>andom Character" ) );
+    // Labels say what each start does; the hotkeys are the ones players already know.
+    vNewGameSubItems.emplace_back( pgettext( "Main Menu|New Game", "C<u|U>stom character" ) );
+    vNewGameSubItems.emplace_back( pgettext( "Main Menu|New Game", "<P|p>reset: a saved template" ) );
+    vNewGameSubItems.emplace_back( pgettext( "Main Menu|New Game", "<R|r>andom, review first" ) );
     if( !MAP_SHARING::isSharing() ) { // "Play Now" function doesn't play well together with shared maps
         vNewGameSubItems.emplace_back( pgettext( "Main Menu|New Game",
-                                       "Play Now!  (<D|d>efault Scenario)" ) );
-        vNewGameSubItems.emplace_back( pgettext( "Main Menu|New Game", "Play N<o|O>w!" ) );
+                                       "Play now as an evacuee (<D|d>efault scenario)" ) );
+        vNewGameSubItems.emplace_back( pgettext( "Main Menu|New Game", "Play n<o|O>w, random scenario" ) );
     }
     vNewGameHints.clear();
     vNewGameHints.emplace_back(
-        _( "Allows you to fully customize scenario, character's profession, stats, traits, skills and other parameters." ) );
-    vNewGameHints.emplace_back( _( "Select from one of previously created character templates." ) );
+        _( "Choose the scenario, profession, stats, traits and skills yourself." ) );
+    vNewGameHints.emplace_back( _( "Start from a character template you saved earlier." ) );
     vNewGameHints.emplace_back(
-        _( "Creates random character, but lets you preview the generated character and the scenario and change character and/or scenario if needed." ) );
+        _( "Roll a random character and scenario, then change anything you like before starting." ) );
     vNewGameHints.emplace_back(
-        _( "Puts you right in the game, randomly choosing character's traits, profession, skills and other parameters.  Scenario is fixed to Evacuee." ) );
+        _( "Start at once as a random character in the Evacuee scenario." ) );
     vNewGameHints.emplace_back(
-        _( "Puts you right in the game, randomly choosing scenario and character's traits, profession, skills and other parameters." ) );
+        _( "Start at once as a random character in a random scenario." ) );
     vNewGameHotkeys.clear();
     vNewGameHotkeys.reserve( vNewGameSubItems.size() );
     for( const std::string &item : vNewGameSubItems ) {
@@ -522,8 +528,8 @@ void main_menu::init_strings()
     vSettingsSubItems.emplace_back( pgettext( "Main Menu|Settings", "A<u|U>topickup" ) );
     vSettingsSubItems.emplace_back( pgettext( "Main Menu|Settings", "Sa<f|F>emode" ) );
     vSettingsSubItems.emplace_back( pgettext( "Main Menu|Settings", "Colo<r|R>s" ) );
-    vSettingsSubItems.emplace_back( pgettext( "Main Menu|Settings", "ImGui <S|s>tyles" ) );
-    vSettingsSubItems.emplace_back( pgettext( "Main Menu|Settings", "<I|i>mGui Demo Screen" ) );
+    vSettingsSubItems.emplace_back( pgettext( "Main Menu|Settings", "Menu <S|s>tyle" ) );
+    vSettingsSubItems.emplace_back( pgettext( "Main Menu|Settings", "Menu style prev<i|I>ew (ImGui demo)" ) );
 
     vSettingsHotkeys.clear();
     for( const std::string &item : vSettingsSubItems ) {

@@ -239,6 +239,10 @@ void printVersionMessage()
             hasSound ? '+' : '-',
             PATH_INFO::datadir().c_str(),
             PATH_INFO::user_dir().c_str() );
+#if defined(TILES)
+    // The launcher checks this before opening a live session with an older executable.
+    std::cout << "Renderer capture protocol: 1\n";
+#endif
 }
 
 void process_args( const char **argv, int argc, const std::vector<arg_handler> &arg_handlers )

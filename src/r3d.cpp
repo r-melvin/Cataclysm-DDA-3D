@@ -766,6 +766,22 @@ void compare_capture( bool gameplay_boundary )
         return v ? std::clamp( std::atoi( v ), 1, maximum ) : fallback;
     };
     const auto now = std::chrono::steady_clock::now();
+    const auto status = []( const std::string & message ) {
+        if( session ) {
+            std::ofstream( std::filesystem::u8path( session ) / "session-status.txt" ) << message << '\n';
+        }
+    };
+    static bool started = false;
+    static bool reached_gameplay = false;
+    if( session && !started ) {
+        status( "Capture support initialized; waiting for a character to reach gameplay input." );
+        started = true;
+    }
+    if( session && gameplay_boundary && !busy && !reached_gameplay ) {
+        status( "Gameplay input reached; waiting for a tiled map frame. USE_TILES=" +
+                get_options().get_option( "USE_TILES" ).getValue() );
+        reached_gameplay = true;
+    }
     if( ( session && !gameplay_boundary ) || busy || ( !prefix && !session ) || ( !session && done ) ||
         !g ||
         !closetilecontext || !st().map_drawn ||
@@ -797,12 +813,16 @@ void compare_capture( bool gameplay_boundary )
         std::snprintf( name, sizeof( name ), "capture-%04d", sequence );
         const auto directory = std::filesystem::u8path( session ) / name;
         checkpoint = directory;
+        status( "Capturing " + std::string( name ) );
         try {
             std::filesystem::create_directories( directory );
             // A capture save omits the gameplay save event. The launcher isolates disk writes
             // from the user's original world. Never copy an older disk save on failure.
-            if( g->save_is_dirty || !g->save_for_capture() ) {
-                throw std::runtime_error( "current-state save failed" );
+            if( g->save_is_dirty ) {
+                throw std::runtime_error( "this character cannot be saved (save_is_dirty)" );
+            }
+            if( !g->save_for_capture() ) {
+                throw std::runtime_error( "current-state save failed; check disk space and permissions" );
             }
             auto world = PATH_INFO::world_base_save_path().get_unrelative_path();
             if( world.filename().empty() ) {
@@ -837,6 +857,7 @@ void compare_capture( bool gameplay_boundary )
         } catch( const std::exception &e ) {
             DebugLog( D_ERROR, DC_ALL ) << "r3d compare: checkpoint failed: " << e.what();
             std::ofstream( directory / "FAILED.txt" ) << e.what();
+            status( std::string( name ) + " failed: " + e.what() );
             return;
         }
     }
@@ -917,13 +938,31 @@ void compare_capture( bool gameplay_boundary )
         rng_get_engine() = old_rng;
         if( session ) {
             const bool complete = ok_before && ok_2d && ok_3d && restored && resumed;
-            std::ofstream( checkpoint / ( complete ? "COMPLETE.txt" : "FAILED.txt" ) )
-                    << "2D isometric reference, eight 3D yaw poses, same saved state.\n";
+            std::string result = "Complete: 2D isometric reference, eight 3D yaw poses, same saved state.";
+            if( !complete ) {
+                result = "Failed stages:";
+                if( !ok_before ) {
+                    result += " player-view screenshot;";
+                }
+                if( !ok_2d ) {
+                    result += " 2D tileset or screenshot;";
+                }
+                if( !ok_3d ) {
+                    result += " 3D renderer or screenshot (requires SDL gpu renderer and compiled shaders);";
+                }
+                if( !restored || !resumed ) {
+                    result += " player-view restoration;";
+                }
+            }
+            std::ofstream( checkpoint / ( complete ? "COMPLETE.txt" : "FAILED.txt" ) ) << result << '\n';
+            DebugLog( complete ? D_INFO : D_ERROR, DC_ALL ) << "r3d compare: " << result;
+            status( checkpoint.filename().string() + ": " + result );
         }
     } catch( const std::exception &e ) {
         DebugLog( D_ERROR, DC_ALL ) << "r3d compare: capture failed: " << e.what();
         if( session ) {
             std::ofstream( checkpoint / "FAILED.txt" ) << e.what();
+            status( checkpoint.filename().string() + " failed: " + e.what() );
         }
     }
 }

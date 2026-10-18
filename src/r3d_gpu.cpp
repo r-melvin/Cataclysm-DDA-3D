@@ -87,6 +87,8 @@ bool gpu::init( SDL_Renderer *renderer )
     renderer_ = renderer;
     device_ = renderer ? SDL_GetGPURendererDevice( renderer ) : nullptr;
     if( !device_ ) {
+        DebugLog( D_ERROR, DC_ALL ) << "r3d: SDL gpu renderer required; active renderer: "
+                                    << ( renderer ? SDL_GetRendererName( renderer ) : "none" );
         renderer_ = nullptr;
         return false;
     }

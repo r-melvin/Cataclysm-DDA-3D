@@ -4,10 +4,12 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 spec = importlib.util.spec_from_file_location("compare_session", Path(__file__).with_name("compare_session.py"))
@@ -97,6 +99,92 @@ class SessionPackagingTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "No complete checkpoints"):
                 session_tool.package(Path(temporary))
             self.assertFalse(list(Path(temporary).glob("*.zip")))
+
+
+class SessionLaunchTest(unittest.TestCase):
+    def test_preflight_rejects_old_binary_and_requires_metal_artifacts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shaders = root / "data/shaders"
+            shaders.mkdir(parents=True)
+            for name in ("r3d_block.vert.spv", "r3d_block.frag.spv"):
+                (shaders / name).write_bytes(b"shader")
+            result = subprocess.CompletedProcess([], 0, "old build", "")
+            with mock.patch.object(session_tool, "ROOT", root), \
+                 mock.patch.object(session_tool.subprocess, "run", return_value=result):
+                with self.assertRaisesRegex(ValueError, "Rebuild the tiles"):
+                    session_tool.preflight(root / "game", {}, "darwin")
+                result.stdout = "build\nRenderer capture protocol: 1\n"
+                with self.assertRaisesRegex(ValueError, "BUILD_SHADER_FORMATS=msl"):
+                    session_tool.preflight(root / "game", {}, "darwin")
+                session_tool.preflight(root / "game", {"SDL_GPU_DRIVER": "vulkan"}, "darwin")
+                for name in ("r3d_block.vert.msl", "r3d_block.frag.msl"):
+                    (shaders / name).write_bytes(b"metal shader")
+                session_tool.preflight(root / "game", {}, "darwin")
+
+    def test_launcher_isolates_options_and_clears_inherited_automation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            (source / "config").mkdir(parents=True)
+            original = '[{"name": "USE_TILES", "value": "false"}]'
+            (source / "config/options.json").write_text(original)
+            binary = root / "fake-game"
+            binary.write_text('''#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+if "--version" in sys.argv:
+    print("Renderer capture protocol: 1")
+    sys.exit(0)
+assert os.environ["SDL_RENDER_DRIVER"] == "gpu"
+for key in ("CATA_R3D_COMPARE", "CATA_R3D_QUIT_AFTER_SHOT", "CATA_R3D_SCREENSHOT"):
+    assert key not in os.environ
+user = Path(sys.argv[sys.argv.index("--userdir") + 1])
+assert json.loads((user / "config/options.json").read_text()) == [{"name": "USE_TILES", "value": "true"}]
+assert not (user / "save").exists()
+captures = Path(os.environ["CATA_R3D_COMPARE_SESSION"])
+(captures / "session-status.txt").write_text("Capture support initialized; waiting for a character.")
+''')
+            binary.chmod(0o755)
+            checkout = root / "checkout"
+            script = checkout / "tools/r3d_spike/compare_session.py"
+            script.parent.mkdir(parents=True)
+            script.write_bytes(Path(session_tool.__file__).read_bytes())
+            for tileset in ("Ultica_iso", "UltimateCataclysm"):
+                config = checkout / "gfx" / tileset / "tile_config.json"
+                config.parent.mkdir(parents=True)
+                config.write_text("{}")
+            shaders = checkout / "data/shaders"
+            shaders.mkdir(parents=True)
+            for suffix in ("spv", "msl", "dxil"):
+                for name in ("r3d_block.vert", "r3d_block.frag"):
+                    (shaders / f"{name}.{suffix}").write_bytes(b"shader")
+            output = root / "session"
+            env = dict(os.environ, SDL_RENDER_DRIVER="software", CATA_R3D_COMPARE="stale",
+                       CATA_R3D_QUIT_AFTER_SHOT="1", CATA_R3D_SCREENSHOT="stale")
+            result = subprocess.run(["python3", str(script),
+                                     "--binary", str(binary), "--userdir", str(source),
+                                     "--output", str(output)], env=env, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("waiting for a character", result.stderr)
+            self.assertIn("starts without existing worlds", result.stdout)
+            self.assertEqual((source / "config/options.json").read_text(), original)
+            self.assertFalse(list(output.glob("*.zip")))
+
+    def test_failure_diagnostics_report_actual_failed_stage(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            session = Path(temporary)
+            capture = session / "captures/capture-0001"
+            capture.mkdir(parents=True)
+            (capture / "FAILED.txt").write_text("Failed stages: 3D renderer or screenshot;")
+            config = session / "user/config"
+            config.mkdir(parents=True)
+            (config / "debug.log").write_text(
+                "ERROR : r3d: SDL gpu renderer required; active renderer: software\n" +
+                "INFO : r3d compare: saved screenshot\n" * 30)
+            with self.assertRaisesRegex(ValueError, "capture-0001: Failed stages: 3D renderer"):
+                session_tool.package(session)
+            self.assertIn("active renderer: software", session_tool.failure_details(session))
 
 
 if __name__ == "__main__":

@@ -6208,22 +6208,22 @@ std::unique_ptr<activity_actor> close_tile_activity_actor::deserialize( JsonValu
 void consume_activity_actor::start( player_activity &act, Character &guy )
 {
     int moves = 0;
-    Character &player_character = get_player_character();
-    //TODO: why use both `player_character` and `guy`?
-    auto player_will_eat = [this, &moves, &player_character, &guy]( const item & it ) {
-        ret_val<edible_rating> ret = player_character.will_eat( it, true );
+    auto will_eat = [this, &moves, &guy]( const item & it ) {
+        ret_val<edible_rating> ret = guy.will_eat( it, guy.is_avatar() );
         if( !ret.success() ) {
             was_canceled = true;
-            uistate.consume_uistate.clear();
+            if( guy.is_avatar() ) {
+                uistate.consume_uistate.clear();
+            }
         } else {
             moves = to_moves<int>( guy.get_consume_time( it ) );
         }
     };
 
     if( consume_location ) {
-        player_will_eat( *consume_location );
+        will_eat( *consume_location );
     } else if( !consume_item.is_null() ) {
-        player_will_eat( consume_item );
+        will_eat( consume_item );
     } else {
         debugmsg( "Item/location to be consumed should not be null." );
         was_canceled = true;
@@ -6233,7 +6233,7 @@ void consume_activity_actor::start( player_activity &act, Character &guy )
     act.moves_left = moves;
 }
 
-void consume_activity_actor::finish( player_activity &act, Character & )
+void consume_activity_actor::finish( player_activity &act, Character &who )
 {
     // Prevent interruptions from this point onwards, so that e.g. pain from
     // injecting serum doesn't pop up messages about cancelling consuming (it's
@@ -6242,12 +6242,11 @@ void consume_activity_actor::finish( player_activity &act, Character & )
 
     item_location consume_loc = consume_location;
 
-    avatar &player_character = get_avatar();
     if( !was_canceled ) {
         if( consume_loc ) {
-            player_character.consume( consume_loc, /*force=*/true );
+            who.consume( consume_loc, /*force=*/true );
         } else if( !consume_item.is_null() ) {
-            player_character.consume( consume_item, /*force=*/true );
+            who.consume( consume_item, /*force=*/true );
         } else {
             debugmsg( "Item location/name to be consumed should not be null." );
         }
@@ -6262,10 +6261,14 @@ void consume_activity_actor::finish( player_activity &act, Character & )
         act.set_to_null();
     }
 
+    if( !who.is_avatar() ) {
+        return;
+    }
     if( act.id() == ACT_FIRSTAID && consume_loc ) {
         uistate.consume_uistate.consume_menu_selected_items = { consume_loc };
     }
 
+    avatar &player_character = *who.as_avatar();
     if( !avatar_action::eat_here( player_character ) && reprompt_consume_menu ) {
         uistate.open_menu = []() {
             avatar_action::eat_or_use( get_avatar(),
@@ -6709,121 +6712,12 @@ void craft_activity_actor::do_turn( player_activity &act, Character &crafter )
             ? std::optional<tripoint_bub_ms>() : std::optional<tripoint_bub_ms>( craft_item.pos_bub( here ) );
     const recipe &rec = craft.get_making();
 
-    // Legacy migration: older saves have step recipes with item_counter but no
-    // current_step/step_progress. Derive step state once, before any work or
-    // exertion computation. Guard ensures this runs at most once.
-    if( rec.has_steps() && craft.get_current_step() == 0 &&
-        craft.get_step_progress() == 0.0 && craft.item_counter > 0 ) {
-        // Need base_total_moves for conversion; compute it fresh here.
-        const crafting_cost_context migration_ctx{ crafter.book_bonuses_nearby(),
-                compute_tool_speeds( rec, crafter ) };
-        const double migration_base = std::max( 1.0,
-                                                static_cast<double>( rec.batch_time( crafter, craft.get_making_batch_size(), 1.0f, 0,
-                                                        migration_ctx ) ) );
-        double accumulated = craft.item_counter * migration_base / 10000000.0;
-        for( size_t i = 0; i < rec.steps().size(); ++i ) {
-            double budget = rec.step_budget_moves( crafter, i,
-                                                   craft.get_making_batch_size(), migration_ctx );
-            if( accumulated < budget || i == rec.steps().size() - 1 ) {
-                craft.set_current_step( static_cast<int>( i ) );
-                craft.set_step_progress( accumulated );
-                break;
-            }
-            accumulated -= budget;
-        }
-    }
+    migrate_craft_step( crafter );
 
-    // Mode is derived from craft state every turn so wakeup handlers that
-    // advance current_step do not need to reach into the live actor.
-    auto derive_mode = [&]() -> mode {
-        if( !rec.has_steps() )
-        {
-            return mode::active;
-        }
-        const recipe_step &s = rec.steps()[craft.get_current_step()];
-        if( s.attention != step_attention::unattended )
-        {
-            return mode::active;
-        }
-        if( craft.get_passive_started_at() == calendar::before_time_starts )
-        {
-            return mode::active;
-        }
-        const std::vector<attention_plan> &plans = craft.get_step_plans();
-        const int idx = craft.get_current_step();
-        if( idx >= static_cast<int>( plans.size() ) )
-        {
-            return mode::waiting;
-        }
-        return plans[idx].choice == step_choice::do_wait ? mode::waiting : mode::active;
-    };
     mode_ = derive_mode();
 
-    if( rec.has_steps() ) {
-        const recipe_step &cur_step = rec.steps()[craft.get_current_step()];
-        if( cur_step.attention == step_attention::unattended ) {
-            // Parked awaiting collection: stop the actor instead of re-stamping a
-            // fresh passive entry.  The player collects via an explicit activate.
-            if( craft.is_awaiting_collection() ) {
-                act.set_to_null();
-                crafter.set_moves( 0 );
-                return;
-            }
-            const std::vector<attention_plan> &plans = craft.get_step_plans();
-            const int idx = craft.get_current_step();
-            const attention_plan plan = idx < static_cast<int>( plans.size() ) ? plans[idx] :
-                                        attention_plan{};
-
-            // Past-due wakeup (off-bubble drop or same-turn race): advance inline.
-            if( craft.get_passive_started_at() != calendar::before_time_starts &&
-                craft.get_ready_at() != calendar::before_time_starts &&
-                calendar::turn >= craft.get_ready_at() ) {
-                craft_actualize_scheduled( craft, item_wakeup_kind::ready_check,
-                                           calendar::turn, craft_item );
-                return;
-            }
-
-            if( craft.get_passive_started_at() == calendar::before_time_starts ) {
-                // Unattended steps cannot draw resources from the crafter over time, so consume
-                // the remaining character resource cost before the passive work begins.
-                if( !crafter.craft_consume_character_resources( craft, 10000000 ) ) {
-                    craft.erase_var( "crafter" );
-                    crafter.cancel_activity();
-                    return;
-                }
-
-                craft_stamp_passive_entry( craft, crafter, calendar::turn, craft_item );
-                mode_ = derive_mode();
-                // Back-dated entry can leave alarm and/or ready already due.
-                // Alarm runs first; the alarm handler elides itself if ready
-                // also fires same turn.
-                if( craft.get_alarm_at() != calendar::before_time_starts &&
-                    calendar::turn >= craft.get_alarm_at() ) {
-                    craft_actualize_scheduled( craft, item_wakeup_kind::alarm,
-                                               calendar::turn, craft_item );
-                }
-                if( craft.get_ready_at() != calendar::before_time_starts &&
-                    calendar::turn >= craft.get_ready_at() ) {
-                    craft_actualize_scheduled( craft, item_wakeup_kind::ready_check,
-                                               calendar::turn, craft_item );
-                    return;
-                }
-            }
-
-            if( plan.choice == step_choice::do_wait ) {
-                // Per-turn env check fast-path.  do_something / set_timer
-                // rely on the periodic env_check wakeup at 1-minute cadence
-                // since no actor runs for those modes.
-                craft_actualize_scheduled( craft, item_wakeup_kind::env_check,
-                                           calendar::turn, craft_item );
-                crafter.set_moves( 0 );
-                return;
-            }
-            // do_something / set_timer: end activity without backlog.
-            act.set_to_null();
-            crafter.set_moves( 0 );
-            return;
-        }
+    if( unattended_craft_step( act, crafter ) ) {
+        return;
     }
 
     if( !use_cached_workbench_multiplier ) {
@@ -7018,6 +6912,125 @@ void craft_activity_actor::do_turn( player_activity &act, Character &crafter )
             }
         }
     }
+}
+
+void craft_activity_actor::migrate_craft_step( Character &crafter )
+{
+    const recipe &rec = craft_item->get_making();
+    if( rec.has_steps() && craft_item->get_current_step() == 0 &&
+        craft_item->get_step_progress() == 0.0 && craft_item->item_counter > 0 ) {
+        // Need base_total_moves for conversion; compute it fresh here.
+        const crafting_cost_context migration_ctx{ crafter.book_bonuses_nearby(),
+                compute_tool_speeds( rec, crafter ) };
+        const double migration_base = std::max( 1.0,
+                                                static_cast<double>( rec.batch_time( crafter, craft_item->get_making_batch_size(), 1.0f, 0,
+                                                        migration_ctx ) ) );
+        double accumulated = craft_item->item_counter * migration_base / 10000000.0;
+        for( size_t i = 0; i < rec.steps().size(); ++i ) {
+            double budget = rec.step_budget_moves( crafter, i,
+                                                   craft_item->get_making_batch_size(), migration_ctx );
+            if( accumulated < budget || i == rec.steps().size() - 1 ) {
+                craft_item->set_current_step( static_cast<int>( i ) );
+                craft_item->set_step_progress( accumulated );
+                break;
+            }
+            accumulated -= budget;
+        }
+    }
+}
+
+craft_activity_actor::mode craft_activity_actor::derive_mode() const
+{
+    const recipe &rec = craft_item->get_making();
+    if( !rec.has_steps() ) {
+        return mode::active;
+    }
+    const recipe_step &s = rec.steps()[craft_item->get_current_step()];
+    if( s.attention != step_attention::unattended ) {
+        return mode::active;
+    }
+    if( craft_item->get_passive_started_at() == calendar::before_time_starts ) {
+        return mode::active;
+    }
+    const std::vector<attention_plan> &plans = craft_item->get_step_plans();
+    const int idx = craft_item->get_current_step();
+    if( idx >= static_cast<int>( plans.size() ) ) {
+        return mode::waiting;
+    }
+    return plans[idx].choice == step_choice::do_wait ? mode::waiting : mode::active;
+}
+
+bool craft_activity_actor::unattended_craft_step( player_activity &act, Character &crafter )
+{
+    const recipe &rec = craft_item->get_making();
+    if( !rec.has_steps() ) {
+        return false;
+    }
+    if( rec.steps()[craft_item->get_current_step()].attention != step_attention::unattended ) {
+        return false;
+    }
+
+    // Parked awaiting collection: stop the actor instead of re-stamping a
+    // fresh passive entry.  The player collects via an explicit activate.
+    if( craft_item->is_awaiting_collection() ) {
+        act.set_to_null();
+        crafter.set_moves( 0 );
+        return true;
+    }
+    const std::vector<attention_plan> &plans = craft_item->get_step_plans();
+    const int idx = craft_item->get_current_step();
+    const attention_plan plan = idx < static_cast<int>( plans.size() ) ? plans[idx] :
+                                attention_plan{};
+
+    // Past-due wakeup (off-bubble drop or same-turn race): advance inline.
+    if( craft_item->get_passive_started_at() != calendar::before_time_starts &&
+        craft_item->get_ready_at() != calendar::before_time_starts &&
+        calendar::turn >= craft_item->get_ready_at() ) {
+        craft_actualize_scheduled( *craft_item, item_wakeup_kind::ready_check,
+                                   calendar::turn, craft_item );
+        return true;
+    }
+
+    if( craft_item->get_passive_started_at() == calendar::before_time_starts ) {
+        // Unattended steps cannot draw resources from the crafter over time, so consume
+        // the remaining character resource cost before the passive work begins.
+        if( !crafter.craft_consume_character_resources( *craft_item, 10000000 ) ) {
+            craft_item->erase_var( "crafter" );
+            crafter.cancel_activity();
+            return true;
+        }
+
+        craft_stamp_passive_entry( *craft_item, crafter, calendar::turn, craft_item );
+        mode_ = derive_mode();
+        // Back-dated entry can leave alarm and/or ready already due.
+        // Alarm runs first; the alarm handler elides itself if ready
+        // also fires same turn.
+        if( craft_item->get_alarm_at() != calendar::before_time_starts &&
+            calendar::turn >= craft_item->get_alarm_at() ) {
+            craft_actualize_scheduled( *craft_item, item_wakeup_kind::alarm,
+                                       calendar::turn, craft_item );
+        }
+        if( craft_item->get_ready_at() != calendar::before_time_starts &&
+            calendar::turn >= craft_item->get_ready_at() ) {
+            craft_actualize_scheduled( *craft_item, item_wakeup_kind::ready_check,
+                                       calendar::turn, craft_item );
+            return true;
+        }
+    }
+
+    if( plan.choice == step_choice::do_wait ) {
+        // Per-turn env check fast-path.  do_something / set_timer
+        // rely on the periodic env_check wakeup at 1-minute cadence
+        // since no actor runs for those modes.
+        craft_actualize_scheduled( *craft_item, item_wakeup_kind::env_check,
+                                   calendar::turn, craft_item );
+        crafter.set_moves( 0 );
+        return true;
+    }
+    // do_something / set_timer: end activity without backlog.
+    act.set_to_null();
+    crafter.set_moves( 0 );
+    return true;
 }
 
 void craft_activity_actor::finish( player_activity &act, Character & )
@@ -10110,6 +10123,9 @@ std::unique_ptr<activity_actor> haircut_activity_actor::deserialize( JsonValue &
 
 static bool check_stealing( Character &who, item &it )
 {
+    if( !who.is_avatar() ) {
+        return true;
+    }
     if( !it.is_owned_by( who, true ) ) {
         const std::string thief_mode = who.get_value( "THIEF_MODE" ).str();
         if( thief_mode == "THIEF_HONEST" ) {

@@ -1120,9 +1120,33 @@ CataKeysym GetKeysym( const SDL_Event &ev )
 SDL_Window_Ptr CreateGameWindow( const char *title, const int display, const int w, const int h,
                                  const Uint32 flags )
 {
-    ( void )display;
-    // SDL_CreateWindow takes (title, w, h, flags) -- no position params.
-    SDL_Window_Ptr result( SDL_CreateWindow( title, w, h, flags ) );
+    // SDL3's basic create call no longer accepts a display or position. Preserve the
+    // selected display and centred placement through creation properties instead.
+    int count = 0;
+    SDL_DisplayID *displays = SDL_GetDisplays( &count );
+    const SDL_DisplayID target = displays && display >= 0 && display < count ?
+                                 displays[display] : SDL_GetPrimaryDisplay();
+    SDL_free( displays );
+    const SDL_PropertiesID props = SDL_CreateProperties();
+    if( props == 0 ) {
+        printErrorIf( true, "SDL_CreateProperties failed" );
+        return SDL_Window_Ptr();
+    }
+    SDL_SetStringProperty( props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, title );
+    SDL_SetNumberProperty( props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, w );
+    SDL_SetNumberProperty( props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, h );
+    SDL_SetNumberProperty( props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, flags );
+    SDL_SetNumberProperty( props, SDL_PROP_WINDOW_CREATE_X_NUMBER,
+                           SDL_WINDOWPOS_CENTERED_DISPLAY( target ) );
+    SDL_SetNumberProperty( props, SDL_PROP_WINDOW_CREATE_Y_NUMBER,
+                           SDL_WINDOWPOS_CENTERED_DISPLAY( target ) );
+    SDL_Window_Ptr result( SDL_CreateWindowWithProperties( props ) );
+    SDL_DestroyProperties( props );
+    if( result ) {
+        // Maximization is asynchronous on some window managers. Size queries made
+        // during startup must see the actual display size rather than the saved size.
+        SDL_SyncWindow( result.get() );
+    }
     printErrorIf( !result, "SDL_CreateWindow failed" );
     return result;
 }
@@ -1133,18 +1157,27 @@ bool SetWindowFullscreen( SDL_Window *window, const FullscreenMode mode )
     if( !window ) {
         return false;
     }
+    const auto apply = [window]( bool enabled ) {
+        if( !SDL_SetWindowFullscreen( window, enabled ) ) {
+            return false;
+        }
+        // Wait before WinCreate queries the terminal size for the new display.
+        SDL_SyncWindow( window );
+        return true;
+    };
     switch( mode ) {
         case FullscreenMode::windowed:
-            return SDL_SetWindowFullscreen( window, false );
+            return apply( false );
         case FullscreenMode::fullscreen_desktop:
-            return SDL_SetWindowFullscreen( window, true );
+            SDL_SetWindowFullscreenMode( window, nullptr );
+            return apply( true );
         case FullscreenMode::fullscreen_exclusive: {
             SDL_DisplayID disp = SDL_GetDisplayForWindow( window );
             const SDL_DisplayMode *dm = SDL_GetDesktopDisplayMode( disp );
             if( dm ) {
                 SDL_SetWindowFullscreenMode( window, dm );
             }
-            return SDL_SetWindowFullscreen( window, true );
+            return apply( true );
         }
     }
     return false;

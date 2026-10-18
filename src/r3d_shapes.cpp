@@ -31,7 +31,7 @@ shape classify_terrain( const tile_traits &t )
         return { shape_kind::upright, tree_height };
     }
     if( t.shrub ) {
-        return { shape_kind::upright, shrub_height };
+        return { shape_kind::upright, shrub_height, 0.0f, true };
     }
     // Windows and closed doors stand in the wall line as panels rather than filling the tile.
     if( !t.wall && ( t.window || ( t.door && !t.flat ) ) ) {
@@ -45,8 +45,17 @@ shape classify_terrain( const tile_traits &t )
 
 shape classify_furniture( const tile_traits &t )
 {
+    if( t.panel ) {
+        return { shape_kind::pane, tall_furniture_height };
+    }
     if( t.flat ) {
         return { shape_kind::floor, decal_height };
+    }
+    // Natural obstacles need a filled volume, not the lid/front/legs of manufactured
+    // furniture. Use the same simple box for plants and rocks, with size-based heights.
+    if( t.shrub || t.boulder ) {
+        const float height = t.tiny ? 0.3f : t.low ? 0.55f : tall_furniture_height;
+        return { shape_kind::block, height };
     }
     if( t.tiny ) {
         return { shape_kind::floor, tiny_height };
@@ -99,6 +108,120 @@ box_layout furniture_box_layout( float ox0, float oy0, float ox1, float oy1, flo
         b.side_bottom = oy1;
     }
     return b;
+}
+
+box_layout place_furniture_box( const box_layout &box, bool flip, int facing,
+                                uint8_t joined, uint8_t wall_contacts, float depth_scale )
+{
+    box_layout b = box;
+    b.x0 = flip ? 1.0f - box.x1 : box.x0;
+    b.x1 = flip ? 1.0f - box.x0 : box.x1;
+    for( int turn = 0; turn < ( facing & 3 ); ++turn ) {
+        const float x0 = 1.0f - b.y1;
+        const float x1 = 1.0f - b.y0;
+        b.y0 = b.x0;
+        b.y1 = b.x1;
+        b.x0 = x0;
+        b.x1 = x1;
+    }
+    if( ( joined & face_north ) != 0 ) {
+        b.y0 = 0.0f;
+    }
+    if( ( joined & face_south ) != 0 ) {
+        b.y1 = 1.0f;
+    }
+    if( ( joined & face_west ) != 0 ) {
+        b.x0 = 0.0f;
+    }
+    if( ( joined & face_east ) != 0 ) {
+        b.x1 = 1.0f;
+    }
+    constexpr float gap = 0.5f - wall_half_thickness;
+    if( ( wall_contacts & face_north ) != 0 ) {
+        b.y0 = -gap;
+    }
+    if( ( wall_contacts & face_south ) != 0 ) {
+        b.y1 = 1.0f + gap;
+    }
+    if( ( wall_contacts & face_west ) != 0 ) {
+        b.x0 = -gap;
+    }
+    if( ( wall_contacts & face_east ) != 0 ) {
+        b.x1 = 1.0f + gap;
+    }
+    // Reduce depth after fitting to the wall so the back stays flush in every orientation.
+    const float depth_x = ( b.x1 - b.x0 ) * depth_scale;
+    const float depth_y = ( b.y1 - b.y0 ) * depth_scale;
+    switch( facing & 3 ) {
+        case 0:
+            b.y1 = b.y0 + depth_y;
+            break;
+        case 1:
+            b.x0 = b.x1 - depth_x;
+            break;
+        case 2:
+            b.y0 = b.y1 - depth_y;
+            break;
+        case 3:
+            b.x1 = b.x0 + depth_x;
+            break;
+    }
+    return b;
+}
+
+int furniture_wall_facing( bool row_x, bool row_y, uint8_t walls )
+{
+    if( !row_y ) {
+        if( ( walls & face_north ) != 0 ) {
+            return 0;
+        }
+        if( ( walls & face_south ) != 0 ) {
+            return 2;
+        }
+    }
+    if( !row_x ) {
+        if( ( walls & face_east ) != 0 ) {
+            return 1;
+        }
+        if( ( walls & face_west ) != 0 ) {
+            return 3;
+        }
+    }
+    return 0;
+}
+
+bool trim_wall_spur( uint8_t connections, uint8_t indoor_sides, uint8_t neighbour_connections )
+{
+    constexpr uint8_t all = face_north | face_south | face_west | face_east;
+    if( connections == 0 || ( connections & ( connections - 1 ) ) != 0 ||
+        ( indoor_sides & all ) != ( all & ~connections ) ) {
+        return false;
+    }
+    const uint8_t opposite = connections == face_north ? face_south :
+                             connections == face_south ? face_north :
+                             connections == face_west ? face_east : face_west;
+    const uint8_t corner = neighbour_connections & ~opposite;
+    const bool horizontal = ( corner & ( face_west | face_east ) ) == face_west ||
+                            ( corner & ( face_west | face_east ) ) == face_east;
+    const bool vertical = ( corner & ( face_north | face_south ) ) == face_north ||
+                          ( corner & ( face_north | face_south ) ) == face_south;
+    return ( neighbour_connections & opposite ) != 0 && horizontal && vertical;
+}
+
+std::array<bool, 9> wall_footprint( uint8_t connections )
+{
+    // A straight wall, including its last tile, spans the whole tile. Only actual
+    // turns and junctions stop an arm at the centre to avoid projecting past a corner.
+    if( connections == 0 || connections == face_west || connections == face_east ) {
+        connections = face_west | face_east;
+    } else if( connections == face_north || connections == face_south ) {
+        connections = face_north | face_south;
+    }
+    return {{
+            false, ( connections & face_north ) != 0, false,
+            ( connections & face_west ) != 0, true, ( connections & face_east ) != 0,
+            false, ( connections & face_south ) != 0, false
+        }};
 }
 
 namespace

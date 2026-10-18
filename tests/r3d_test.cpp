@@ -134,6 +134,94 @@ TEST_CASE( "r3d_camera_forward_eighths", "[r3d]" )
     CHECK( cam.forward_eighths() == 7 );
 }
 
+TEST_CASE( "r3d_thin_walls_join_at_a_uniform_thickness", "[r3d]" )
+{
+    // Check every combination, including corners, T junctions and crossings. Only the
+    // centre strip reaches a connected neighbour; diagonal cells never fatten a corner.
+    for( int mask = 0; mask < 16; ++mask ) {
+        const uint8_t connections = static_cast<uint8_t>( mask << 1 );
+        const std::array<bool, 9> cells = r3d::wall_footprint( connections );
+        CHECK( cells[4] );
+        for( int corner : {
+                 0, 2, 6, 8
+             } ) {
+            CHECK_FALSE( cells[corner] );
+        }
+        const bool vertical_end = connections == r3d::face_north || connections == r3d::face_south;
+        const bool horizontal_end = connections == 0 || connections == r3d::face_west ||
+                                    connections == r3d::face_east;
+        CHECK( cells[1] == ( vertical_end || ( connections & r3d::face_north ) != 0 ) );
+        CHECK( cells[7] == ( vertical_end || ( connections & r3d::face_south ) != 0 ) );
+        CHECK( cells[3] == ( horizontal_end || ( connections & r3d::face_west ) != 0 ) );
+        CHECK( cells[5] == ( horizontal_end || ( connections & r3d::face_east ) != 0 ) );
+    }
+}
+
+TEST_CASE( "r3d_thin_walls_trim_only_indoor_corner_spurs", "[r3d]" )
+{
+    using namespace r3d;
+    constexpr uint8_t all = face_north | face_south | face_west | face_east;
+    // Inward spur joins the west side of a north/east corner, as in shelter_2.
+    CHECK( trim_wall_spur( face_east, all & ~face_east, face_west | face_north | face_east ) );
+    CHECK( trim_wall_spur( face_west, all & ~face_west, face_east | face_south | face_west ) );
+    CHECK( trim_wall_spur( face_north, all & ~face_north, face_south | face_north | face_east ) );
+    CHECK( trim_wall_spur( face_south, all & ~face_south, face_north | face_south | face_west ) );
+    // Preserve outdoor ends, freestanding partitions, straight walls and true T junctions.
+    CHECK_FALSE( trim_wall_spur( face_east, 0, face_west | face_north | face_east ) );
+    CHECK_FALSE( trim_wall_spur( face_east, all & ~face_east, face_west | face_east ) );
+    CHECK_FALSE( trim_wall_spur( face_east, all & ~face_east, face_west | face_north | face_south ) );
+    CHECK_FALSE( trim_wall_spur( face_north | face_south, face_east | face_west, all ) );
+    CHECK_FALSE( trim_wall_spur( 0, all, all ) );
+}
+
+TEST_CASE( "r3d_corner_locker_faces_into_the_room", "[r3d]" )
+{
+    // At the south-west corner the solitary locker backs onto the south wall,
+    // a quarter turn anticlockwise from its previous west-wall orientation.
+    CHECK( r3d::furniture_wall_facing( false, false, r3d::face_south | r3d::face_west ) == 2 );
+    CHECK( r3d::furniture_wall_facing( false, true, r3d::face_south | r3d::face_west ) == 3 );
+    CHECK( r3d::furniture_wall_facing( true, false, r3d::face_north | r3d::face_east ) == 0 );
+}
+
+TEST_CASE( "r3d_notice_board_is_a_panel", "[r3d]" )
+{
+    r3d::tile_traits traits;
+    traits.move_cost = 0;
+    traits.panel = true;
+    const r3d::shape board = r3d::classify_furniture( traits );
+    CHECK( board.kind == r3d::shape_kind::pane );
+    CHECK( board.height > r3d::cutaway_stub_height );
+}
+
+TEST_CASE( "r3d_camera_rotation_matches_movement_directions", "[r3d]" )
+{
+    for( int direction : {
+             -1, 1
+             } ) {
+        r3d::camera cam;
+        for( int step = 1; step <= 16; ++step ) {
+            cam.rotate_steps( direction );
+            const int heading = ( ( -direction * step ) % 8 + 8 ) % 8;
+            CHECK( cam.forward_eighths() == heading );
+            const float angle = -heading * 0.78539816f;
+            const r3d::vec3 right = cam.ground_right();
+            CHECK( approx( right.x, std::cos( angle ) ) );
+            CHECK( approx( right.y, std::sin( angle ) ) );
+        }
+    }
+}
+
+TEST_CASE( "r3d_camera_rotation_aligns_after_free_orbit", "[r3d]" )
+{
+    r3d::camera cam;
+    cam.yaw = 0.3f;
+    cam.rotate_steps( 1 );
+    CHECK( approx( cam.yaw, 0.78539816f ) );
+    cam.yaw = -0.3f;
+    cam.rotate_steps( -1 );
+    CHECK( approx( cam.yaw, -0.78539816f ) );
+}
+
 TEST_CASE( "r3d_camera_steps_clamp", "[r3d]" )
 {
     r3d::camera cam;
@@ -147,7 +235,7 @@ TEST_CASE( "r3d_camera_steps_clamp", "[r3d]" )
     CHECK( cam.distance <= r3d::camera::max_distance );
 
     cam.yaw = 0.0f;
-    cam.rotate_steps( 24 ); // 24 * 15 degrees = a full turn
+    cam.rotate_steps( 8 ); // 8 * 45 degrees = a full turn
     CHECK( ( approx( cam.yaw, 0.0f, 0.05f ) || approx( std::fabs( cam.yaw ), 6.2831853f, 0.05f ) ) );
 }
 
@@ -363,6 +451,50 @@ TEST_CASE( "r3d_terrain_shapes", "[r3d]" )
     CHECK( r3d::classify_terrain( t ).kind == r3d::shape_kind::block );
 }
 
+TEST_CASE( "r3d_cabinets_meet_adjacent_thin_wall_faces", "[r3d]" )
+{
+    const r3d::box_layout box = r3d::furniture_box_layout( 0.1f, 0.06f, 0.9f, 1.0f,
+                                0.78f, false );
+    const std::array<uint8_t, 4> backs = {{
+            r3d::face_north, r3d::face_east, r3d::face_south, r3d::face_west
+        }
+    };
+    for( bool flip : {
+             false, true
+         } ) {
+        for( int facing = 0; facing < 4; ++facing ) {
+            const r3d::box_layout original = r3d::place_furniture_box( box, flip, facing, 0, 0 );
+            const r3d::box_layout fitted = r3d::place_furniture_box( box, flip, facing, 0, backs[facing] );
+            // Adjacent wall centres are -0.5 or 1.5 in this tile's coordinates. The
+            // cabinet meets the near face without moving its front or either end.
+            CHECK( approx( fitted.x0, facing == 3 ? -0.5f + r3d::wall_half_thickness : original.x0 ) );
+            CHECK( approx( fitted.x1, facing == 1 ? 1.5f - r3d::wall_half_thickness : original.x1 ) );
+            CHECK( approx( fitted.y0, facing == 0 ? -0.5f + r3d::wall_half_thickness : original.y0 ) );
+            CHECK( approx( fitted.y1, facing == 2 ? 1.5f - r3d::wall_half_thickness : original.y1 ) );
+            CHECK( fitted.side_top == box.side_top );
+            CHECK( fitted.lid_bottom == box.lid_bottom );
+            const r3d::box_layout shallow = r3d::place_furniture_box( box, flip, facing, 0,
+                                            backs[facing], 0.5f );
+            if( ( facing & 1 ) == 0 ) {
+                CHECK( approx( shallow.y1 - shallow.y0, ( fitted.y1 - fitted.y0 ) * 0.5f ) );
+                CHECK( shallow.x0 == fitted.x0 );
+                CHECK( shallow.x1 == fitted.x1 );
+                CHECK( ( facing == 0 ? shallow.y0 == fitted.y0 : shallow.y1 == fitted.y1 ) );
+            } else {
+                CHECK( approx( shallow.x1 - shallow.x0, ( fitted.x1 - fitted.x0 ) * 0.5f ) );
+                CHECK( shallow.y0 == fitted.y0 );
+                CHECK( shallow.y1 == fitted.y1 );
+                CHECK( ( facing == 1 ? shallow.x1 == fitted.x1 : shallow.x0 == fitted.x0 ) );
+            }
+        }
+    }
+    const r3d::box_layout row = r3d::place_furniture_box( box, false, 0,
+                                r3d::face_west | r3d::face_east, r3d::face_north );
+    CHECK( row.x0 == 0.0f );
+    CHECK( row.x1 == 1.0f );
+    CHECK( approx( row.y0, -0.5f + r3d::wall_half_thickness ) );
+}
+
 TEST_CASE( "r3d_furniture_box_layout", "[r3d]" )
 {
     // A sprite filling its whole cell: a whole-tile box, lid above the front.
@@ -396,6 +528,49 @@ TEST_CASE( "r3d_furniture_box_layout", "[r3d]" )
     const r3d::box_layout none = r3d::furniture_box_layout( 0.0f, 0.0f, 0.0f, 0.0f, 0.4f, false );
     CHECK( approx( none.x1, 1.0f ) );
     CHECK( approx( none.y1, 1.0f ) );
+}
+
+TEST_CASE( "r3d_shrub_ground_is_separate_from_upright_foliage", "[r3d]" )
+{
+    r3d::tile_traits traits;
+    traits.shrub = true;
+    const r3d::shape bush = r3d::classify_terrain( traits );
+    CHECK( bush.kind == r3d::shape_kind::upright );
+    CHECK( bush.ground_backdrop );
+    CHECK( bush.height > r3d::floor_height );
+
+    traits = {};
+    traits.tree = true;
+    CHECK_FALSE( r3d::classify_terrain( traits ).ground_backdrop );
+    CHECK_FALSE( r3d::classify_furniture( {} ).ground_backdrop );
+}
+
+TEST_CASE( "r3d_natural_furniture_is_a_solid_volume", "[r3d]" )
+{
+    // Japanese knotweed is passable, SHORT and SHRUB. It must not become a bench.
+    r3d::tile_traits knotweed;
+    knotweed.shrub = true;
+    knotweed.low = true;
+    const r3d::shape plant = r3d::classify_furniture( knotweed );
+    CHECK( plant.kind == r3d::shape_kind::block );
+    CHECK( plant.slab == 0.0f );
+    CHECK( plant.height > r3d::floor_height );
+
+    // Small, medium and large boulders respectively use TINY, SHORT and impassable.
+    float previous_height = r3d::floor_height;
+    for( int size = 0; size < 3; ++size ) {
+        r3d::tile_traits rock;
+        rock.boulder = true;
+        rock.tiny = size == 0;
+        rock.low = size == 1;
+        rock.move_cost = size == 2 ? 0 : 100;
+        const r3d::shape volume = r3d::classify_furniture( rock );
+        CHECK( volume.kind == r3d::shape_kind::block );
+        CHECK( volume.slab == 0.0f );
+        CHECK( volume.height > previous_height );
+        CHECK( volume.height <= 1.0f );
+        previous_height = volume.height;
+    }
 }
 
 TEST_CASE( "r3d_furniture_shapes", "[r3d]" )

@@ -129,6 +129,7 @@ struct state {
     bool map_drawn = false; // the game's map view has been on screen (a game is running)
     vec3 pan; // free camera: offset of the camera target from the viewed tile, world space
     bool walls_on = false; // whether the cache was given the wall side rules and atlas
+    bool thin_walls = true;
     bool plaster_atlas = false; // whether painted walls take the atlas plaster (see the option)
     bool chunks_first_person = false; // the mode the chunk meshes were built for
     // First-person easing: the player and the heading jump, the picture catches up. The offsets
@@ -337,7 +338,8 @@ float surface_height( state &s, const map &here, const tripoint_bub_ms &p )
         return floor_height;
     }
     const shape f = s.cache.furniture( here.furn( p ), *tilecontext ).sh;
-    return f.kind == shape_kind::prism ? std::max( t.height, f.height ) : t.height;
+    return f.kind == shape_kind::prism || f.kind == shape_kind::block ?
+           std::max( t.height, f.height ) : t.height;
 }
 
 // Turns the game's own visibility knowledge into a light colour per tile: lit tiles are shown
@@ -1457,6 +1459,12 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     if( !s.walls_on ) {
         s.cache.set_wall_sides( load_wall_sides( s.device ) );
         s.walls_on = true;
+    }
+    const bool want_thin_walls = get_option<bool>( "R3D_THIN_WALLS" );
+    if( want_thin_walls != s.thin_walls ) {
+        release_all_chunks( s );
+        s.cache.set_thin_walls( want_thin_walls );
+        s.thin_walls = want_thin_walls;
     }
     const bool want_atlas = get_option<bool>( "R3D_WALL_TEXTURES" );
     if( want_atlas != s.plaster_atlas ) {

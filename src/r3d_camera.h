@@ -130,7 +130,7 @@ struct camera {
     int forward_eighths() const;
 
     /**
-     * Orbit by steps of 15 degrees / tilt by steps of 5 degrees / scale distance by 10%. In first
+     * Orbit by steps of 45 degrees / tilt by steps of 5 degrees / scale distance by 10%. In first
      * person a rotate step is one eighth turn clockwise (no tween here, no game time), a pitch
      * step looks up or down by 15 degrees, and zoom does nothing.
      */

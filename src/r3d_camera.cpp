@@ -8,7 +8,7 @@ namespace r3d
 
 namespace
 {
-constexpr float rotate_step = 0.2618f; // 15 degrees
+constexpr float rotate_step = 0.78539816f; // 45 degrees, matching the eight movement directions
 constexpr float pitch_step = 0.0873f;  // 5 degrees
 constexpr float zoom_factor = 1.1f;
 constexpr float near_plane = 0.5f;
@@ -166,7 +166,8 @@ void camera::rotate_steps( int steps )
         heading = ( ( heading + steps ) % 8 + 8 ) % 8;
         return;
     }
-    yaw += rotate_step * static_cast<float>( steps );
+    // Restore an aligned heading after a free mouse orbit as well.
+    yaw = ( std::round( yaw / rotate_step ) + static_cast<float>( steps ) ) * rotate_step;
     constexpr float two_pi = 6.2831853f;
     yaw = std::fmod( yaw, two_pi );
 }

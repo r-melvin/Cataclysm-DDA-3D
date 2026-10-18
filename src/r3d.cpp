@@ -323,6 +323,28 @@ struct light_sampler {
     // the viewed level); they take the light of the ground below them.
     int vision_top = OVERMAP_HEIGHT;
 
+    // Whether any of the eight tiles around p is seen or remembered.
+    bool borders_known( const tripoint_bub_ms &p ) const {
+        for( int dy = -1; dy <= 1; ++dy ) {
+            for( int dx = -1; dx <= 1; ++dx ) {
+                if( dx == 0 && dy == 0 ) {
+                    continue;
+                }
+                const tripoint_bub_ms n = p + tripoint_rel_ms( dx, dy, 0 );
+                if( !here.inbounds( n ) ) {
+                    continue;
+                }
+                const lit_level ll = here.access_cache( n.z() ).visibility_cache[n.x()][n.y()];
+                const visibility_type vis = here.get_visibility( ll, vvc );
+                if( vis == visibility_type::CLEAR || vis == visibility_type::LIT ||
+                    you.has_memory_at( here.get_abs( n ) ) ) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     uint32_t color_at( const tripoint_bub_ms &p ) const {
         if( !here.inbounds( p ) ) {
             return pack_light( 0, 0, 0 );
@@ -368,9 +390,11 @@ struct light_sampler {
             }
         } else if( you.has_memory_at( here.get_abs( p ) ) ) {
             return remembered_light();
-        } else if( !here.is_outside( p ) ) {
-            // Never seen, but under a roof: marked so that the floor there can be drawn dark
-            // (an unexplored room reads as a dark room, not a hole); nothing else on it is.
+        } else if( !here.is_outside( p ) || borders_known( p ) ) {
+            // Never seen, but under a roof or next to known ground: marked so that the floor
+            // and any wall there can be drawn dark (an unexplored room reads as a dark room,
+            // not a hole, and the walls at the edge of the known do not end in mid-air);
+            // nothing else on it is.
             return unseen_indoor_light();
         }
         const auto to_byte = []( float v ) {
@@ -429,10 +453,11 @@ void update_chunk_light( state &s, chunk_gpu &c, const tripoint_abs_sm &pos,
         if( tile == pack_light( 0, 0, 0 ) && ( r.dx != 0 || r.dy != 0 ) ) {
             tile = grid[0][static_cast<size_t>( ( r.ly + 1 ) * border + ( r.lx + 1 ) )];
         }
-        // A never-seen floor is drawn as dark floor (the shader leaves black out), so an
-        // unexplored room reads as a dark room, not a hole; nothing standing on it shows.
+        // A never-seen floor or wall is drawn dark (the shader leaves black out), so an
+        // unexplored room reads as a dark room, not a hole, and a wall does not stop short of
+        // a tile nobody has looked at; nothing else standing there shows.
         if( tile == unseen_indoor_light() ) {
-            tile = r.floor ? pack_light( 70, 68, 74 ) : pack_light( 0, 0, 0 );
+            tile = r.floor || r.wall ? pack_light( 70, 68, 74 ) : pack_light( 0, 0, 0 );
         }
         const uint32_t shade = r.shade;
         c.light[i] = pack_light(
@@ -590,6 +615,21 @@ void dump_view( const std::string &path, const tripoint_bub_ms &center )
             out << ( seen ? 'S' : you.has_memory_at( here.get_abs( p ) ) ? 'M' : '.' );
         }
         out << '\n';
+    }
+    out << "\nitems (tiles whose items the player sees; top item and count):\n";
+    for( int dy = -half_h; dy <= half_h; ++dy ) {
+        for( int dx = -half_w; dx <= half_w; ++dx ) {
+            const tripoint_bub_ms p = center + tripoint_rel_ms( dx, dy, 0 );
+            if( !here.inbounds( p ) || !here.sees_some_items( p, you ) ) {
+                continue;
+            }
+            const map_stack items = get_map().i_at( p );
+            if( items.empty() ) {
+                continue;
+            }
+            out << "  (" << p.x() << ',' << p.y() << ") " << items.begin()->tname() << " x"
+                << items.size() << '\n';
+        }
     }
     out << "\nlegend (last id drawn with each symbol):\n";
     for( const auto &e : legend ) {

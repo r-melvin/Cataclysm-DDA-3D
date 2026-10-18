@@ -10,6 +10,7 @@
 #include <string>
 
 #include "cata_tiles.h"
+#include "debug.h"
 #include "map.h"
 #include "map_scale_constants.h"
 #include "mapdata.h"
@@ -215,17 +216,10 @@ struct sprite_band {
     float bottom = -1.0f;
 };
 
-void emit_side( quad_sink &sink, const sprite_ref &s, int x, int y, face_bit face, float z_base,
-                float z_top, const light_ref &ref, float shift_x = 0.0f, float shift_y = 0.0f,
-                const sprite_band &band = {} )
+// The corners of a side face of the cell at (x0, y0): top-left, top-right, bottom-right,
+// bottom-left as seen from outside the box, so sprites are never mirrored.
+bool side_corners( face_bit face, float x0, float y0, float z_base, float z_top, corners_t &c )
 {
-    const float x0 = static_cast<float>( x ) + shift_x;
-    const float y0 = static_cast<float>( y ) + shift_y;
-    const float dv = s.v1 - s.v0;
-    const bool banded = band.top >= 0.0f;
-    const float v_top = banded ? s.v0 + dv * band.top : s.v1 - dv * ( z_top - z_base );
-    const float v_bot = banded ? s.v0 + dv * band.bottom : s.v1;
-    // left/right are as seen from outside the box, so sprites are never mirrored.
     float lx = 0.0f;
     float ly = 0.0f;
     float rx = 0.0f;
@@ -256,9 +250,26 @@ void emit_side( quad_sink &sink, const sprite_ref &s, int x, int y, face_bit fac
             ry = y0 + 1;
             break;
         default:
-            return;
+            return false;
     }
-    const corners_t c = {{ { lx, ly, z_top }, { rx, ry, z_top }, { rx, ry, z_base }, { lx, ly, z_base } }};
+    c = {{ { lx, ly, z_top }, { rx, ry, z_top }, { rx, ry, z_base }, { lx, ly, z_base } }};
+    return true;
+}
+
+void emit_side( quad_sink &sink, const sprite_ref &s, int x, int y, face_bit face, float z_base,
+                float z_top, const light_ref &ref, float shift_x = 0.0f, float shift_y = 0.0f,
+                const sprite_band &band = {} )
+{
+    const float x0 = static_cast<float>( x ) + shift_x;
+    const float y0 = static_cast<float>( y ) + shift_y;
+    const float dv = s.v1 - s.v0;
+    const bool banded = band.top >= 0.0f;
+    const float v_top = banded ? s.v0 + dv * band.top : s.v1 - dv * ( z_top - z_base );
+    const float v_bot = banded ? s.v0 + dv * band.bottom : s.v1;
+    corners_t c;
+    if( !side_corners( face, x0, y0, z_base, z_top, c ) ) {
+        return;
+    }
     const uvs_t uv = {{ { s.u0, v_top }, { s.u1, v_top }, { s.u1, v_bot }, { s.u0, v_bot } }};
     sink.add( s, c, uv, ref );
 }
@@ -548,8 +559,9 @@ void emit_wall_side( quad_sink &sink, const tile_info &t, int x, int y, face_bit
     if( t.side.valid ) {
         emit_side( sink, t.side, x, y, face, z_base, z_top, tinted( ref, t.side_tint ) );
     } else if( t.elevation_split >= 0.0f ) {
-        // The sprite's rows from the coving down to the skirting, once over the storey.
-        emit_side_layers( sink, t, x, y, face, z_base, z_top, ref, sprite_band{ t.elevation_split, 1.0f } );
+        // Coving, paint and skirting board read from the edge-on sprite, once over the storey.
+        emit_side( sink, t.elevation, x, y, face, z_base, z_top, ref, 0.0f, 0.0f,
+                   sprite_band{ t.elevation_split, 1.0f } );
     } else {
         emit_side_layers( sink, t, x, y, face, z_base, z_top, ref );
     }
@@ -578,6 +590,13 @@ light_ref make_ref( int lx, int ly, int dx, int dy, int dz, uint8_t shade )
     r.dy = static_cast<int8_t>( dy );
     r.dz = static_cast<int8_t>( dz );
     r.shade = shade;
+    return r;
+}
+
+light_ref wall_ref( int lx, int ly, int dx, int dy, int dz, uint8_t shade )
+{
+    light_ref r = make_ref( lx, ly, dx, dy, dz, shade );
+    r.wall = true;
     return r;
 }
 
@@ -715,10 +734,31 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int sub
         // A painted or plain wall's sprite is drawn as a front elevation: a band of framing at
         // the top, then coving, the paint and a skirting board. Read that way it is the side,
         // and the framing band tops the wall; the atlas plaster is the alternative.
-        constexpr float framing_rows = 0.17f;
+        // Of the wall's multitile pieces, the east-west edge shows it edge-on: a cavity (the
+        // top rows), a pale coving line, the paint and a skirting board. That piece is the
+        // elevation of every side, whatever piece the tile itself is drawn with from above.
+        constexpr int edge_subtile = 2; // "edge" in cata_tiles' multitile_keys
+        constexpr int edge_east_west = 1;
+        constexpr float cavity_rows = 0.125f;
         if( !patterned_material && !plaster_atlas_ && info.sprite.valid ) {
-            const sprite_ref &art = info.sprite;
-            info.elevation_split = art.opaque_y0 + ( art.opaque_y1 - art.opaque_y0 ) * framing_rows;
+            info.elevation = info.sprite;
+            if( const std::optional<texture_draw_data> edge = tiles.get_sprite_draw_data(
+                        t.id.str(), TILE_CATEGORY::TERRAIN, tripoint_bub_ms( 0, 0, 0 ), false,
+                        edge_subtile, edge_east_west ) ) {
+                info.elevation = to_sprite_ref( *edge );
+            }
+            const sprite_ref &art = info.elevation;
+            info.elevation_split = art.opaque_y0 + ( art.opaque_y1 - art.opaque_y0 ) * cavity_rows;
+            // Debug aid: CATA_R3D_DEBUG_WALLS=1 logs the sprite geometry of each painted wall.
+            static const bool debug_walls = std::getenv( "CATA_R3D_DEBUG_WALLS" ) != nullptr;
+            if( debug_walls ) {
+                DebugLog( D_INFO, DC_ALL ) << "r3d wall " << t.id.str() << " sub=" << subtile << " rot=" << rota
+                                           << " uv=" << art.u0 << "," << art.v0 << "-" << art.u1 << "," << art.v1
+                                           << " size=" << art.size_x << "x" << art.size_y
+                                           << " opaque=" << art.opaque_x0 << "," << art.opaque_y0 << "-"
+                                           << art.opaque_x1 << "," << art.opaque_y1
+                                           << " backdrop=" << info.backdrop.valid << " side=" << info.side.valid;
+            }
         } else if( !name.empty() && found != wall_sides_->names.end() && !patterned_material ) {
             const uv_rect uv = atlas_cell( static_cast<int>( found - wall_sides_->names.begin() ),
                                            wall_sides_->cell, wall_sides_->width, wall_sides_->height );
@@ -1004,43 +1044,43 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                     if( ( faces & face_top ) != 0 ) {
                         if( terrain.cap.valid ) {
                             emit_top( sink, terrain.cap, lx, ly, ts.height,
-                                      tinted( make_ref( lx, ly, 0, 0, 0, face_shade[0] ), terrain.cap_tint ) );
+                                      tinted( wall_ref( lx, ly, 0, 0, 0, face_shade[0] ), terrain.cap_tint ) );
                         } else if( terrain.elevation_split >= 0.0f ) {
                             // A plain cap in the paint: a patch from the middle of the
                             // elevation's painted rows, scaled over the top.
-                            sprite_ref patch = terrain.sprite;
+                            sprite_ref patch = terrain.elevation;
                             const float dv = patch.v1 - patch.v0;
                             const float du = patch.u1 - patch.u0;
                             const float paint0 = terrain.elevation_split;
-                            patch.v0 = terrain.sprite.v0 + dv * ( paint0 + ( 1.0f - paint0 ) * 0.35f );
-                            patch.v1 = terrain.sprite.v0 + dv * ( paint0 + ( 1.0f - paint0 ) * 0.6f );
+                            patch.v0 = terrain.elevation.v0 + dv * ( paint0 + ( 1.0f - paint0 ) * 0.35f );
+                            patch.v1 = terrain.elevation.v0 + dv * ( paint0 + ( 1.0f - paint0 ) * 0.6f );
                             patch.u0 += du * 0.2f;
                             patch.u1 -= du * 0.2f;
                             patch.size_y = patch.size_x;
                             patch.quarter_turns = 0;
                             patch.flip = false;
                             emit_top( sink, patch, lx, ly, ts.height,
-                                      make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                                      wall_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
                         } else {
                             emit_top_layers( sink, terrain, lx, ly, ts.height,
-                                             make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                                             wall_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
                         }
                     }
                     if( ( faces & face_north ) != 0 ) {
                         emit_wall_side( sink, terrain, lx, ly, face_north, 0.0f, ts.height,
-                                         make_ref( lx, ly, 0, -1, 0, face_shade[1] ) );
+                                         wall_ref( lx, ly, 0, -1, 0, face_shade[1] ) );
                     }
                     if( ( faces & face_south ) != 0 ) {
                         emit_wall_side( sink, terrain, lx, ly, face_south, 0.0f, ts.height,
-                                         make_ref( lx, ly, 0, 1, 0, face_shade[2] ) );
+                                         wall_ref( lx, ly, 0, 1, 0, face_shade[2] ) );
                     }
                     if( ( faces & face_west ) != 0 ) {
                         emit_wall_side( sink, terrain, lx, ly, face_west, 0.0f, ts.height,
-                                         make_ref( lx, ly, -1, 0, 0, face_shade[3] ) );
+                                         wall_ref( lx, ly, -1, 0, 0, face_shade[3] ) );
                     }
                     if( ( faces & face_east ) != 0 ) {
                         emit_wall_side( sink, terrain, lx, ly, face_east, 0.0f, ts.height,
-                                         make_ref( lx, ly, 1, 0, 0, face_shade[4] ) );
+                                         wall_ref( lx, ly, 1, 0, 0, face_shade[4] ) );
                     }
                     break;
                 case shape_kind::upright:

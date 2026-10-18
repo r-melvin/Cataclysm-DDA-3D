@@ -67,6 +67,9 @@ struct tile_info {
     // framing over coving, paint and skirting); rows below this fraction of the sprite are the
     // side, from coving to skirting, and the rows above it top the wall
     float elevation_split = -1.0f;
+    // the sprite those rows come from: the tileset's east-west edge piece of the wall, which
+    // shows the wall edge-on (a top-down tileset draws it as cavity, coving, paint, skirting)
+    sprite_ref elevation;
     uint32_t side_tint = 0xffffffu; // 0xRRGGBB colours for the side texture and the cap
     uint32_t cap_tint = 0xffffffu;
     bool see_through = false; // transparent terrain (fences, bars): the floor shows through it
@@ -148,6 +151,9 @@ struct light_ref {
     // a floor top: shown as dark floor rather than left out where its tile was never seen,
     // so unexplored rooms are a dark floor between their seen walls, not a hole
     bool floor = false;
+    // a wall's face: drawn dark like a floor where its tile was never seen but borders known
+    // ground, so the walls at the edge of what is known do not end in mid-air
+    bool wall = false;
 };
 
 struct mesh_batch {

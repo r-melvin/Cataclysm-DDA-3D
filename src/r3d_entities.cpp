@@ -193,9 +193,12 @@ chunk_mesh build_entity_mesh( const entity_view &view )
                 if( !here.inbounds( p ) ) {
                     continue;
                 }
-                // As the flat view: nothing inside closed furniture (lockers, cupboards), and
-                // nothing on tiles the player cannot see into.
-                if( !here.sees_some_items( p, you ) ) {
+                // Nothing on tiles the player cannot see into, and nothing inside closed
+                // furniture (lockers, cupboards): the flat view shows those once the player
+                // stands next to them, but here the furniture is drawn closed, and its
+                // contents would sit on its top (or float there when the cutaway removes it).
+                if( !here.sees_some_items( p, you ) ||
+                    here.has_flag( ter_furn_flag::TFLAG_CONTAINER, p ) ) {
                     continue;
                 }
                 map_stack stack = here.i_at( p );

@@ -129,15 +129,15 @@ sprite_ref to_sprite_ref( const texture_draw_data &data )
 
 // Looks up both layers of a tile. A tile with neither falls back to the tileset's "unknown" sprite.
 void resolve_layers( cata_tiles &tiles, const std::string &id, TILE_CATEGORY category,
-                     tile_info &out, int subtile = -1, int rota = 0 )
+                     tile_info &out, int subtile = -1, int rota = 0, const std::string &variant = "" )
 {
     const tripoint_bub_ms origin( 0, 0, 0 );
     if( const std::optional<texture_draw_data> bg = tiles.get_sprite_draw_data( id, category, origin,
-            true, subtile, rota ) ) {
+            true, subtile, rota, variant ) ) {
         out.backdrop = to_sprite_ref( *bg );
     }
     if( const std::optional<texture_draw_data> fg = tiles.get_sprite_draw_data( id, category, origin,
-            false, subtile, rota ) ) {
+            false, subtile, rota, variant ) ) {
         out.sprite = to_sprite_ref( *fg );
     }
     if( !out.backdrop.valid && !out.sprite.valid ) {
@@ -885,15 +885,17 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int sub
 }
 
 const tile_info &tile_info_cache::named( TILE_CATEGORY category, const std::string &id,
-        cata_tiles &tiles )
+        cata_tiles &tiles, int subtile, int rota, const std::string &variant )
 {
-    const std::string key = std::to_string( static_cast<int>( category ) ) + ":" + id;
+    const std::string key = std::to_string( static_cast<int>( category ) ) + ":" +
+                            std::to_string( subtile ) + ":" + std::to_string( rota ) + ":" +
+                            std::to_string( id.size() ) + ":" + id + variant;
     auto it = named_.find( key );
     if( it != named_.end() ) {
         return it->second;
     }
     tile_info info;
-    resolve_layers( tiles, id, category, info );
+    resolve_layers( tiles, id, category, info, subtile, rota, variant );
     return named_.emplace( key, info ).first->second;
 }
 
@@ -929,11 +931,14 @@ const tile_info &tile_info_cache::furniture( furn_id id, cata_tiles &tiles, int 
         }
         info.sh = classify_furniture( traits );
         resolve_layers( tiles, f.id.str(), TILE_CATEGORY::FURNITURE, info, subtile, rota );
-        if( info.sh.kind == shape_kind::block && !info.backdrop.valid ) {
-            // Fill transparent margins so rocks and vegetation cannot become hollow
-            // furniture silhouettes. Their own sprite remains the visible detail layer.
+        if( info.sh.kind == shape_kind::block ) {
+            // A supplied backdrop may itself have transparent holes. Keep the object's
+            // artwork as detail over a solid material, including background-only tiles.
+            // Use the centre tile as a continuous rock material.
+            const sprite_ref detail = info.main();
             info.backdrop = traits.boulder ?
-                            terrain( ter_str_id( "t_rock" ).id(), tiles ).main() : ground( tiles ).main();
+                            terrain( ter_str_id( "t_rock" ).id(), tiles, 0 ).main() : ground( tiles ).main();
+            info.sprite = detail;
         }
     }
     return furniture_.emplace( key, info ).first->second;
@@ -1447,6 +1452,12 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                 // there is no cabinet lid split, wall-facing placement or bench underside.
                 emit_top_layers( sink, furn, lx, ly, fs.height,
                                  make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                if( fs.height > cutaway_stub_height ) {
+                    // The cutaway can remove the top near the player. Close the remaining
+                    // volume at its cut height, as walls do, instead of exposing a hollow box.
+                    emit_top( sink, furn.backdrop.valid ? furn.backdrop : furn.main(), lx, ly,
+                              cutaway_stub_height, make_ref( lx, ly, 0, 0, 0, face_shade[0] ) );
+                }
                 const std::array<face_bit, 4> sides = {{ face_north, face_south, face_west, face_east }};
                 const std::array<point, 4> offsets = {{
                         point( 0, -1 ), point( 0, 1 ), point( -1, 0 ), point( 1, 0 )

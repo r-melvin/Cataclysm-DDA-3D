@@ -266,6 +266,8 @@ chunk_mesh build_entity_mesh( const entity_view &view )
                                 frame_z( p ) + view.surface( p ) + 0.02f, light );
                     continue;
                 }
+                // Item art is drawn as seen from above, so it lies on the surface as in the
+                // flat view (the first-person view stands it up).
                 emit_flat( sink, sprite, frame_x( p ), frame_y( p ), frame_z( p ) + view.surface( p ) + 0.02f,
                            light );
             }

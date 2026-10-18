@@ -593,13 +593,6 @@ light_ref make_ref( int lx, int ly, int dx, int dy, int dz, uint8_t shade )
     return r;
 }
 
-light_ref wall_ref( int lx, int ly, int dx, int dy, int dz, uint8_t shade )
-{
-    light_ref r = make_ref( lx, ly, dx, dy, dz, shade );
-    r.wall = true;
-    return r;
-}
-
 // Ceilings face down, away from the light the view assumes comes from above (face_shade), so
 // they are darker than any floor or wall cap: about as dark as the walls' darker sides. Lit by
 // their own tile like floors are, so a room's ceiling goes dark or sepia with its floor.
@@ -630,6 +623,13 @@ void emit_ceiling( quad_sink &sink, tile_info_cache &cache, const tile_info &flo
         ref = tinted( ref, tint );
     }
     sink.add( s, c, uv, ref );
+}
+
+light_ref wall_ref( int lx, int ly, int dx, int dy, int dz, uint8_t shade )
+{
+    light_ref r = make_ref( lx, ly, dx, dy, dz, shade );
+    r.wall = true;
+    return r;
 }
 
 } // namespace

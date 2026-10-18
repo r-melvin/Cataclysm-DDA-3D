@@ -278,17 +278,17 @@ void emit_side( quad_sink &sink, const sprite_ref &s, int x, int y, face_bit fac
 // Door or window standing in the wall line: a thin slab through the middle of the cell, along
 // x (along_x) or y, with the sprite on both broad faces.
 void emit_pane( quad_sink &sink, const sprite_ref &s, int x, int y, bool along_x, float z_base,
-                float height, const light_ref &ref )
+                float height, const light_ref &ref, float half_thickness = wall_half_thickness,
+                float half_width = 0.5f )
 {
-    constexpr float half_thickness = 0.08f;
     const float cx = static_cast<float>( x ) + 0.5f;
     const float cy = static_cast<float>( y ) + 0.5f;
     const float z_top = z_base + height;
     const uvs_t uv = {{ { s.u0, s.v0 }, { s.u1, s.v0 }, { s.u1, s.v1 }, { s.u0, s.v1 } }};
     for( const float side : { -half_thickness, half_thickness } ) {
         const corners_t c = along_x ?
-        corners_t{{ { cx - 0.5f, cy + side, z_top }, { cx + 0.5f, cy + side, z_top }, { cx + 0.5f, cy + side, z_base }, { cx - 0.5f, cy + side, z_base } }} :
-        corners_t{{ { cx + side, cy + 0.5f, z_top }, { cx + side, cy - 0.5f, z_top }, { cx + side, cy - 0.5f, z_base }, { cx + side, cy + 0.5f, z_base } }};
+        corners_t{{ { cx - half_width, cy + side, z_top }, { cx + half_width, cy + side, z_top }, { cx + half_width, cy + side, z_base }, { cx - half_width, cy + side, z_base } }} :
+        corners_t{{ { cx + side, cy + half_width, z_top }, { cx + side, cy - half_width, z_top }, { cx + side, cy - half_width, z_base }, { cx + side, cy + half_width, z_base } }};
         // Seen from either side of the wall line.
         sink.add( s, c, uv, ref );
         sink.add( s, reversed_winding( c ), reversed_winding( uv ), ref );
@@ -297,8 +297,8 @@ void emit_pane( quad_sink &sink, const sprite_ref &s, int x, int y, bool along_x
     const float v_edge = s.v0 + ( s.v1 - s.v0 ) * 0.08f;
     const uvs_t edge_uv = {{ { s.u0, s.v0 }, { s.u1, s.v0 }, { s.u1, v_edge }, { s.u0, v_edge } }};
     const corners_t top = along_x ?
-    corners_t{{ { cx - 0.5f, cy - half_thickness, z_top }, { cx + 0.5f, cy - half_thickness, z_top }, { cx + 0.5f, cy + half_thickness, z_top }, { cx - 0.5f, cy + half_thickness, z_top } }} :
-    corners_t{{ { cx - half_thickness, cy - 0.5f, z_top }, { cx + half_thickness, cy - 0.5f, z_top }, { cx + half_thickness, cy + 0.5f, z_top }, { cx - half_thickness, cy + 0.5f, z_top } }};
+    corners_t{{ { cx - half_width, cy - half_thickness, z_top }, { cx + half_width, cy - half_thickness, z_top }, { cx + half_width, cy + half_thickness, z_top }, { cx - half_width, cy + half_thickness, z_top } }} :
+    corners_t{{ { cx - half_thickness, cy - half_width, z_top }, { cx + half_thickness, cy - half_width, z_top }, { cx + half_thickness, cy + half_width, z_top }, { cx - half_thickness, cy + half_width, z_top } }};
     sink.add( s, top, edge_uv, ref );
 }
 
@@ -307,26 +307,20 @@ void emit_pane( quad_sink &sink, const sprite_ref &s, int x, int y, bool along_x
 template<typename IsWall>
 int back_to_wall( bool row_x, bool row_y, IsWall is_wall )
 {
-    // back side and the facing that puts it there: north 0, east 1, south 2, west 3
-    struct candidate {
-        point dir;
-        int facing;
-        bool across_x_row;
-    };
-    static constexpr std::array<candidate, 4> sides = {{
-            { point( 0, -1 ), 0, true }, { point( 1, 0 ), 1, false },
-            { point( -1, 0 ), 3, false }, { point( 0, 1 ), 2, true }
-        }
-    };
-    for( const candidate &c : sides ) {
-        if( ( row_x && !c.across_x_row ) || ( row_y && c.across_x_row ) ) {
-            continue;
-        }
-        if( is_wall( c.dir ) ) {
-            return c.facing;
-        }
+    uint8_t walls = 0;
+    if( is_wall( point( 0, -1 ) ) ) {
+        walls |= face_north;
     }
-    return 0;
+    if( is_wall( point( 0, 1 ) ) ) {
+        walls |= face_south;
+    }
+    if( is_wall( point( 1, 0 ) ) ) {
+        walls |= face_east;
+    }
+    if( is_wall( point( -1, 0 ) ) ) {
+        walls |= face_west;
+    }
+    return furniture_wall_facing( row_x, row_y, walls );
 }
 
 // A furniture box laid out by furniture_box_layout, mirrored like the flat view mirrors the
@@ -336,36 +330,16 @@ int back_to_wall( bool row_x, bool row_y, IsWall is_wall )
 // continues: the box reaches the tile edge there, so a row of lockers or a bench is one piece.
 void emit_box( quad_sink &sink, const sprite_ref &s, int x, int y, float z0, float z1,
                const box_layout &b, uint8_t faces, const std::array<light_ref, 5> &refs,
-               int facing, uint8_t joined, float slab = 0.0f )
+               int facing, uint8_t joined, uint8_t wall_contacts, float slab = 0.0f, float depth_scale = 1.0f )
 {
     if( !s.valid ) {
         return;
     }
-    // Footprint in the cell, mirrored and then turned clockwise (u east, v south).
-    float fx0 = s.flip ? 1.0f - b.x1 : b.x0;
-    float fx1 = s.flip ? 1.0f - b.x0 : b.x1;
-    float fy0 = b.y0;
-    float fy1 = b.y1;
-    for( int t = 0; t < ( facing & 3 ); ++t ) {
-        const float nx0 = 1.0f - fy1;
-        const float nx1 = 1.0f - fy0;
-        fy0 = fx0;
-        fy1 = fx1;
-        fx0 = nx0;
-        fx1 = nx1;
-    }
-    if( ( joined & face_north ) != 0 ) {
-        fy0 = 0.0f;
-    }
-    if( ( joined & face_south ) != 0 ) {
-        fy1 = 1.0f;
-    }
-    if( ( joined & face_west ) != 0 ) {
-        fx0 = 0.0f;
-    }
-    if( ( joined & face_east ) != 0 ) {
-        fx1 = 1.0f;
-    }
+    const box_layout bounds = place_furniture_box( b, s.flip, facing, joined, wall_contacts, depth_scale );
+    const float fx0 = bounds.x0;
+    const float fx1 = bounds.x1;
+    const float fy0 = bounds.y0;
+    const float fy1 = bounds.y1;
     const float ox = static_cast<float>( x );
     const float oy = static_cast<float>( y );
     const float du = s.u1 - s.u0;
@@ -567,6 +541,93 @@ void emit_wall_side( quad_sink &sink, const tile_info &t, int x, int y, face_bit
     }
 }
 
+// A portion of a full-height wall face, retaining the original texture coordinates so
+// sill, lintel and jambs line up with the neighbouring wall's paint and trim.
+void emit_wall_section( quad_sink &sink, const tile_info &t, int x, int y, face_bit face,
+                        float bottom, float top, float left, float right, const light_ref &ref,
+                        float x0 = 0.0f, float y0 = 0.0f, float x1 = 1.0f, float y1 = 1.0f )
+{
+    const sprite_ref &art = t.side.valid ? t.side :
+                            t.elevation.valid ? t.elevation : t.main();
+    const float split = t.elevation.valid ? t.elevation_split : 0.0f;
+    corners_t c;
+    if( !side_corners( face, x, y, bottom, top, c ) ) {
+        return;
+    }
+    for( size_t axis = 0; axis < 2; ++axis ) {
+        const float across = c[1][axis] - c[0][axis];
+        c[1][axis] = c[0][axis] + across * right;
+        c[0][axis] += across * left;
+        c[2][axis] = c[3][axis] + across * right;
+        c[3][axis] += across * left;
+    }
+    for( auto &corner : c ) {
+        corner[0] = x + x0 + ( corner[0] - x ) * ( x1 - x0 );
+        corner[1] = y + y0 + ( corner[1] - y ) * ( y1 - y0 );
+    }
+    const float du = art.u1 - art.u0;
+    const float dv = art.v1 - art.v0;
+    const float u0 = art.u0 + du * left;
+    const float u1 = art.u0 + du * right;
+    const float v0 = art.v0 + dv * ( split + ( 1.0f - top ) * ( 1.0f - split ) );
+    const float v1 = art.v0 + dv * ( split + ( 1.0f - bottom ) * ( 1.0f - split ) );
+    const uvs_t uv = {{ { u0, v0 }, { u1, v0 }, { u1, v1 }, { u0, v1 } }};
+    sink.add( art, c, uv, t.side.valid ? tinted( ref, t.side_tint ) : ref );
+}
+
+void emit_wall_cap( quad_sink &sink, const tile_info &t, int x, int y, float z,
+                    float x0, float y0, float x1, float y1, const light_ref &ref )
+{
+    sprite_ref art = t.cap.valid ? t.cap : t.elevation.valid ? t.elevation : t.main();
+    if( t.elevation.valid && !t.cap.valid ) {
+        const float dv = art.v1 - art.v0;
+        art.v0 += dv * ( t.elevation_split + ( 1.0f - t.elevation_split ) * 0.35f );
+        art.v1 = art.v0 + dv * 0.1f;
+    }
+    const corners_t c = {{ { x + x0, y + y0, z }, { x + x1, y + y0, z },
+                           { x + x1, y + y1, z }, { x + x0, y + y1, z } }};
+    const uvs_t uv = {{ { art.u0, art.v0 }, { art.u1, art.v0 },
+                       { art.u1, art.v1 }, { art.u0, art.v1 } }};
+    sink.add( art, c, uv, t.cap.valid ? tinted( ref, t.cap_tint ) : ref );
+}
+
+light_ref wall_ref( int lx, int ly, int dx, int dy, int dz, uint8_t shade );
+
+void emit_thin_wall( quad_sink &sink, const tile_info &t, int x, int y, uint8_t connections,
+                     const std::array<const tile_info *, 4> &side_materials )
+{
+    const std::array<bool, 9> occupied = wall_footprint( connections );
+    const float edges[] = { 0.0f, 0.5f - wall_half_thickness,
+                            0.5f + wall_half_thickness, 1.0f };
+    for( int row = 0; row < 3; ++row ) {
+        for( int col = 0; col < 3; ++col ) {
+            if( !occupied[row * 3 + col] ) {
+                continue;
+            }
+            const float x0 = edges[col];
+            const float y0 = edges[row];
+            const float x1 = edges[col + 1];
+            const float y1 = edges[row + 1];
+            emit_wall_cap( sink, t, x, y, t.sh.height, x0, y0, x1, y1,
+                           wall_ref( x, y, 0, 0, 0, face_shade[0] ) );
+            const std::array<face_bit, 4> faces = {{ face_north, face_south, face_west, face_east }};
+            const int dx[] = { 0, 0, -1, 1 };
+            const int dy[] = { -1, 1, 0, 0 };
+            for( size_t i = 0; i < faces.size(); ++i ) {
+                const int nx = col + dx[i];
+                const int ny = row + dy[i];
+                const bool outside = nx < 0 || nx > 2 || ny < 0 || ny > 2;
+                if( outside ? ( connections & faces[i] ) != 0 : occupied[ny * 3 + nx] ) {
+                    continue;
+                }
+                emit_wall_section( sink, *side_materials[i], x, y, faces[i], 0.0f, t.sh.height, 0.0f, 1.0f,
+                                   wall_ref( x, y, dx[i], dy[i], 0, face_shade[i + 1] ),
+                                   x0, y0, x1, y1 );
+            }
+        }
+    }
+}
+
 // How much of a 3/4-view furniture sprite is its front, for a box of the given height (in
 // z-levels): taller furniture shows more front. Storeys are drawn about 1.8 tiles tall.
 float front_fraction( float height )
@@ -668,6 +729,14 @@ chunk_mesh quad_sink::finish()
     return mesh;
 }
 
+void tile_info_cache::set_thin_walls( bool on )
+{
+    if( on != thin_walls_ ) {
+        thin_walls_ = on;
+        clear();
+    }
+}
+
 void tile_info_cache::set_plaster_atlas( bool on )
 {
     if( on != plaster_atlas_ ) {
@@ -712,6 +781,9 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int sub
     const tile_traits traits = traits_of( t );
     info.sh = classify_terrain( traits );
     info.tree = traits.tree;
+    info.window = traits.window;
+    info.thin_wall = traits.wall && thin_walls_;
+    info.wall_connection = traits.wall || traits.window || traits.door;
     info.see_through = traits.transparent;
     if( info.sh.kind != shape_kind::empty ) {
         resolve_layers( tiles, t.id.str(), TILE_CATEGORY::TERRAIN, info, subtile, rota );
@@ -726,6 +798,7 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int sub
             like = next.is_valid() ? next.obj().looks_like : std::string();
         }
         const std::string name = match_wall_texture( wall_sides_->rules, chain );
+        info.brick_wall = name == "brick";
         const auto found = std::find( wall_sides_->names.begin(), wall_sides_->names.end(), name );
         // A wall of a patterned material (brick, wood, logs, stone, metal...) keeps the
         // tileset's own look: its sprite is repeated up the sides and tops the wall. Painted
@@ -738,7 +811,7 @@ const tile_info &tile_info_cache::terrain( ter_id id, cata_tiles &tiles, int sub
         // top rows), a pale coving line, the paint and a skirting board. That piece is the
         // elevation of every side, whatever piece the tile itself is drawn with from above.
         constexpr int edge_subtile = 2; // "edge" in cata_tiles' multitile_keys
-        constexpr int edge_east_west = 1;
+        constexpr int edge_east_west = 0;
         constexpr float cavity_rows = 0.125f;
         if( !patterned_material && !plaster_atlas_ && info.sprite.valid ) {
             info.elevation = info.sprite;
@@ -821,6 +894,20 @@ const tile_info &tile_info_cache::furniture( furn_id id, cata_tiles &tiles, int 
         tile_traits traits = traits_of( f );
         // Furniture has a "move cost mod": negative means impassable, anything else walkable.
         traits.move_cost = f.movecost < 0 ? 0 : 100;
+        // Notice boards keep their complete front elevation; lockers have a shallow
+        // footprint. Follow artwork inheritance so variants keep the same geometry.
+        std::string art_id = f.id.str();
+        for( int depth = 0; depth < 8 && !art_id.empty(); ++depth ) {
+            if( art_id == "f_locker" || art_id == "f_vitrified_locker" ) {
+                info.depth_scale = 0.5f;
+            }
+            if( art_id == "f_bulletin" ) {
+                traits.panel = true;
+                break;
+            }
+            const furn_str_id candidate( art_id );
+            art_id = candidate.is_valid() ? candidate.obj().looks_like : std::string();
+        }
         info.sh = classify_furniture( traits );
         resolve_layers( tiles, f.id.str(), TILE_CATEGORY::FURNITURE, info, subtile, rota );
     }
@@ -967,6 +1054,52 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
     // Chunks are only built for submaps in the reality bubble, so the map knows every tile here.
     const map &here = get_map();
     const tripoint_abs_ms chunk_origin = project_to<coords::ms>( pos );
+    // Some mapgen corners include a one-tile inward buttress. A thin wall needs
+    // just the connected outside corner, rather than a spur jutting into the room.
+    const std::array<point, 4> wall_dirs = {{
+            point( 0, -1 ), point( 0, 1 ), point( -1, 0 ), point( 1, 0 )
+        }
+    };
+    const std::array<uint8_t, 4> wall_bits = {{ face_north, face_south, face_west, face_east }};
+    auto wall_at = [&]( const tripoint_bub_ms &p ) -> const tile_info * {
+        return here.inbounds( p ) ? &cache.terrain( here.ter( p ), tiles ) : nullptr;
+    };
+    auto connections_at = [&]( const tripoint_bub_ms &p ) {
+        uint8_t mask = 0;
+        for( size_t i = 0; i < wall_dirs.size(); ++i ) {
+            const point &d = wall_dirs[i];
+            const tile_info *t = wall_at( p + tripoint_rel_ms( d.x, d.y, 0 ) );
+            if( t && t->wall_connection ) {
+                mask |= wall_bits[i];
+            }
+        }
+        return mask;
+    };
+    auto trim_corner_at = [&]( const tripoint_bub_ms &p ) {
+        const tile_info *self_wall = wall_at( p );
+        if( !self_wall || !self_wall->thin_wall ) {
+            return false;
+        }
+        const uint8_t connections = connections_at( p );
+        if( connections == 0 || ( connections & ( connections - 1 ) ) != 0 ) {
+            return false;
+        }
+        uint8_t indoor = 0;
+        uint8_t neighbour = 0;
+        for( size_t i = 0; i < wall_dirs.size(); ++i ) {
+            const point &d = wall_dirs[i];
+            const tripoint_bub_ms next = p + tripoint_rel_ms( d.x, d.y, 0 );
+            const tile_info *t = wall_at( next );
+            if( t && t->sh.kind == shape_kind::floor &&
+                here.has_flag( ter_furn_flag::TFLAG_INDOORS, next ) ) {
+                indoor |= wall_bits[i];
+            }
+            if( ( connections & wall_bits[i] ) != 0 ) {
+                neighbour = connections_at( next );
+            }
+        }
+        return trim_wall_spur( connections, indoor, neighbour );
+    };
     quad_sink sink;
     std::vector<upright_sprite> mesh_uprights;
     // Floor for a tile that stands in a wall line (pane, see-through block): a neighbour's floor
@@ -1009,6 +1142,32 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             nb.west = level_at( lx - 1, ly );
             nb.east = level_at( lx + 1, ly );
 
+            // The gameplay outside cache includes a one-tile sheltered border. Read the
+            // actual floor's INDOORS flag instead, so the outside of an exterior wall
+            // remains brick even beside a sheltered pavement or doorway.
+            auto face_material = [&]( const tile_info &wall, int dx, int dy ) -> const tile_info & {
+                if( !wall.brick_wall ) {
+                    return wall;
+                }
+                const tripoint_bub_ms adjacent = bub + tripoint_rel_ms( dx, dy, 0 );
+                auto indoor_floor = [&]( const tripoint_bub_ms &p ) {
+                    return here.inbounds( p ) &&
+                           here.has_flag( ter_furn_flag::TFLAG_INDOORS, p ) &&
+                           cache.terrain( here.ter( p ), tiles ).sh.kind == shape_kind::floor;
+                };
+                bool inside = indoor_floor( adjacent );
+                // At an L or T junction the immediate tile can itself be wall. The
+                // exposed inner corner then faces the floor diagonally beyond that wall.
+                if( !inside && here.inbounds( adjacent ) &&
+                    cache.terrain( here.ter( adjacent ), tiles ).sh.kind == shape_kind::block ) {
+                    inside = indoor_floor( adjacent + tripoint_rel_ms( dy, dx, 0 ) ) ||
+                             indoor_floor( adjacent - tripoint_rel_ms( dy, dx, 0 ) );
+                }
+                if( inside ) {
+                    return cache.terrain( ter_str_id( "t_wall" ).id(), tiles, 2, 0 );
+                }
+                return wall;
+            };
             const shape &ts = terrain.sh;
             // A treetop is drawn by the tree's own sprite on the level below.
             if( ts.kind == shape_kind::floor && below &&
@@ -1036,6 +1195,36 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                     }
                     break;
                 case shape_kind::block:
+                    if( terrain.thin_wall ) {
+                        if( trim_corner_at( bub ) ) {
+                            emit_floor_under( lx, ly, false );
+                            break;
+                        }
+                        const std::array<point, 4> dirs = {{
+                                point( 0, -1 ), point( 0, 1 ), point( -1, 0 ), point( 1, 0 )
+                            }
+                        };
+                        const std::array<face_bit, 4> joins = {{
+                                face_north, face_south, face_west, face_east
+                            }
+                        };
+                        uint8_t connections = 0;
+                        for( size_t i = 0; i < dirs.size(); ++i ) {
+                            const tile_info *n = terrain_at( lx + dirs[i].x, ly + dirs[i].y );
+                            if( n && n->wall_connection &&
+                                !trim_corner_at( bub + tripoint_rel_ms( dirs[i].x, dirs[i].y, 0 ) ) ) {
+                                connections |= joins[i];
+                            }
+                        }
+                        emit_floor_under( lx, ly, ( connections & ( face_north | face_south ) ) != 0 );
+                        const std::array<const tile_info *, 4> materials = {{
+                                &face_material( terrain, 0, -1 ), &face_material( terrain, 0, 1 ),
+                                &face_material( terrain, -1, 0 ), &face_material( terrain, 1, 0 )
+                            }
+                        };
+                        emit_thin_wall( sink, terrain, lx, ly, connections, materials );
+                        break;
+                    }
                     // Every wall stands on a floor: a see-through block (fence, bars, a sparse
                     // wall sprite) would otherwise show the level below through its holes, and
                     // the cutaway around the player would show a void where a wall was.
@@ -1067,19 +1256,19 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                         }
                     }
                     if( ( faces & face_north ) != 0 ) {
-                        emit_wall_side( sink, terrain, lx, ly, face_north, 0.0f, ts.height,
+                        emit_wall_side( sink, face_material( terrain, 0, -1 ), lx, ly, face_north, 0.0f, ts.height,
                                          wall_ref( lx, ly, 0, -1, 0, face_shade[1] ) );
                     }
                     if( ( faces & face_south ) != 0 ) {
-                        emit_wall_side( sink, terrain, lx, ly, face_south, 0.0f, ts.height,
+                        emit_wall_side( sink, face_material( terrain, 0, 1 ), lx, ly, face_south, 0.0f, ts.height,
                                          wall_ref( lx, ly, 0, 1, 0, face_shade[2] ) );
                     }
                     if( ( faces & face_west ) != 0 ) {
-                        emit_wall_side( sink, terrain, lx, ly, face_west, 0.0f, ts.height,
+                        emit_wall_side( sink, face_material( terrain, -1, 0 ), lx, ly, face_west, 0.0f, ts.height,
                                          wall_ref( lx, ly, -1, 0, 0, face_shade[3] ) );
                     }
                     if( ( faces & face_east ) != 0 ) {
-                        emit_wall_side( sink, terrain, lx, ly, face_east, 0.0f, ts.height,
+                        emit_wall_side( sink, face_material( terrain, 1, 0 ), lx, ly, face_east, 0.0f, ts.height,
                                          wall_ref( lx, ly, 1, 0, 0, face_shade[4] ) );
                     }
                     break;
@@ -1095,6 +1284,61 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                     const bool wall_along_y = nb.north.kind == shape_kind::block ||
                                               nb.south.kind == shape_kind::block;
                     emit_floor_under( lx, ly, wall_along_y );
+                    if( terrain.window ) {
+                        // Carry the neighbouring wall across the sill and lintel. The glass
+                        // occupies an opening rather than replacing an entire storey.
+                        const tile_info *surround = nullptr;
+                        const std::array<point, 4> neighbours = {{
+                                point( -1, 0 ), point( 1, 0 ), point( 0, -1 ), point( 0, 1 )
+                            }
+                        };
+                        for( const point &d : neighbours ) {
+                            const tile_info *candidate = terrain_at( lx + d.x, ly + d.y );
+                            if( candidate && candidate->sh.kind == shape_kind::block ) {
+                                surround = candidate;
+                                break;
+                            }
+                        }
+                        if( !surround ) {
+                            surround = &cache.terrain( ter_str_id( "t_wall" ).id(), tiles, 2, 0 );
+                        }
+                        const float half_width = cache.wall_half_width();
+                        constexpr float sill = 0.35f;
+                        constexpr float lintel = 0.9f;
+                        const float x0 = wall_along_y ? 0.5f - half_width : 0.0f;
+                        const float x1 = wall_along_y ? 0.5f + half_width : 1.0f;
+                        const float y0 = wall_along_y ? 0.0f : 0.5f - half_width;
+                        const float y1 = wall_along_y ? 1.0f : 0.5f + half_width;
+                        for( const face_bit face : { face_north, face_south, face_west, face_east } ) {
+                            const bool broad = wall_along_y ? ( face == face_west || face == face_east ) :
+                                               ( face == face_north || face == face_south );
+                            if( broad ) {
+                                const int dx = face == face_west ? -1 : face == face_east ? 1 : 0;
+                                const int dy = face == face_north ? -1 : face == face_south ? 1 : 0;
+                                const tile_info &material = face_material( *surround, dx, dy );
+                                const light_ref ref = wall_ref( lx, ly, 0, 0, 0, 230 );
+                                emit_wall_section( sink, material, lx, ly, face,
+                                                   0.0f, sill, 0.0f, 1.0f, ref, x0, y0, x1, y1 );
+                                emit_wall_section( sink, material, lx, ly, face,
+                                                   lintel, ts.height, 0.0f, 1.0f, ref, x0, y0, x1, y1 );
+                                emit_wall_section( sink, material, lx, ly, face,
+                                                   sill, lintel, 0.0f, 0.1f, ref, x0, y0, x1, y1 );
+                                emit_wall_section( sink, material, lx, ly, face,
+                                                   sill, lintel, 0.9f, 1.0f, ref, x0, y0, x1, y1 );
+                            }
+                        }
+                        emit_wall_cap( sink, *surround, lx, ly, sill, x0, y0, x1, y1,
+                                       wall_ref( lx, ly, 0, 0, 0, 230 ) );
+                        emit_wall_cap( sink, *surround, lx, ly, ts.height, x0, y0, x1, y1,
+                                       wall_ref( lx, ly, 0, 0, 0, 230 ) );
+                        if( terrain.backdrop.valid ) {
+                            emit_pane( sink, terrain.backdrop, lx, ly, !wall_along_y, sill,
+                                       lintel - sill, make_ref( lx, ly, 0, 0, 0, 230 ), half_width + 0.001f, 0.4f );
+                        }
+                        emit_pane( sink, terrain.sprite, lx, ly, !wall_along_y, sill,
+                                   lintel - sill, make_ref( lx, ly, 0, 0, 0, 230 ), half_width + 0.002f, 0.4f );
+                        break;
+                    }
                     if( terrain.backdrop.valid ) {
                         emit_pane( sink, terrain.backdrop, lx, ly, !wall_along_y, floor_height,
                                    ts.height - floor_height, make_ref( lx, ly, 0, 0, 0, 230 ) );
@@ -1116,6 +1360,15 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             if( fs.kind == shape_kind::upright ) {
                 mesh_uprights.push_back( { static_cast<uint8_t>( lx ), static_cast<uint8_t>( ly ),
                                            ts.height, &furn } );
+                continue;
+            }
+            if( fs.kind == shape_kind::pane ) {
+                const bool along_y = ( terrain_at( lx - 1, ly ) &&
+                                       terrain_at( lx - 1, ly )->sh.kind == shape_kind::block ) ||
+                                     ( terrain_at( lx + 1, ly ) &&
+                                       terrain_at( lx + 1, ly )->sh.kind == shape_kind::block );
+                emit_pane( sink, furn.main(), lx, ly, !along_y, ts.height, fs.height,
+                           make_ref( lx, ly, 0, 0, 0, 230 ) );
                 continue;
             }
             if( fs.kind == shape_kind::floor ) {
@@ -1158,11 +1411,12 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
                 if( row_x || row_y ) {
                     facing = row_y ? 1 : 0;
                 }
-            } else if( facing == 0 ) {
+            } else if( facing == 0 || furn.depth_scale < 1.0f ) {
                 // Lockers and cabinets stand with their back to a wall, their row along it.
                 facing = back_to_wall( row_x, row_y, [&]( const point & d ) {
                     const tile_info *t = terrain_at( lx + d.x, ly + d.y );
-                    return t && t->sh.kind == shape_kind::block;
+                    return t && t->wall_connection && t->sh.kind == shape_kind::block &&
+                           !trim_corner_at( bub + tripoint_rel_ms( d.x, d.y, 0 ) );
                 } );
             }
             const std::array<light_ref, 5> refs = {{
@@ -1173,9 +1427,21 @@ chunk_mesh build_chunk_mesh( const tripoint_abs_sm &pos, const submap_lookup &lo
             };
             // A slab (bench, table) sits below the cutaway, so it needs no hidden sides; the
             // faces between its joined tiles would only fight with its top along the seams.
+            // Thin walls leave space between their face and the old tile boundary. Extend
+            // solid cabinetry into that space, keeping its front and row joins in place.
+            uint8_t wall_contacts = 0;
+            if( fs.slab == 0.0f ) {
+                for( size_t i = 0; i < dirs.size(); ++i ) {
+                    const tile_info *t = terrain_at( lx + dirs[i].x, ly + dirs[i].y );
+                    if( t && t->thin_wall && t->sh.kind == shape_kind::block &&
+                        !trim_corner_at( bub + tripoint_rel_ms( dirs[i].x, dirs[i].y, 0 ) ) ) {
+                        wall_contacts |= dir_faces[i];
+                    }
+                }
+            }
             const uint8_t box_faces = visible_faces( fs, nb ) | ( fs.slab > 0.0f ? 0 : all_sides );
             emit_box( sink, spr, lx, ly, ts.height, fs.height, layout, box_faces, refs, facing, joined,
-                      fs.slab );
+                      wall_contacts, fs.slab, furn.depth_scale );
 
         }
     }

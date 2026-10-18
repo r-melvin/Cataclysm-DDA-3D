@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <chrono>
+#include <filesystem>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -12,6 +14,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -19,6 +22,7 @@
 #include "avatar.h"
 #include "calendar.h"
 #include "cata_path.h"
+#include "cata_scope_helpers.h"
 #include "cata_tiles.h"
 #include "coordinates.h"
 #include "creature.h"
@@ -39,6 +43,7 @@
 #include "r3d_entities.h"
 #include "r3d_gpu.h"
 #include "r3d_mesh.h"
+#include "rng.h"
 #include "sdl_wrappers.h"
 #include "sdltiles.h"
 #include "submap.h"
@@ -589,7 +594,7 @@ bool reload_map_tileset()
     try {
         closetilecontext->reinit();
         closetilecontext->load_tileset( get_option<std::string>( "TILES" ), /*precheck=*/false,
-                                        /*force=*/false, /*pump_events=*/true, /*terrain=*/false );
+                                        /*force=*/true, /*pump_events=*/false, /*terrain=*/false );
         g->reset_zoom();
         g->mark_main_ui_adaptor_resize();
         return true;
@@ -703,12 +708,72 @@ void compare_capture()
     // view come back (the options file is never written), or with CATA_R3D_QUIT_AFTER_SHOT the
     // game exits (status 0 when both shots were saved).
     static const char *const prefix = std::getenv( "CATA_R3D_COMPARE" );
+    static const char *const session = std::getenv( "CATA_R3D_COMPARE_SESSION" );
     static bool done = false;
-    if( !prefix || done || !g || !closetilecontext || !st().map_drawn ) {
+    static bool busy = false;
+    static int sequence = 0;
+    static auto last = std::chrono::steady_clock::time_point::min();
+    const auto number = []( const char *name, int fallback, int maximum ) {
+        const char *v = std::getenv( name );
+        return v ? std::clamp( std::atoi( v ), 1, maximum ) : fallback;
+    };
+    const auto now = std::chrono::steady_clock::now();
+    if( busy || ( !prefix && !session ) || ( !session && done ) || !g ||
+        !closetilecontext || !st().map_drawn ||
+        ( session && ( sequence >= number( "CATA_R3D_COMPARE_COUNT", 5, 100 ) ||
+                       ( sequence > 0 && now - last < std::chrono::seconds(
+                             number( "CATA_R3D_COMPARE_INTERVAL", 30, 86400 ) ) ) ) ) ) {
         return;
     }
     done = true;
-    const std::string base = prefix;
+    busy = true;
+    on_out_of_scope clear_busy( []() { busy = false; } );
+    last = now;
+    ++sequence;
+    std::string base = prefix ? prefix : "";
+    std::filesystem::path checkpoint;
+    // Saving and rendering must not perturb the next gameplay random draw.
+    const auto old_rng = rng_get_engine();
+    on_out_of_scope restore_rng( [&old_rng]() { rng_get_engine() = old_rng; } );
+    const camera old_camera = st().cam;
+    const vec3 old_pan = st().pan;
+    const bool old_env_camera = st().env_camera_applied;
+    const int old_zoom = g->get_zoom();
+    if( session ) {
+        char name[32];
+        std::snprintf( name, sizeof( name ), "capture-%04d", sequence );
+        const auto directory = std::filesystem::u8path( session ) / name;
+        checkpoint = directory;
+        try {
+            std::filesystem::create_directories( directory );
+            // A capture save omits the gameplay save event. The launcher isolates disk writes
+            // from the user's original world. Never copy an older disk save on failure.
+            if( !g->save_for_capture() ) {
+                throw std::runtime_error( "current-state save failed" );
+            }
+            const auto world = PATH_INFO::world_base_save_path().get_unrelative_path();
+            const auto destination = directory / "save" / world.filename();
+            std::filesystem::create_directories( destination );
+            for( const auto &entry : std::filesystem::recursive_directory_iterator( world ) ) {
+                if( entry.is_symlink() ) {
+                    throw std::runtime_error( "symlink in world save" );
+                }
+                const auto target = destination / entry.path().lexically_relative( world );
+                if( entry.is_directory() ) {
+                    std::filesystem::create_directories( target );
+                } else if( entry.is_regular_file() ) {
+                    std::filesystem::copy_file( entry.path(), target );
+                }
+            }
+            base = ( directory / "view" ).string();
+            std::ofstream( directory / "game-report.txt" ) << game_info::game_report();
+            std::ofstream( directory / "rng.txt" ) << old_rng;
+        } catch( const std::exception &e ) {
+            DebugLog( D_ERROR, DC_ALL ) << "r3d compare: checkpoint failed: " << e.what();
+            std::ofstream( directory / "FAILED.txt" ) << e.what();
+            return;
+        }
+    }
     options_manager::cOpt &tiles = get_options().get_option( "TILES" );
     options_manager::cOpt &view_3d = get_options().get_option( "RENDERER_3D" );
     const std::string old_tiles = tiles.getValue();
@@ -755,6 +820,18 @@ void compare_capture()
         }
         ok_3d = active() && capture( base + "_3d.png" );
         dump_view( base + "_map.txt", g->ter_view_p );
+        if( session ) {
+            // Isometric 2D has a fixed orientation: its one reference is shared by all poses.
+            constexpr float deg = 0.017453293f;
+            for( int angle = 0; angle < 8; ++angle ) {
+                st().cam.yaw = ( -45.0f + angle * 45.0f ) * deg;
+                st().cam.pitch = 30.0f * deg;
+                for( int i = 0; i < settle_frames; ++i ) {
+                    redraw();
+                }
+                ok_3d = capture( base + "_3d_yaw_" + std::to_string( angle ) + ".png" ) && ok_3d;
+            }
+        }
     }
 
     if( std::getenv( "CATA_R3D_QUIT_AFTER_SHOT" ) ) {
@@ -762,8 +839,27 @@ void compare_capture()
     }
     tiles.setValue( old_tiles );
     view_3d.setValue( old_view_3d );
-    reload_map_tileset();
-    g->invalidate_main_ui_adaptor();
+    const bool restored = reload_map_tileset();
+    g->set_zoom( old_zoom );
+    st().cam = old_camera;
+    st().pan = old_pan;
+    st().env_camera_applied = old_env_camera;
+    // Flush restored atlases before drawing the resumed world, as for the captured view.
+    if( const SDL_Renderer_Ptr &r = get_sdl_renderer() ) {
+        SDL_RenderPresent( r.get() );
+    }
+    for( int i = 0; i < 40; ++i ) {
+        g->invalidate_main_ui_adaptor();
+        ui_manager::redraw();
+    }
+    if( session && restored ) {
+        capture( base + "_resumed.png" );
+    }
+    rng_get_engine() = old_rng;
+    if( session ) {
+        std::ofstream( checkpoint / ( ok_2d && ok_3d && restored ? "COMPLETE.txt" : "FAILED.txt" ) )
+                << "2D isometric reference, eight 3D yaw poses, same saved state.\n";
+    }
 }
 
 bool active()

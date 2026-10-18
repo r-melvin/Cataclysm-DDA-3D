@@ -52,7 +52,8 @@ bool wasd_controls();
 
 /**
  * Debug capture for CATA_R3D_COMPARE (see r3d.cpp): saves the 3D view and the flat isometric
- * view of the same turn once. Called from the input loop while waiting for input.
+ * view of the same turn once. CATA_R3D_COMPARE_SESSION enables bounded periodic checkpoints
+ * with eight 3D yaw poses and current saves. Called only at the normal gameplay input boundary.
  */
 void compare_capture();
 

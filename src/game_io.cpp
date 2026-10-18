@@ -733,6 +733,16 @@ bool game::save_external_options_record()
 
 bool game::save()
 {
+    return save_impl( true );
+}
+
+bool game::save_for_capture()
+{
+    return save_impl( false );
+}
+
+bool game::save_impl( bool record_event )
+{
     if( save_is_dirty ) {
         popup( _( "The game is in an unsupported state after using debug tools and cannot be saved." ) );
         return false;
@@ -741,7 +751,9 @@ bool game::save()
         std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - time_of_last_load );
     std::chrono::seconds total_time_played = time_played_at_last_load + time_since_load;
-    events().send<event_type::game_save>( time_since_load, total_time_played );
+    if( record_event ) {
+        events().send<event_type::game_save>( time_since_load, total_time_played );
+    }
     try {
         if( !save_player_data() ||
             !save_achievements() ||

@@ -3224,6 +3224,10 @@ bool game::handle_action()
         open_menu_tmp.value()();
         return false;
     } else {
+        // Captures run only at a normal gameplay input boundary, never in a menu.
+        if( uquit == QUIT_NO && !player_character.is_dead_state() ) {
+            r3d::compare_capture();
+        }
         // No auto-move, ask player for input
         ctxt = get_player_input( action );
     }

@@ -274,6 +274,8 @@ class game
 
         /** Returns false if saving failed. */
         bool save();
+        /** Save a renderer checkpoint without adding a gameplay save event. */
+        bool save_for_capture();
 
         /** Returns a list of currently active character saves. */
         std::vector<std::string> list_active_saves();
@@ -948,6 +950,7 @@ class game
 #endif
         bool start_game(); // Starts a new game in the active world
 
+        bool save_impl( bool record_event );
         //private save functions.
         // returns false if saving failed for whatever reason
         bool save_factions_missions_npcs();

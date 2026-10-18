@@ -211,9 +211,11 @@ std::array<bool, 9> wall_footprint( uint8_t connections )
     } else if( connections == face_north || connections == face_south ) {
         connections = face_north | face_south;
     }
-    return {{ false, ( connections & face_north ) != 0, false,
-              ( connections & face_west ) != 0, true, ( connections & face_east ) != 0,
-              false, ( connections & face_south ) != 0, false }};
+    return {{
+            false, ( connections & face_north ) != 0, false,
+            ( connections & face_west ) != 0, true, ( connections & face_east ) != 0,
+            false, ( connections & face_south ) != 0, false
+        }};
 }
 
 namespace

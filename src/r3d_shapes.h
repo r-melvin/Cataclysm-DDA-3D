@@ -79,7 +79,8 @@ struct box_layout {
  * of the sprite). front is the share of the opaque rows that shows the front. Low furniture
  * (benches) repeats the lid's front edge on its sides, since its front rows are mostly legs.
  */
-box_layout furniture_box_layout( float ox0, float oy0, float ox1, float oy1, float front, bool low );
+box_layout furniture_box_layout( float ox0, float oy0, float ox1, float oy1, float front,
+                                 bool low );
 shape classify_furniture( const tile_traits &t );
 
 enum face_bit : uint8_t {

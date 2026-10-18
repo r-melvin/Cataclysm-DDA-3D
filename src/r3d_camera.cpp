@@ -13,6 +13,17 @@ constexpr float pitch_step = 0.0873f;  // 5 degrees
 constexpr float zoom_factor = 1.1f;
 constexpr float near_plane = 0.5f;
 constexpr float far_plane = 400.0f;
+frustum::plane normalized_plane( const std::array<float, 4> &v )
+{
+    frustum::plane pl;
+    const vec3 n{ v[0], v[1], v[2] };
+    const float len = length( n );
+    const float inv = len > 0.0f ? 1.0f / len : 1.0f;
+    pl.n = n * inv;
+    pl.d = v[3] * inv;
+    return pl;
+}
+
 } // namespace
 
 bool frustum::intersects( const aabb &box ) const
@@ -38,7 +49,7 @@ vec3 camera::stretched_target() const
 vec3 camera::eye() const
 {
     const float cp = std::cos( pitch );
-    return stretched_target() + vec3{ std::sin( yaw ) * cp, -std::cos( yaw ) * cp, std::sin( pitch ) } *
+    return stretched_target() + vec3{ std::sin( yaw ) *cp, -std::cos( yaw ) *cp, std::sin( pitch ) } *
            distance;
 }
 
@@ -126,32 +137,24 @@ frustum frustum_from_matrix( const mat4 &m )
     auto row = [&m]( int r ) {
         return std::array<float, 4> { m.at( r, 0 ), m.at( r, 1 ), m.at( r, 2 ), m.at( r, 3 ) };
     };
-    const auto r0 = row( 0 );
-    const auto r1 = row( 1 );
-    const auto r2 = row( 2 );
-    const auto r3 = row( 3 );
-    auto make = [&]( const std::array<float, 4> &v ) {
-        frustum::plane pl;
-        const vec3 n{ v[0], v[1], v[2] };
-        const float len = length( n );
-        const float inv = len > 0.0f ? 1.0f / len : 1.0f;
-        pl.n = n * inv;
-        pl.d = v[3] * inv;
-        return pl;
-    };
-    auto add = [&]( const std::array<float, 4> &a, const std::array<float, 4> &b ) {
+    const std::array<float, 4> r0 = row( 0 );
+    const std::array<float, 4> r1 = row( 1 );
+    const std::array<float, 4> r2 = row( 2 );
+    const std::array<float, 4> r3 = row( 3 );
+
+    auto add = []( const std::array<float, 4> &a, const std::array<float, 4> &b ) {
         return std::array<float, 4> { a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3] };
     };
-    auto sub = [&]( const std::array<float, 4> &a, const std::array<float, 4> &b ) {
+    auto sub = []( const std::array<float, 4> &a, const std::array<float, 4> &b ) {
         return std::array<float, 4> { a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3] };
     };
     frustum f;
-    f.planes[0] = make( add( r3, r0 ) ); // left
-    f.planes[1] = make( sub( r3, r0 ) ); // right
-    f.planes[2] = make( add( r3, r1 ) ); // bottom
-    f.planes[3] = make( sub( r3, r1 ) ); // top
-    f.planes[4] = make( r2 );            // near
-    f.planes[5] = make( sub( r3, r2 ) ); // far
+    f.planes[0] = normalized_plane( add( r3, r0 ) ); // left
+    f.planes[1] = normalized_plane( sub( r3, r0 ) ); // right
+    f.planes[2] = normalized_plane( add( r3, r1 ) ); // bottom
+    f.planes[3] = normalized_plane( sub( r3, r1 ) ); // top
+    f.planes[4] = normalized_plane( r2 );            // near
+    f.planes[5] = normalized_plane( sub( r3, r2 ) ); // far
     return f;
 }
 

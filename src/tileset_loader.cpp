@@ -202,7 +202,7 @@ static sprite_scan scan_sprite( const SDL_Surface_Ptr &surf, const SDL_Rect &rec
             return 0;
         }
         return 0xff000000u | static_cast<uint32_t>( sum[0] / sum[3] ) << 16 |
-        static_cast<uint32_t>( sum[1] / sum[3] ) << 8 | static_cast<uint32_t>( sum[2] / sum[3] );
+                static_cast<uint32_t>( sum[1] / sum[3] ) << 8 | static_cast<uint32_t>( sum[2] / sum[3] );
     };
     scan.top_color = average( sums[0] );
     scan.body_color = average( sums[1] );

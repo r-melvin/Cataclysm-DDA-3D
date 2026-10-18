@@ -159,7 +159,8 @@ std::string get_ascii_tile_id( const uint32_t sym, const int FG, const int BG )
 
 // Curses symbol and colour of the categories whose look does not depend on drawing state, used
 // to pick an ASCII sprite for ids the tileset has no sprite for.
-void fallback_symbol( TILE_CATEGORY category, const std::string &found_id, const std::string &variant,
+void fallback_symbol( TILE_CATEGORY category, const std::string &found_id,
+                      const std::string &variant,
                       uint32_t &sym, nc_color &col )
 {
     if( category == TILE_CATEGORY::FURNITURE ) {

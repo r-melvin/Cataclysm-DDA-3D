@@ -38,7 +38,9 @@ TEST_CASE( "r3d_matrix_inverse_round_trips", "[r3d]" )
 
 TEST_CASE( "r3d_camera_looks_at_target", "[r3d]" )
 {
-    for( bool ortho : { false, true } ) {
+    for( bool ortho : {
+             false, true
+         } ) {
         r3d::camera cam;
         cam.orthographic = ortho;
         cam.target = { 10.5f, -4.5f, 1.5f };
@@ -69,8 +71,12 @@ TEST_CASE( "r3d_camera_screen_ray_round_trips_projection", "[r3d]" )
     cam.yaw = -0.4f;
     const float aspect = 1.78f;
     const r3d::mat4 vp = cam.view_projection( aspect );
-    for( float nx : { -0.8f, 0.0f, 0.5f } ) {
-        for( float ny : { -0.6f, 0.2f, 0.9f } ) {
+    for( float nx : {
+             -0.8f, 0.0f, 0.5f
+             } ) {
+        for( float ny : {
+                 -0.6f, 0.2f, 0.9f
+                 } ) {
             const r3d::ray r = cam.screen_ray( nx, ny, aspect );
             // Any point along the ray must project back to the same screen position.
             const r3d::vec3 p = r.origin + r.dir * 20.0f;
@@ -133,9 +139,11 @@ TEST_CASE( "r3d_thin_walls_join_at_a_uniform_thickness", "[r3d]" )
     // centre strip reaches a connected neighbour; diagonal cells never fatten a corner.
     for( int mask = 0; mask < 16; ++mask ) {
         const uint8_t connections = static_cast<uint8_t>( mask << 1 );
-        const auto cells = r3d::wall_footprint( connections );
+        const std::array<bool, 9> cells = r3d::wall_footprint( connections );
         CHECK( cells[4] );
-        for( int corner : { 0, 2, 6, 8 } ) {
+        for( int corner : {
+                 0, 2, 6, 8
+             } ) {
             CHECK_FALSE( cells[corner] );
         }
         const bool vertical_end = connections == r3d::face_north || connections == r3d::face_south;
@@ -186,7 +194,9 @@ TEST_CASE( "r3d_notice_board_is_a_panel", "[r3d]" )
 
 TEST_CASE( "r3d_camera_rotation_matches_movement_directions", "[r3d]" )
 {
-    for( int direction : { -1, 1 } ) {
+    for( int direction : {
+             -1, 1
+             } ) {
         r3d::camera cam;
         for( int step = 1; step <= 16; ++step ) {
             cam.rotate_steps( direction );
@@ -291,7 +301,9 @@ TEST_CASE( "r3d_pick_finds_tile_drawn_under_cursor", "[r3d]" )
         }
         return x == 2 && y == -3 ? 1.0f : 0.1f;
     };
-    for( float yaw : { 0.0f, 0.9f, 2.6f, 4.4f } ) {
+    for( float yaw : {
+             0.0f, 0.9f, 2.6f, 4.4f
+         } ) {
         for( int variant = 0; variant < 3; ++variant ) {
             const bool ortho = variant == 1;
             r3d::camera cam;
@@ -358,14 +370,14 @@ TEST_CASE( "r3d_raycast_matches_reference", "[r3d]" )
             const int k = kind( rng );
             h = k < 5 ? 0.0f : ( k < 7 ? 0.1f : ( k < 9 ? 0.5f : 1.0f ) );
         }
-        const r3d::column_height_fn fn = [&]( int x, int y, int z ) {
+        const r3d::column_height_fn fn = [ &heights ]( int x, int y, int z ) {
             if( x < 0 || y < 0 || z < 0 || x >= size || y >= size || z >= layers ) {
                 return 0.0f;
             }
             return heights[( z * size + y ) * size + x];
         };
         for( int ray_idx = 0; ray_idx < 200; ++ray_idx ) {
-            const r3d::vec3 o{ unit( rng ) * size, unit( rng ) * size, unit( rng ) * layers + 0.5f };
+            const r3d::vec3 o{ unit( rng ) *size, unit( rng ) *size, unit( rng ) *layers + 0.5f };
             const r3d::vec3 d = r3d::normalize( { unit( rng ) - 0.5f, unit( rng ) - 0.5f, unit( rng ) - 0.7f } );
             if( r3d::length( d ) < 0.5f ) {
                 continue;
@@ -441,15 +453,17 @@ TEST_CASE( "r3d_terrain_shapes", "[r3d]" )
 TEST_CASE( "r3d_cabinets_meet_adjacent_thin_wall_faces", "[r3d]" )
 {
     const r3d::box_layout box = r3d::furniture_box_layout( 0.1f, 0.06f, 0.9f, 1.0f,
-                                  0.78f, false );
+                                0.78f, false );
     const std::array<uint8_t, 4> backs = {{
             r3d::face_north, r3d::face_east, r3d::face_south, r3d::face_west
         }
     };
-    for( bool flip : { false, true } ) {
+    for( bool flip : {
+             false, true
+         } ) {
         for( int facing = 0; facing < 4; ++facing ) {
-            const auto original = r3d::place_furniture_box( box, flip, facing, 0, 0 );
-            const auto fitted = r3d::place_furniture_box( box, flip, facing, 0, backs[facing] );
+            const r3d::box_layout original = r3d::place_furniture_box( box, flip, facing, 0, 0 );
+            const r3d::box_layout fitted = r3d::place_furniture_box( box, flip, facing, 0, backs[facing] );
             // Adjacent wall centres are -0.5 or 1.5 in this tile's coordinates. The
             // cabinet meets the near face without moving its front or either end.
             CHECK( approx( fitted.x0, facing == 3 ? -0.5f + r3d::wall_half_thickness : original.x0 ) );
@@ -458,8 +472,8 @@ TEST_CASE( "r3d_cabinets_meet_adjacent_thin_wall_faces", "[r3d]" )
             CHECK( approx( fitted.y1, facing == 2 ? 1.5f - r3d::wall_half_thickness : original.y1 ) );
             CHECK( fitted.side_top == box.side_top );
             CHECK( fitted.lid_bottom == box.lid_bottom );
-            const auto shallow = r3d::place_furniture_box( box, flip, facing, 0,
-                                 backs[facing], 0.5f );
+            const r3d::box_layout shallow = r3d::place_furniture_box( box, flip, facing, 0,
+                                            backs[facing], 0.5f );
             if( ( facing & 1 ) == 0 ) {
                 CHECK( approx( shallow.y1 - shallow.y0, ( fitted.y1 - fitted.y0 ) * 0.5f ) );
                 CHECK( shallow.x0 == fitted.x0 );
@@ -473,8 +487,8 @@ TEST_CASE( "r3d_cabinets_meet_adjacent_thin_wall_faces", "[r3d]" )
             }
         }
     }
-    const auto row = r3d::place_furniture_box( box, false, 0,
-                     r3d::face_west | r3d::face_east, r3d::face_north );
+    const r3d::box_layout row = r3d::place_furniture_box( box, false, 0,
+                                r3d::face_west | r3d::face_east, r3d::face_north );
     CHECK( row.x0 == 0.0f );
     CHECK( row.x1 == 1.0f );
     CHECK( approx( row.y0, -0.5f + r3d::wall_half_thickness ) );

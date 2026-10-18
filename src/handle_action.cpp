@@ -3201,8 +3201,13 @@ bool game::handle_action()
     std::string action;
     input_context ctxt;
     action_id act = ACTION_NULL;
-    user_turn current_turn;
     avatar &player_character = get_avatar();
+    // Capture before starting the real-time action timer: rendering must not cost moves.
+    if( !player_character.has_destination() && !player_character.has_destination_activity() &&
+        !uistate.open_menu && uquit == QUIT_NO && !player_character.is_dead_state() ) {
+        r3d::compare_capture( true );
+    }
+    user_turn current_turn;
     // Check if we have an auto-move destination
     if( player_character.has_destination() ) {
         act = player_character.get_next_auto_move_direction();
@@ -3224,10 +3229,6 @@ bool game::handle_action()
         open_menu_tmp.value()();
         return false;
     } else {
-        // Captures run only at a normal gameplay input boundary, never in a menu.
-        if( uquit == QUIT_NO && !player_character.is_dead_state() ) {
-            r3d::compare_capture();
-        }
         // No auto-move, ask player for input
         ctxt = get_player_input( action );
     }

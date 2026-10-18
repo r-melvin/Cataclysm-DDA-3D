@@ -25,11 +25,16 @@ or input is processed inside that batch; queued keys remain for gameplay. The
 previous view, tileset, zoom, camera, pan and gameplay RNG are restored afterwards.
 
 Each completed checkpoint includes a **fresh save of the captured state**, a map
-dump, build/OS/graphics/language/mod diagnostics, one fixed isometric 2D reference,
+dump, build/OS/graphics/language/mod diagnostics and the options active at capture time, one fixed isometric 2D reference,
 and eight orthographic 3D poses at 45-degree yaw intervals and 30-degree pitch.
 Isometric 2D has a fixed orientation; its reference is shared by all poses rather
-than pretending that 2D can rotate. `view_resumed.png` records the restored view.
-No complete marker is written if saving or either renderer fails. Capture saves
+than pretending that 2D can rotate. `view_before.png` and `view_resumed.png` record the player view before and after
+the batch for restoration checks.
+No complete marker is written if saving or either renderer fails. A genuine disk-write
+failure may show the normal game save error dialog; dismiss it normally. The
+checkpoint is aborted and its older disk save is never packaged as current state.
+An unsupported (save-dirty) game or unavailable checkpoint destination fails
+without opening a save dialog. Capture saves
 omit the gameplay save event, so recording does not inflate save-event statistics.
 
 The save reproduces the scene on the recorded build with the same mods and assets.
@@ -42,7 +47,7 @@ After quitting, numbered `comparison-001.zip`, etc. are created in the session
 directory. Each is a normal ZIP below GitHub's 25 MB attachment limit. Upload all
 of them to the issue. To reproduce, extract all ZIPs into one empty directory and
 run `python3 restore.py` (reassembles any oversized files), then follow README.txt
-to load a checkpoint in a new user directory. No saves are silently trimmed.
+to load a checkpoint in a new user directory (copy both its `save/` and `config/`). No saves are silently trimmed.
 If the game crashes, keep the private directory and package completed checkpoints:
 
 ```sh

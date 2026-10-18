@@ -7206,6 +7206,10 @@ input_event input_manager::get_input_event( const keyboard_mode preferred_keyboa
     // move events.
     wnoutrefresh( catacurses::stdscr );
 
+    // Legacy one-shot capture must run on the first drawn frame without a player key.
+    // Sessions save only at the normal gameplay boundary in handle_action.
+    r3d::compare_capture( false );
+
     if( needupdate ) {
         refresh_display();
     } else if( ui_adaptor::has_imgui() ) {

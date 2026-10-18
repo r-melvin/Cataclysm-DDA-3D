@@ -56,6 +56,30 @@ class SessionPackagingTest(unittest.TestCase):
             with self.assertRaises(FileExistsError), contextlib.redirect_stdout(io.StringIO()):
                 session_tool.package(session)
 
+    def test_restore_rejects_traversal_symlinks_and_existing_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            report = root / "report"
+            report.mkdir()
+            (report / "restore.py").write_text(session_tool.RESTORE)
+            (report / "chunk.bin").write_bytes(b"content")
+            (report / "existing.txt").write_text("keep")
+            (report / "link").symlink_to(root, target_is_directory=True)
+            for target, part in (("../outside.txt", "chunk.bin"),
+                                 (str(root / "absolute.txt"), "chunk.bin"),
+                                 ("link/escape.txt", "chunk.bin"),
+                                 ("existing.txt", "chunk.bin"),
+                                 ("safe.txt", "../outside-chunk.bin")):
+                manifest = [dict(path=target, parts=[part], sha256="unused")]
+                (report / "large-files.json").write_text(json.dumps(manifest))
+                result = subprocess.run(["python3", str(report / "restore.py")], capture_output=True)
+                self.assertNotEqual(result.returncode, 0, target)
+            self.assertEqual((report / "existing.txt").read_text(), "keep")
+            self.assertFalse((root / "outside.txt").exists())
+            self.assertFalse((root / "absolute.txt").exists())
+            self.assertFalse((root / "escape.txt").exists())
+            self.assertFalse((report / "safe.txt").exists())
+
     def test_refuse_symlinks(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

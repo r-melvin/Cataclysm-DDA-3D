@@ -16,18 +16,52 @@ CONFIG_FILES = ("options.json", "keybindings.json", "auto_pickup.json", "safemod
                 "auto_note.json", "colors.json", "base_colors.json", "custom_colors.json")
 MAX_PAYLOAD = 24_000_000  # GitHub says 25 MB; reserve space for ZIP headers.
 CHUNK = 20_000_000
-RESTORE = '''#!/usr/bin/env python3
+RESTORE = r'''#!/usr/bin/env python3
 """Run after extracting ALL numbered ZIPs into the same empty directory."""
 import hashlib, json
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 root = Path(__file__).resolve().parent
+
+def checked_path(value):
+    if not isinstance(value, str) or not value or '\\' in value:
+        raise ValueError('Invalid archive path')
+    relative = PurePosixPath(value)
+    if relative.is_absolute() or PureWindowsPath(value).drive or '..' in relative.parts or not relative.parts:
+        raise ValueError('Unsafe archive path: ' + value)
+    path = root
+    for component in relative.parts:
+        path = path / component
+        if path.is_symlink():
+            raise ValueError('Symlink in archive path: ' + value)
+    return path
+
+jobs = []
+targets = set()
 for entry in json.loads((root / 'large-files.json').read_text()):
-    target = root / entry['path']
+    target = checked_path(entry['path'])
+    if target.exists() or target in targets:
+        raise ValueError('Refusing to overwrite existing or duplicate file: ' + str(target))
+    targets.add(target)
+    parts = [checked_path(part) for part in entry['parts']]
+    if not parts or not all(part.is_file() for part in parts):
+        raise ValueError('Missing archive chunks')
+    jobs.append((target, parts, entry['sha256']))
+for target, parts, expected in jobs:
     target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open('wb') as out:
-        for part in entry['parts']:
-            out.write((root / part).read_bytes())
-    assert hashlib.sha256(target.read_bytes()).hexdigest() == entry['sha256'], target
+    digest = hashlib.sha256()
+    out = target.open('xb')
+    try:
+        with out:
+            for part in parts:
+                with part.open('rb') as source:
+                    while data := source.read(1024 * 1024):
+                        digest.update(data)
+                        out.write(data)
+        if digest.hexdigest() != expected:
+            raise ValueError('Archive checksum mismatch: ' + str(target))
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
 print('Save files restored. See README.txt for loading instructions.')
 '''
 
@@ -78,14 +112,14 @@ def package(session):
             "Renderer comparison report\n\n"
             "Extract ALL numbered ZIPs into the same empty directory, then run python3 restore.py.\n"
             "Each captures/capture-NNNN is an independent same-state checkpoint. Copy its save/\n"
-            "directory into a NEW user directory, then launch the recorded build with --userdir\n"
+            "AND config/ directories into a NEW user directory, then launch the recorded build with --userdir\n"
             "that directory and --world WORLD. Do not overwrite your normal saves. Custom mods\n"
             "and tileset assets are not included; use the versions listed in game-report.txt.\n"
             "rng.txt records the gameplay RNG for investigation; normal loading initializes RNG\n"
             "normally. Saves reproduce the scene, not a deterministic future action sequence.\n\n"
             "view_2d.png is the fixed Ultica_iso reference for every 3D pose in this checkpoint.\n"
             "view_3d_yaw_N.png uses yaw -45 + 45*N degrees, pitch 30, orthographic projection.\n"
-            "view_resumed.png shows the restored player view after the batch.\n"
+            "view_before.png and view_resumed.png show the player view before/after the batch.\n"
             "No turn or input is processed between screenshots. Capture briefly pauses play.\n\n"
             "For a useful issue, describe the bug, reproduction steps and expected behavior.\n"
             "Attach these ZIPs; game-report.txt records OS/build/graphics/language/mods.\n"

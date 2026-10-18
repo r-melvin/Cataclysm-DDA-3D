@@ -53,9 +53,10 @@ bool wasd_controls();
 /**
  * Debug capture for CATA_R3D_COMPARE (see r3d.cpp): saves the 3D view and the flat isometric
  * view of the same turn once. CATA_R3D_COMPARE_SESSION enables bounded periodic checkpoints
- * with eight 3D yaw poses and current saves. Called only at the normal gameplay input boundary.
+ * with eight 3D yaw poses and current saves. Sessions require gameplay_boundary=true;
+ * the generic input hook can still perform the legacy one-shot without saving.
  */
-void compare_capture();
+void compare_capture( bool gameplay_boundary );
 
 /** Flips the RENDERER_3D option. */
 void toggle();
@@ -87,6 +88,7 @@ inline bool wasd_controls()
 {
     return false;
 }
+inline void compare_capture( bool ) {}
 inline void toggle() {}
 inline void rotate( int ) {}
 inline void pitch( int ) {}

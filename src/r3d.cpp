@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <chrono>
+#include <filesystem>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -12,6 +14,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -19,6 +22,7 @@
 #include "avatar.h"
 #include "calendar.h"
 #include "cata_path.h"
+#include "cata_scope_helpers.h"
 #include "cata_tiles.h"
 #include "coordinates.h"
 #include "creature.h"
@@ -28,6 +32,7 @@
 #include "game.h"
 #include "game_constants.h"
 #include "json_loader.h"
+#include "json.h"
 #include "map.h"
 #include "map_scale_constants.h"
 #include "mapbuffer.h"
@@ -39,6 +44,7 @@
 #include "r3d_entities.h"
 #include "r3d_gpu.h"
 #include "r3d_mesh.h"
+#include "rng.h"
 #include "sdl_wrappers.h"
 #include "sdltiles.h"
 #include "submap.h"
@@ -589,7 +595,7 @@ bool reload_map_tileset()
     try {
         closetilecontext->reinit();
         closetilecontext->load_tileset( get_option<std::string>( "TILES" ), /*precheck=*/false,
-                                        /*force=*/false, /*pump_events=*/true, /*terrain=*/false );
+                                        /*force=*/true, /*pump_events=*/false, /*terrain=*/false );
         g->reset_zoom();
         g->mark_main_ui_adaptor_resize();
         return true;
@@ -613,6 +619,7 @@ void dump_view( const std::string &path, const tripoint_bub_ms &center )
     const map &here = get_map();
     const avatar &you = get_avatar();
     const state &s = st();
+    out << "turn " << to_turn<int>( calendar::turn ) << " moves " << you.get_moves() << "\n";
     out << "player bub " << you.pos_bub().to_string() << " abs " << you.pos_abs().to_string()
         << "\nview center bub " << center.to_string()
         << "\ncamera yaw " << s.cam.yaw << " pitch " << s.cam.pitch << " distance " << s.cam.distance
@@ -689,9 +696,55 @@ bool capture( const std::string &path )
             path;
     return ok;
 }
+
+// Restores the complete player view even when capture or tileset loading throws.
+struct comparison_view_guard {
+    options_manager::cOpt &tiles = get_options().get_option( "TILES" );
+    options_manager::cOpt &view_3d = get_options().get_option( "RENDERER_3D" );
+    std::string old_tiles = tiles.getValue();
+    std::string old_view_3d = view_3d.getValue();
+    camera old_camera;
+    vec3 old_pan;
+    bool old_env_camera;
+    int old_zoom;
+    bool attempted = false;
+
+    comparison_view_guard( const camera &cam, const vec3 &pan, bool env_camera, int zoom ) :
+        old_camera( cam ), old_pan( pan ), old_env_camera( env_camera ), old_zoom( zoom ) {}
+
+    bool restore() {
+        tiles.setValue( old_tiles );
+        view_3d.setValue( old_view_3d );
+        const bool restored = reload_map_tileset();
+        g->set_zoom( old_zoom );
+        st().cam = old_camera;
+        st().pan = old_pan;
+        st().env_camera_applied = old_env_camera;
+        // Flush the restored atlas before resuming the player's world view.
+        if( const SDL_Renderer_Ptr &r = get_sdl_renderer() ) {
+            SDL_RenderPresent( r.get() );
+        }
+        for( int i = 0; i < 40; ++i ) {
+            g->invalidate_main_ui_adaptor();
+            ui_manager::redraw();
+        }
+        attempted = true;
+        return restored;
+    }
+
+    ~comparison_view_guard() {
+        if( !attempted ) {
+            try {
+                restore();
+            } catch( const std::exception &e ) {
+                DebugLog( D_ERROR, DC_ALL ) << "r3d compare: view restoration failed: " << e.what();
+            }
+        }
+    }
+};
 } // namespace
 
-void compare_capture()
+void compare_capture( bool gameplay_boundary )
 {
     // CATA_R3D_COMPARE=<prefix> saves, once, as soon as a game is on screen:
     //  - <prefix>_2d.png: the flat view with the isometric tileset CATA_R3D_COMPARE_TILESET
@@ -703,67 +756,176 @@ void compare_capture()
     // view come back (the options file is never written), or with CATA_R3D_QUIT_AFTER_SHOT the
     // game exits (status 0 when both shots were saved).
     static const char *const prefix = std::getenv( "CATA_R3D_COMPARE" );
+    static const char *const session = std::getenv( "CATA_R3D_COMPARE_SESSION" );
     static bool done = false;
-    if( !prefix || done || !g || !closetilecontext || !st().map_drawn ) {
+    static bool busy = false;
+    static int sequence = 0;
+    static auto last = std::chrono::steady_clock::time_point::min();
+    const auto number = []( const char *name, int fallback, int maximum ) {
+        const char *v = std::getenv( name );
+        return v ? std::clamp( std::atoi( v ), 1, maximum ) : fallback;
+    };
+    const auto now = std::chrono::steady_clock::now();
+    if( ( session && !gameplay_boundary ) || busy || ( !prefix && !session ) || ( !session && done ) ||
+        !g ||
+        !closetilecontext || !st().map_drawn ||
+        ( session && ( sequence >= number( "CATA_R3D_COMPARE_COUNT", 5, 100 ) ||
+                       ( sequence > 0 && now - last < std::chrono::seconds(
+                             number( "CATA_R3D_COMPARE_INTERVAL", 30, 86400 ) ) ) ) ) ) {
         return;
     }
     done = true;
-    const std::string base = prefix;
-    options_manager::cOpt &tiles = get_options().get_option( "TILES" );
-    options_manager::cOpt &view_3d = get_options().get_option( "RENDERER_3D" );
-    const std::string old_tiles = tiles.getValue();
-    const std::string old_view_3d = view_3d.getValue();
+    busy = true;
+    on_out_of_scope clear_busy( []() {
+        busy = false;
+    } );
+    last = now;
+    ++sequence;
+    std::string base = prefix ? prefix : "";
+    std::filesystem::path checkpoint;
+    // Saving and rendering must not perturb the next gameplay random draw.
+    const auto old_rng = rng_get_engine();
+    on_out_of_scope restore_rng( [&old_rng]() {
+        rng_get_engine() = old_rng;
+    } );
+    const camera old_camera = st().cam;
+    const vec3 old_pan = st().pan;
+    const bool old_env_camera = st().env_camera_applied;
+    const int old_zoom = g->get_zoom();
+    if( session ) {
+        char name[32];
+        std::snprintf( name, sizeof( name ), "capture-%04d", sequence );
+        const auto directory = std::filesystem::u8path( session ) / name;
+        checkpoint = directory;
+        try {
+            std::filesystem::create_directories( directory );
+            // A capture save omits the gameplay save event. The launcher isolates disk writes
+            // from the user's original world. Never copy an older disk save on failure.
+            if( g->save_is_dirty || !g->save_for_capture() ) {
+                throw std::runtime_error( "current-state save failed" );
+            }
+            auto world = PATH_INFO::world_base_save_path().get_unrelative_path();
+            if( world.filename().empty() ) {
+                world = world.parent_path();
+            }
+            const auto destination = directory / "save" / world.filename();
+            std::filesystem::create_directories( destination );
+            for( const auto &entry : std::filesystem::recursive_directory_iterator( world ) ) {
+                if( entry.is_symlink() ) {
+                    throw std::runtime_error( "symlink in world save" );
+                }
+                const auto target = destination / entry.path().lexically_relative( world );
+                if( entry.is_directory() ) {
+                    std::filesystem::create_directories( target );
+                } else if( entry.is_regular_file() ) {
+                    std::filesystem::copy_file( entry.path(), target );
+                }
+            }
+            std::filesystem::create_directories( directory / "config" );
+            std::ofstream options_file( directory / "config" / "options.json" );
+            JsonOut options_json( options_file, true );
+            get_options().serialize( options_json );
+            options_file.close();
+            if( !options_file ) {
+                throw std::runtime_error( "checkpoint options write failed" );
+            }
+            std::ofstream( directory / "state.txt" ) << "turn " << to_turn<int>( calendar::turn )
+                    << " moves " << get_avatar().get_moves() << "\n";
+            base = ( directory / "view" ).string();
+            std::ofstream( directory / "game-report.txt" ) << game_info::game_report();
+            std::ofstream( directory / "rng.txt" ) << old_rng;
+        } catch( const std::exception &e ) {
+            DebugLog( D_ERROR, DC_ALL ) << "r3d compare: checkpoint failed: " << e.what();
+            std::ofstream( directory / "FAILED.txt" ) << e.what();
+            return;
+        }
+    }
+    comparison_view_guard original_view( old_camera, old_pan, old_env_camera, old_zoom );
+    options_manager::cOpt &tiles = original_view.tiles;
+    options_manager::cOpt &view_3d = original_view.view_3d;
     const auto env_or = []( const char *name, const char *fallback ) {
         const char *const value = std::getenv( name );
         return std::string( value ? value : fallback );
     };
 
-    // The flat isometric view first: its tile size sets the scale of the 3D shot.
-    tiles.setValue( env_or( "CATA_R3D_COMPARE_TILESET", "Ultica_iso" ) );
-    view_3d.setValue( "false" );
-    const bool ok_2d = reload_map_tileset() && capture( base + "_2d.png" );
-    const int iso_tile_width = closetilecontext->get_tile_width();
+    try {
+        const bool ok_before = !session || capture( base + "_before.png" );
+        // The flat isometric view first: its tile size sets the scale of the 3D shot.
+        tiles.setValue( env_or( "CATA_R3D_COMPARE_TILESET", "Ultica_iso" ) );
+        view_3d.setValue( "false" );
+        const bool ok_2d = reload_map_tileset() && capture( base + "_2d.png" );
+        const int iso_tile_width = closetilecontext->get_tile_width();
 
-    tiles.setValue( env_or( "CATA_R3D_COMPARE_3D_TILESET", "UltimateCataclysm" ) );
-    view_3d.setValue( "true" );
-    bool ok_3d = reload_map_tileset();
-    if( ok_3d ) {
-        // The game is waiting for input and draws nothing by itself; draw until the chunks
-        // around the view are built (a few per frame).
-        const auto redraw = []() {
-            g->invalidate_main_ui_adaptor();
-            ui_manager::redraw();
-        };
-        redraw();
-        // The renderer only uploads the new tileset's textures when it presents, and the
-        // capture reads the 3D pass before any present: show one frame so the sheets the
-        // meshes sample from are on the GPU (SDL versions differ in when a flush uploads).
-        if( const SDL_Renderer_Ptr &r = get_sdl_renderer() ) {
-            SDL_RenderPresent( r.get() );
+        if( session ) {
+            st().pan = vec3{};
+            st().cam = camera();
+            st().cam.z_scale = old_camera.z_scale;
+            st().cam.orthographic = true;
+            apply_env_camera( st().cam );
+            st().env_camera_applied = true;
         }
-        state &s = st();
-        if( s.cam.orthographic && iso_tile_width > 0 && s.shown.valid ) {
-            // Same scale as the flat view: a tile (whose diagonal spans sqrt(2) across the
-            // screen at the isometric yaw) as wide as an isometric diamond.
-            const float half_height = 1.41421356f * s.shown.h / ( 2.0f * iso_tile_width );
-            s.cam.distance = std::clamp( half_height / std::tan( s.cam.fovy * 0.5f ),
-                                         camera::min_distance, camera::max_distance );
-        }
-        constexpr int settle_frames = 40;
-        for( int i = 0; i < settle_frames; ++i ) {
+        tiles.setValue( env_or( "CATA_R3D_COMPARE_3D_TILESET", "UltimateCataclysm" ) );
+        view_3d.setValue( "true" );
+        bool ok_3d = reload_map_tileset();
+        if( ok_3d ) {
+            // The game is waiting for input and draws nothing by itself; draw until the chunks
+            // around the view are built (a few per frame).
+            const auto redraw = []() {
+                g->invalidate_main_ui_adaptor();
+                ui_manager::redraw();
+            };
             redraw();
+            // The renderer only uploads the new tileset's textures when it presents, and the
+            // capture reads the 3D pass before any present: show one frame so the sheets the
+            // meshes sample from are on the GPU (SDL versions differ in when a flush uploads).
+            if( const SDL_Renderer_Ptr &r = get_sdl_renderer() ) {
+                SDL_RenderPresent( r.get() );
+            }
+            state &s = st();
+            if( s.cam.orthographic && iso_tile_width > 0 && s.shown.valid ) {
+                // Same scale as the flat view: a tile (whose diagonal spans sqrt(2) across the
+                // screen at the isometric yaw) as wide as an isometric diamond.
+                const float half_height = 1.41421356f * s.shown.h / ( 2.0f * iso_tile_width );
+                s.cam.distance = std::clamp( half_height / std::tan( s.cam.fovy * 0.5f ),
+                                             camera::min_distance, camera::max_distance );
+            }
+            constexpr int settle_frames = 40;
+            for( int i = 0; i < settle_frames; ++i ) {
+                redraw();
+            }
+            ok_3d = active() && capture( base + "_3d.png" );
+            dump_view( base + "_map.txt", g->ter_view_p );
+            if( session ) {
+                // Isometric 2D has a fixed orientation: its one reference is shared by all poses.
+                constexpr float deg = 0.017453293f;
+                for( int angle = 0; angle < 8; ++angle ) {
+                    st().cam.yaw = ( -45.0f + angle * 45.0f ) * deg;
+                    st().cam.pitch = 30.0f * deg;
+                    for( int i = 0; i < settle_frames; ++i ) {
+                        redraw();
+                    }
+                    ok_3d = capture( base + "_3d_yaw_" + std::to_string( angle ) + ".png" ) && ok_3d;
+                }
+            }
         }
-        ok_3d = active() && capture( base + "_3d.png" );
-        dump_view( base + "_map.txt", g->ter_view_p );
-    }
 
-    if( std::getenv( "CATA_R3D_QUIT_AFTER_SHOT" ) ) {
-        std::_Exit( ok_3d && ok_2d ? 0 : 1 );
+        if( std::getenv( "CATA_R3D_QUIT_AFTER_SHOT" ) ) {
+            std::_Exit( ok_3d && ok_2d ? 0 : 1 );
+        }
+        const bool restored = original_view.restore();
+        const bool resumed = !session || ( restored && capture( base + "_resumed.png" ) );
+        rng_get_engine() = old_rng;
+        if( session ) {
+            const bool complete = ok_before && ok_2d && ok_3d && restored && resumed;
+            std::ofstream( checkpoint / ( complete ? "COMPLETE.txt" : "FAILED.txt" ) )
+                    << "2D isometric reference, eight 3D yaw poses, same saved state.\n";
+        }
+    } catch( const std::exception &e ) {
+        DebugLog( D_ERROR, DC_ALL ) << "r3d compare: capture failed: " << e.what();
+        if( session ) {
+            std::ofstream( checkpoint / "FAILED.txt" ) << e.what();
+        }
     }
-    tiles.setValue( old_tiles );
-    view_3d.setValue( old_view_3d );
-    reload_map_tileset();
-    g->invalidate_main_ui_adaptor();
 }
 
 bool active()

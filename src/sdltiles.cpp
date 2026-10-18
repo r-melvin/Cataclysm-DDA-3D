@@ -7206,8 +7206,9 @@ input_event input_manager::get_input_event( const keyboard_mode preferred_keyboa
     // move events.
     wnoutrefresh( catacurses::stdscr );
 
-    // CATA_R3D_COMPARE debug capture, while the game waits for input (no turn passes).
-    r3d::compare_capture();
+    // Legacy one-shot capture must run on the first drawn frame without a player key.
+    // Sessions save only at the normal gameplay boundary in handle_action.
+    r3d::compare_capture( false );
 
     if( needupdate ) {
         refresh_display();

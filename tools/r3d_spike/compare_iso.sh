@@ -4,6 +4,9 @@
 #
 #   tools/r3d_spike/compare_iso.sh [world] [out_prefix]
 #
+# For normal play with periodic paired screenshots and shareable fresh saves, use
+# python3 tools/r3d_spike/compare_session.py [world] (see COMPARE.md).
+#
 # Loads the first character saved in [world] (default: the most recently played world),
 # captures <out_prefix>_3d.png and <out_prefix>_2d.png, writes <out_prefix>.png with both side
 # by side (needs ImageMagick; skipped otherwise) and exits. Nothing in the options changes.

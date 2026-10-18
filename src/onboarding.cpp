@@ -1172,7 +1172,7 @@ bool explain_screen( const std::string &category )
     }
     //~ Added under every "explain this screen" text.
     body += "\n\n" + expand_keys( string_format( _( "Press %s on any screen to see all of its keys." ),
-                                   "<keybind:HELP_KEYBINDINGS>" ) );
+                                  "<keybind:HELP_KEYBINDINGS>" ) );
     popup( body, PF_NONE );
     m.tracker.on_input( ob_input_kind::action, "EXPLAIN_SCREEN", now() );
     return true;
@@ -1304,9 +1304,9 @@ void serialize( JsonOut &json )
         const ob_lesson_state &st = entry.second;
         // Untouched lessons need no entry.
         if( st.status == ob_status::locked && st.reminders == 0 &&
-            std::all_of( st.progress.begin(), st.progress.end(), []( int p ) {
-            return p == 0;
-        } ) ) {
+        std::all_of( st.progress.begin(), st.progress.end(), []( int p ) {
+        return p == 0;
+    } ) ) {
             continue;
         }
         json.member( entry.first );

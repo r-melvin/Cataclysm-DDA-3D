@@ -67,9 +67,9 @@ TEST_CASE( "onboarding_start_trigger_and_prerequisites", "[onboarding]" )
 {
     onboarding_tracker t( {
         lesson( "move", 1, {}, { match( ob_input_kind::start, "" ) },
-                { match( ob_input_kind::event, "avatar_moves", 3 ) } ),
+        { match( ob_input_kind::event, "avatar_moves", 3 ) } ),
         lesson( "pause", 2, { "move" }, { match( ob_input_kind::start, "" ) },
-                { match( ob_input_kind::action, "pause" ) } )
+        { match( ob_input_kind::action, "pause" ) } )
     } );
     const size_t move = t.find( "move" );
     const size_t pause = t.find( "pause" );
@@ -108,7 +108,7 @@ TEST_CASE( "onboarding_quiet_completion", "[onboarding]" )
     // A player who already did the thing is never taught it.
     onboarding_tracker t( {
         lesson( "doors", 1, {}, { match( ob_input_kind::state, "adjacent_door" ) },
-                { match( ob_input_kind::action, "close" ) } )
+        { match( ob_input_kind::action, "close" ) } )
     } );
     t.update( 0, poll_nothing );
     CHECK( t.state( 0 ).status == ob_status::waiting );
@@ -122,9 +122,9 @@ TEST_CASE( "onboarding_polled_trigger_and_done", "[onboarding]" )
 {
     onboarding_tracker t( {
         lesson( "pickup", 1, {}, { match( ob_input_kind::state, "items_nearby" ) },
-                { match( ob_input_kind::action, "pickup" ) } ),
+        { match( ob_input_kind::action, "pickup" ) } ),
         lesson( "storage", 2, {}, { after( 10 ) },
-                { match( ob_input_kind::state, "worn_storage" ) } )
+        { match( ob_input_kind::state, "worn_storage" ) } )
     } );
     std::set<std::string> states;
     const auto poll = [&states]( size_t, const ob_matcher & m ) {
@@ -229,7 +229,7 @@ TEST_CASE( "onboarding_reminders_snooze_and_complete", "[onboarding]" )
 {
     onboarding_tracker t( {
         lesson( "look", 1, {}, { match( ob_input_kind::start, "" ) },
-                { match( ob_input_kind::action, "look" ) } )
+        { match( ob_input_kind::action, "look" ) } )
     } );
     t.update( 0, poll_nothing );
     t.take_notices();
@@ -261,9 +261,9 @@ TEST_CASE( "onboarding_unavailable_lessons", "[onboarding]" )
 {
     onboarding_tracker t( {
         lesson( "camera", 1, {}, { match( ob_input_kind::start, "" ) },
-                { match( ob_input_kind::action, "r3d_rotate_left" ) } ),
+        { match( ob_input_kind::action, "r3d_rotate_left" ) } ),
         lesson( "after_camera", 2, { "camera" }, { match( ob_input_kind::start, "" ) },
-                { match( ob_input_kind::action, "x" ) } )
+        { match( ob_input_kind::action, "x" ) } )
     } );
     // The 3D view is off: the camera lesson does not apply, is not counted, and does not block
     // the lesson after it.
@@ -288,9 +288,9 @@ TEST_CASE( "onboarding_save_and_load", "[onboarding]" )
 {
     const std::vector<ob_lesson_def> defs = {
         lesson( "a", 1, {}, { match( ob_input_kind::start, "" ) },
-                { match( ob_input_kind::event, "avatar_moves", 5 ) } ),
+        { match( ob_input_kind::event, "avatar_moves", 5 ) } ),
         lesson( "b", 2, { "a" }, { match( ob_input_kind::start, "" ) },
-                { match( ob_input_kind::action, "pause" ) } )
+        { match( ob_input_kind::action, "pause" ) } )
     };
     onboarding_tracker t( defs );
     t.update( 0, poll_nothing );

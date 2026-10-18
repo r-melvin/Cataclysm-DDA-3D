@@ -148,7 +148,8 @@ void release_dynamic( state &s )
 }
 
 // Makes sure a dynamic buffer holds at least bytes, then queues the data for upload.
-bool upload_dynamic( state &s, SDL_GPUBuffer *&buffer, uint32_t &capacity, SDL_GPUBufferUsageFlags usage,
+bool upload_dynamic( state &s, SDL_GPUBuffer *&buffer, uint32_t &capacity,
+                     SDL_GPUBufferUsageFlags usage,
                      const void *data, uint32_t bytes )
 {
     if( !buffer || capacity < bytes ) {
@@ -228,7 +229,7 @@ std::shared_ptr<const wall_sides> load_wall_sides( gpu &device )
         }
         JsonObject jo = *json;
         jo.allow_omitted_members();
-        auto sides = std::make_shared<wall_sides>();
+        std::shared_ptr<wall_sides> sides = std::make_shared<wall_sides>();
         sides->cell = jo.get_int( "cell" );
         for( const std::string name : jo.get_array( "textures" ) ) {
             sides->names.push_back( name );
@@ -536,6 +537,46 @@ void maybe_take_screenshot( state &s )
     }
 }
 
+float picking_column_height( state &s, const shown_view &v, const map &here,
+                             const creature_tracker &creatures, const avatar &you, int dx, int dy, int dz )
+{
+    const tripoint_bub_ms p( v.center.x() + dx, v.center.y() + dy, v.center.z() + dz );
+    if( p.z() < v.z_lo || p.z() > v.z_hi || !here.inbounds( p ) ) {
+        return 0.0f;
+    }
+    const float h = column_height( s, here, p );
+    const Creature *critter = creatures.creature_at( p );
+    if( critter && ( critter->is_avatar() || you.sees( here, *critter ) ) ) {
+        return 1.0f;
+    }
+    return h;
+}
+
+const submap *loaded_submap_at( const tripoint_abs_sm &base, int view_z, bool multi_z,
+                                const tripoint_abs_sm &p )
+{
+    const int dx = p.x() - base.x();
+    const int dy = p.y() - base.y();
+    if( dx < 0 || dy < 0 || dx >= MAPSIZE || dy >= MAPSIZE ||
+        p.z() < -OVERMAP_DEPTH || p.z() > OVERMAP_HEIGHT ) {
+        return nullptr;
+    }
+    if( p.z() != view_z && !multi_z ) {
+        return nullptr;
+    }
+    return MAPBUFFER.lookup_submap( p );
+}
+
+void append_frame_markers( state &s, const map &here, entity_view &entities_view,
+                           const std::vector<tripoint_bub_ms> &where, const std::string &id,
+                           bool box )
+{
+    const tile_info &sprite = s.cache.named( TILE_CATEGORY::NONE, id, *tilecontext );
+    for( const tripoint_bub_ms &p : where ) {
+        entities_view.markers.push_back( { p, column_height( s, here, p ), &sprite, box } );
+    }
+}
+
 } // namespace
 
 namespace
@@ -812,17 +853,8 @@ std::optional<tripoint_bub_ms> pick( float x, float y )
     const avatar &you = get_avatar();
     const creature_tracker &creatures = get_creature_tracker();
     // Visible creatures count as a full-height column so clicking their sprite picks their tile.
-    const column_height_fn height = [&]( int dx, int dy, int dz ) {
-        const tripoint_bub_ms p( v.center.x() + dx, v.center.y() + dy, v.center.z() + dz );
-        if( p.z() < v.z_lo || p.z() > v.z_hi || !here.inbounds( p ) ) {
-            return 0.0f;
-        }
-        const float h = column_height( s, here, p );
-        const Creature *critter = creatures.creature_at( p );
-        if( critter && ( critter->is_avatar() || you.sees( here, *critter ) ) ) {
-            return 1.0f;
-        }
-        return h;
+    const column_height_fn height = [ &v, &here, &s, &creatures, &you ]( int dx, int dy, int dz ) {
+        return picking_column_height( s, v, here, creatures, you, dx, dy, dz );
     };
     const float ndc_x = ( x - v.x ) / v.w * 2.0f - 1.0f;
     const float ndc_y = 1.0f - ( y - v.y ) / v.h * 2.0f;
@@ -936,7 +968,8 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     static const int supersample = []() {
         const char *env = std::getenv( "CATA_R3D_SUPERSAMPLE" );
         return env ? std::clamp( std::atoi( env ), 1, 3 ) : 2;
-    }();
+    }
+    ();
     const int target_w = std::max( 1, static_cast<int>( w ) ) * supersample;
     const int target_h = std::max( 1, static_cast<int>( h ) ) * supersample;
     if( !s.device.ensure_target( target_w, target_h ) ) {
@@ -960,19 +993,8 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     const tripoint_abs_sm base = here.get_abs_sub();
 
     // Only submaps inside the reality bubble: looking anything else up could load it from disk.
-    const submap_lookup lookup = [&]( const tripoint_abs_sm & p ) -> const submap * {
-        const int dx = p.x() - base.x();
-        const int dy = p.y() - base.y();
-        if( dx < 0 || dy < 0 || dx >= MAPSIZE || dy >= MAPSIZE ||
-            p.z() < -OVERMAP_DEPTH || p.z() > OVERMAP_HEIGHT )
-        {
-            return nullptr;
-        }
-        if( p.z() != view_z && !multi_z )
-        {
-            return nullptr;
-        }
-        return MAPBUFFER.lookup_submap( p );
+    const submap_lookup lookup = [ &base, view_z, multi_z ]( const tripoint_abs_sm & p ) {
+        return loaded_submap_at( base, view_z, multi_z, p );
     };
 
     const int vision_floor = std::max( std::min( view_z, get_avatar().posz() - fov_3d_z_range ),
@@ -1041,7 +1063,8 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
 
     // Creatures and items change every frame, so their geometry is rebuilt and re-uploaded.
     entity_view entities_view{ *tilecontext, s.cache, s.cam, center, z_lo, z_hi,
-                                     [&sampler]( const tripoint_bub_ms & p ) {
+                               [&sampler]( const tripoint_bub_ms & p )
+    {
         return sampler.color_at( p );
     }, {}, std::move( upright_list ), [&s, &here]( const tripoint_bub_ms & p )
     {
@@ -1050,12 +1073,10 @@ bool draw( SDL_Renderer *renderer, float x, float y, float w, float h,
     // The game queues its cursors and highlights for cata_tiles::draw, which is skipped here.
     {
         const cata_tiles::frame_markers queued = tilecontext->get_frame_markers();
-        const auto add_markers = [&]( const std::vector<tripoint_bub_ms> &where, const std::string & id,
+        const auto add_markers = [ &s, &here, &entities_view ]( const std::vector<tripoint_bub_ms> &where,
+                                 const std::string & id,
         bool box ) {
-            const tile_info &sprite = s.cache.named( TILE_CATEGORY::NONE, id, *tilecontext );
-            for( const tripoint_bub_ms &p : where ) {
-                entities_view.markers.push_back( { p, column_height( s, here, p ), &sprite, box } );
-            }
+            append_frame_markers( s, here, entities_view, where, id, box );
         };
         add_markers( queued.line, "animation_line", false );
         if( queued.line_end && !queued.line_end_id.empty() ) {

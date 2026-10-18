@@ -92,9 +92,10 @@ bool gpu::init( SDL_Renderer *renderer )
     }
 
     // Prefer a 32-bit float depth buffer, fall back to what the device supports.
-    for( SDL_GPUTextureFormat fmt : { SDL_GPU_TEXTUREFORMAT_D32_FLOAT, SDL_GPU_TEXTUREFORMAT_D24_UNORM,
-                                      SDL_GPU_TEXTUREFORMAT_D16_UNORM
-                                    } ) {
+    for( SDL_GPUTextureFormat fmt : {
+             SDL_GPU_TEXTUREFORMAT_D32_FLOAT, SDL_GPU_TEXTUREFORMAT_D24_UNORM,
+             SDL_GPU_TEXTUREFORMAT_D16_UNORM
+         } ) {
         if( SDL_GPUTextureSupportsFormat( device_, fmt, SDL_GPU_TEXTURETYPE_2D,
                                           SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET ) ) {
             depth_format_ = fmt;
@@ -120,14 +121,14 @@ bool gpu::init( SDL_Renderer *renderer )
         return false;
     }
 
-    SDL_GPUVertexBufferDescription buffers[2]{};
+    SDL_GPUVertexBufferDescription buffers[2] {};
     buffers[0].slot = 0;
     buffers[0].pitch = sizeof( vertex );
     buffers[0].input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
     buffers[1].slot = 1;
     buffers[1].pitch = sizeof( uint32_t );
     buffers[1].input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
-    SDL_GPUVertexAttribute attributes[3]{};
+    SDL_GPUVertexAttribute attributes[3] {};
     attributes[0].location = 0;
     attributes[0].buffer_slot = 0;
     attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;

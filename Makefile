@@ -1250,7 +1250,10 @@ $(ODIR)/third-party/%.o: $(SRC_DIR)/third-party/%.c
 	$(COMPILE.c) $(OUTPUT_OPTION) -x c $(CFLAGS) -w -MMD -MP $<
 
 $(ODIR)/%.o: $(SRC_DIR)/%.cpp $(PCH_P)
-	$(COMPILE.cc) $(OUTPUT_OPTION) $(PCHFLAGS) -MMD -MP $<
+# Track system headers too: with a forced PCH include, GCC can classify later
+# project headers as system headers and omit them from -MMD dependency files.
+# Missing dependencies can leave incompatible objects after a header change.
+	$(COMPILE.cc) $(OUTPUT_OPTION) $(PCHFLAGS) -MD -MP $<
 
 $(ODIR)/%.o: $(SRC_DIR)/%.c
 	$(COMPILE.c) $(OUTPUT_OPTION) -x c $(CFLAGS) -MMD -MP $<

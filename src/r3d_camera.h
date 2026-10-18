@@ -87,7 +87,7 @@ struct camera {
      */
     int forward_eighths() const;
 
-    /** Orbit by steps of 15 degrees / tilt by steps of 5 degrees / scale distance by 10%. */
+    /** Orbit by steps of 45 degrees / tilt by steps of 5 degrees / scale distance by 10%. */
     void rotate_steps( int steps );
     void pitch_steps( int steps );
     void zoom_steps( int steps );

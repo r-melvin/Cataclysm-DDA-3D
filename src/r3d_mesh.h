@@ -60,6 +60,7 @@ struct tile_info {
     shape sh;
     sprite_ref backdrop; // opaque background layer, drawn first when the tileset has one
     sprite_ref sprite;   // foreground layer (alpha tested, may be sparse)
+    float depth_scale = 1.0f; // furniture depth, anchored at its back after wall fitting
     bool tree = false;   // the level above holds its treetop, which this sprite already shows
     sprite_ref side;     // texture for the sides of a wall (see wall_sides), else invalid
     sprite_ref cap;      // the top of such a wall: a plain patch of the same texture
@@ -70,6 +71,10 @@ struct tile_info {
     // the sprite those rows come from: the tileset's east-west edge piece of the wall, which
     // shows the wall edge-on (a top-down tileset draws it as cavity, coving, paint, skirting)
     sprite_ref elevation;
+    bool brick_wall = false; // masonry can have a separate finish on room-facing sides
+    bool wall_connection = false; // walls and door/window openings, excluding solid props
+    bool thin_wall = false; // constructed walls share the door/window profile
+    bool window = false; // a pane with a wall surround rather than a full-height door
     uint32_t side_tint = 0xffffffu; // 0xRRGGBB colours for the side texture and the cap
     uint32_t cap_tint = 0xffffffu;
     bool see_through = false; // transparent terrain (fences, bars): the floor shows through it
@@ -115,6 +120,11 @@ class tile_info_cache
         /** Whether painted and plain walls take the atlas's plaster texture (true) or their own
          *  sprite read as a front elevation (false). Clears the cache when it changes. */
         void set_plaster_atlas( bool on );
+        /** Switch wall profiles and clear cached geometry inputs. */
+        void set_thin_walls( bool on );
+        float wall_half_width() const {
+            return thin_walls_ ? wall_half_thickness : 0.5f;
+        }
         /**
          * With subtile/rota (see cata_tiles::get_orientation) the sprites are those the flat view
          * draws for that connection; the shape never depends on them.
@@ -134,6 +144,7 @@ class tile_info_cache
         bool ground_loaded_ = false;
         std::shared_ptr<const wall_sides> wall_sides_;
         bool plaster_atlas_ = false;
+        bool thin_walls_ = true;
 };
 
 /** Where a vertex gets its light from: the tile at (lx + dx, ly + dy) on level (chunk z + dz). */

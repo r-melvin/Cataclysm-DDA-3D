@@ -23,6 +23,11 @@
 #include "npc.h"
 #include "r3d_hud.h"
 #include "r3d_shapes.h"
+#include "enums.h"
+#include "units_utility.h"
+#include "vehicle.h"
+#include "veh_type.h"
+#include "vpart_position.h"
 
 namespace r3d
 {
@@ -41,6 +46,7 @@ constexpr float heard_post_width = 0.35f; // first person: a sound heard there t
 constexpr float heard_post_height = 0.8f;
 // First person: the nearest an upright sprite's quad comes to the eye along the view.
 constexpr float min_sprite_depth = 0.35f;
+constexpr float vehicle_body_height = 0.25f;
 
 // Light colour with a zero alpha: no depth pull (see r3d_block.vert), for everything in the
 // entity mesh that is not the top of a billboard.
@@ -217,6 +223,93 @@ void emit_marker_box( quad_sink &sink, const sprite_ref &s, float x0, float y0, 
     }
 }
 
+
+// Vehicle art is a plan view. Keep it in the map plane, raised on a shallow body,
+// rather than turning every part towards the camera independently.
+void emit_vehicle_part( quad_sink &sink, const tile_info &info, float x, float y, float z,
+                        uint32_t color )
+{
+    float lift = 0.0f;
+    for( const sprite_ref *sprite : {
+             &info.backdrop, &info.sprite
+         } ) {
+        if( !sprite->valid ) {
+            continue;
+        }
+        const sprite_ref &s = *sprite;
+        // Vehicle tiles can overhang their cell (doors and windscreens often use
+        // 32x48/64 artwork). Preserve the regular renderer's size and offsets.
+        const float x0 = x + s.offset_x;
+        const float y0 = y + s.offset_y;
+        corners_t top = {{ { x0, y0, z + vehicle_body_height + lift },
+                { x0 + s.size_x, y0, z + vehicle_body_height + lift },
+                { x0 + s.size_x, y0 + s.size_y, z + vehicle_body_height + lift },
+                { x0, y0 + s.size_y, z + vehicle_body_height + lift }
+            }
+        };
+        for( auto &corner : top ) {
+            for( int turn = 0; turn < ( s.quarter_turns & 3 ); ++turn ) {
+                const float dx = corner[0] - x - 0.5f;
+                const float dy = corner[1] - y - 0.5f;
+                corner[0] = x + 0.5f - dy;
+                corner[1] = y + 0.5f + dx;
+            }
+        }
+        const float left = s.flip ? s.u1 : s.u0;
+        const float right = s.flip ? s.u0 : s.u1;
+        const uvs_t uv = {{ { left, s.v0 }, { right, s.v0 }, { right, s.v1 }, { left, s.v1 } }};
+        sink.add_colored( s, top, uv, light_ref{}, no_pull( color ) );
+        emit_marker_box( sink, s, x, y, z, z + vehicle_body_height + lift, color,
+                         1.0f + 2.0f * lift );
+        // The foreground must pass the depth test over the background on every face.
+        lift += 0.004f;
+    }
+}
+
+void add_vehicles( quad_sink &sink, const entity_view &view, map &here, const avatar &you )
+{
+    for( const wrapped_vehicle &wrapped : here.get_vehicles() ) {
+        const vehicle &veh = *wrapped.v;
+        const int rotation = angle_to_dir4( veh.face.dir() - 270_degrees );
+        for( const tripoint_abs_ms &absolute : veh.get_points() ) {
+            const tripoint_bub_ms p = here.get_bub( absolute );
+            if( !here.inbounds( p ) || p.z() < view.z_lo || p.z() > view.z_hi ||
+                !you.sees( here, p ) ) {
+                continue;
+            }
+            const uint32_t light = view.light( p );
+            if( light == pack_light( 0, 0, 0 ) ) {
+                continue;
+            }
+            const optional_vpart_position part = here.veh_at( p );
+            if( !part || &part->vehicle() != &veh ) {
+                continue;
+            }
+            const vpart_display display = veh.get_display_of_tile( part->mount_pos() );
+            if( display.id.is_null() ) {
+                continue;
+            }
+            const int subtile = display.is_open ? open_ : display.is_broken ? broken : 0;
+            const tile_info &sprite = view.cache.named( TILE_CATEGORY::VEHICLE_PART,
+                                      "vp_" + display.id.str(), view.tiles, subtile, rotation, display.variant.id );
+            const float x = static_cast<float>( p.x() - view.center.x() );
+            const float y = static_cast<float>( p.y() - view.center.y() );
+            const float z = static_cast<float>( p.z() - view.center.z() ) + view.surface( p ) + 0.02f;
+            emit_vehicle_part( sink, sprite, x, y, z, light );
+            if( display.has_cargo ) {
+                const tile_info &highlight = view.cache.named( TILE_CATEGORY::NONE, "highlight", view.tiles );
+                emit_flat( sink, highlight, x + 0.5f, y + 0.5f, z + vehicle_body_height + 0.02f,
+                           pack_light( 255, 255, 255 ), 1.0f );
+            }
+            if( !display.carried_furn.empty() ) {
+                const tile_info &furniture = view.cache.named( TILE_CATEGORY::FURNITURE,
+                                             display.carried_furn, view.tiles );
+                emit_vehicle_part( sink, furniture, x, y, z + 0.01f, light );
+            }
+        }
+    }
+}
+
 } // namespace
 
 chunk_mesh build_entity_mesh( const entity_view &view )
@@ -261,6 +354,8 @@ chunk_mesh build_entity_mesh( const entity_view &view )
     auto frame_z = [ &view ]( const tripoint_bub_ms & p ) {
         return static_cast<float>( p.z() - view.center.z() );
     };
+
+    add_vehicles( sink, view, here, you );
 
     // Items first: top item of every visible tile near the view, standing on its surface.
     for( int z = view.z_lo; z <= view.z_hi; ++z ) {

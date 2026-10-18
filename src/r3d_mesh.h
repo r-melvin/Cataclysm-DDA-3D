@@ -132,8 +132,10 @@ class tile_info_cache
          */
         const tile_info &terrain( ter_id id, cata_tiles &tiles, int subtile = -1, int rota = 0 );
         const tile_info &furniture( furn_id id, cata_tiles &tiles, int subtile = -1, int rota = 0 );
-        /** Sprite layers by tileset id, e.g. a monster type or "player_male". */
-        const tile_info &named( TILE_CATEGORY category, const std::string &id, cata_tiles &tiles );
+        /** Sprite layers by tileset id, e.g. a monster type or "player_male".
+         *  Subtile, rotation and variant are part of the cache key (vehicle part state). */
+        const tile_info &named( TILE_CATEGORY category, const std::string &id, cata_tiles &tiles,
+                                int subtile = -1, int rota = 0, const std::string &variant = "" );
         /** Ground drawn under trees and bushes, which are terrain with a transparent background. */
         const tile_info &ground( cata_tiles &tiles );
         /**

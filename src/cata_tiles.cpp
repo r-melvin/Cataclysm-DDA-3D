@@ -3010,14 +3010,15 @@ void cata_tiles::get_orientation( const tripoint_bub_ms &p, bool furniture, int 
 }
 
 std::optional<texture_draw_data> cata_tiles::get_sprite_draw_data( const std::string &id,
-        TILE_CATEGORY category, const tripoint_bub_ms &p, bool background, int subtile, int rota )
+        TILE_CATEGORY category, const tripoint_bub_ms &p, bool background, int subtile, int rota,
+        const std::string &variant )
 {
-    std::optional<tile_lookup_res> lookup_res = find_tile_looks_like( id, category, "" );
+    std::optional<tile_lookup_res> lookup_res = find_tile_looks_like( id, category, variant );
     if( !lookup_res ) {
         // Like the flat view, fall back to the tileset's ASCII sprite of the curses symbol.
         uint32_t sym = 0;
         nc_color col = c_white;
-        fallback_symbol( category, id, "", sym, col );
+        fallback_symbol( category, id, variant, sym, col );
         const std::string generic_id = ascii_fallback_id( *tileset_ptr, ascii_line_symbol( sym ), col );
         if( !generic_id.empty() ) {
             lookup_res = find_tile_looks_like( generic_id, TILE_CATEGORY::NONE, "" );
